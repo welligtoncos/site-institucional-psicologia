@@ -29,6 +29,7 @@ Copy-Item .env.example .env.local
 - `RESEND_API_KEY`: chave da API Resend
 - `RESEND_FROM_EMAIL`: remetente autorizado no Resend
 - `CLINIC_CONTACT_EMAIL`: e-mail que recebera os agendamentos
+- `BACKEND_API_URL`: URL da API principal (`app_backend`) para login/portal (ex.: `http://127.0.0.1:8000`)
 - `ADMIN_API_TOKEN`: token para endpoints administrativos de disponibilidade
 - `AVAILABILITY_DAYS_AHEAD`: quantidade de dias futuros gerados automaticamente
 
@@ -41,6 +42,20 @@ npm run dev
 5. Acesse:
 
 [http://localhost:3000](http://localhost:3000)
+
+## Projeto principal de backend
+
+O backend principal deste projeto e `app_backend` (FastAPI). O frontend Next.js reutiliza a autenticacao JWT
+desse backend atraves das rotas:
+
+- `POST /auth/login`
+- `POST /auth/refresh`
+- `GET /auth/me`
+
+No frontend, o acesso esta disponivel em:
+
+- `http://localhost:3000/login`
+- `http://localhost:3000/portal`
 
 ## Estrutura da funcionalidade de agendamento
 

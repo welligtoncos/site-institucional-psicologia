@@ -16,4 +16,5 @@ export const navItems = [
   { href: "/especialidades", label: "Especialidades" },
   { href: "/equipe", label: "Equipe" },
   { href: "/contato", label: "Contato" },
+  { href: "/login", label: "Portal" },
 ];
