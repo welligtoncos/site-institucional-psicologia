@@ -1,0 +1,1 @@
+"""Consumers RabbitMQ da aplicação."""

@@ -1,0 +1,159 @@
+# API FastAPI + PostgreSQL + Angular (Nginx) — rede interna, volumes nos dados.
+#
+# Uso: copie .env.example para .env, defina SECRET_KEY e (opcional) POSTGRES_*.
+#      docker compose up --build
+#
+# Frontend: http://localhost:${FRONTEND_PORT:-9080}/ (Nginx faz proxy de /api → serviço `api`; 8080 costuma estar ocupada)
+# API no host: porta ${API_HOST_PORT:-8000} → 8000 no container (se 8000 estiver ocupada, defina API_HOST_PORT no .env)
+#
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host 5433 → container 5432 (evita conflito com PostgreSQL instalado no Windows em 5432)
+      - "${POSTGRES_PORT:-5433}:5432"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-appdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build: .
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # Sobrescreve DATABASE_URL para apontar para o serviço `db` na rede Docker
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-appdb}
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-app}:${RABBITMQ_DEFAULT_PASS:-app}@rabbitmq:5672/%2f
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
+      MONGO_AUDIT_DB: ${MONGO_AUDIT_DB:-auditdb}
+      MONGO_AUDIT_COLLECTION: ${MONGO_AUDIT_COLLECTION:-product_events}
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - .:/app
+    working_dir: /app
+    # Desenvolvimento: hot reload + migrações na subida
+    command: >
+      sh -c "alembic upgrade head &&
+      uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+  audit_consumer:
+    build: .
+    env_file:
+      - .env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-app}:${RABBITMQ_DEFAULT_PASS:-app}@rabbitmq:5672/%2f
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
+      MONGO_AUDIT_DB: ${MONGO_AUDIT_DB:-auditdb}
+      MONGO_AUDIT_COLLECTION: ${MONGO_AUDIT_COLLECTION:-product_events}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - .:/app
+    working_dir: /app
+    restart: unless-stopped
+    command: >
+      sh -c "python -m app.consumers.product_audit_consumer"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-app}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      - internal
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-app}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-app}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    networks:
+      - internal
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" mongodb://$${MONGO_INITDB_ROOT_USERNAME}:$${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/admin | grep 1"]
+      interval: 8s
+      timeout: 8s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ../app_frontend_analytst-challenge
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-9080}:80"
+    depends_on:
+      - api
+    networks:
+      - internal
+    restart: unless-stopped
+
+  mongo_express:
+    image: mongo-express:1.0.2
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME:-app}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-app}
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-admin}
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  rabbitmq_data:
+  mongo_data:
