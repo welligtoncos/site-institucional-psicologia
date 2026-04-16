@@ -2,6 +2,7 @@
 
 import { Resend } from "resend";
 import { buildAppointmentEmail } from "../lib/email/appointment-email-template";
+import { isAvailableSlot } from "../lib/mock/appointment-availability";
 import { siteConfig } from "../lib/site";
 import { appointmentSchema } from "../lib/validations/appointment";
 import {
@@ -19,6 +20,9 @@ function toFieldErrors(errors: Record<string, string[] | undefined>): Appointmen
     phone: errors.phone?.[0],
     schedulePreference: errors.schedulePreference?.[0],
     careType: errors.careType?.[0],
+    appointmentDate: errors.appointmentDate?.[0],
+    appointmentTime: errors.appointmentTime?.[0],
+    appointmentSlot: errors.appointmentDate?.[0] || errors.appointmentTime?.[0],
     message: errors.message?.[0],
   };
 }
@@ -38,6 +42,8 @@ export async function submitAppointmentRequest(
     phone: getFormValue(formData, "phone"),
     schedulePreference: getFormValue(formData, "schedulePreference"),
     careType: getFormValue(formData, "careType"),
+    appointmentDate: getFormValue(formData, "appointmentDate"),
+    appointmentTime: getFormValue(formData, "appointmentTime"),
     message: getFormValue(formData, "message"),
     website: getFormValue(formData, "website"),
     submittedAt: getFormValue(formData, "submittedAt"),
@@ -69,7 +75,29 @@ export async function submitAppointmentRequest(
           values.careType === "hibrido"
             ? values.careType
             : initialAppointmentFormState.values.careType,
+        appointmentDate: values.appointmentDate,
+        appointmentTime: values.appointmentTime,
         message: values.message,
+      },
+    };
+  }
+
+  if (!isAvailableSlot(parsed.data.appointmentDate, parsed.data.appointmentTime)) {
+    return {
+      status: "error",
+      message: "O horario selecionado nao esta mais disponivel. Escolha outro para continuar.",
+      fieldErrors: {
+        appointmentSlot: "Horario indisponivel no momento.",
+      },
+      values: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        phone: parsed.data.phone,
+        schedulePreference: parsed.data.schedulePreference,
+        careType: parsed.data.careType,
+        appointmentDate: parsed.data.appointmentDate,
+        appointmentTime: parsed.data.appointmentTime,
+        message: parsed.data.message,
       },
     };
   }
@@ -95,6 +123,8 @@ export async function submitAppointmentRequest(
         phone: parsed.data.phone,
         schedulePreference: parsed.data.schedulePreference,
         careType: parsed.data.careType,
+        appointmentDate: parsed.data.appointmentDate,
+        appointmentTime: parsed.data.appointmentTime,
         message: parsed.data.message,
       },
     };
@@ -112,6 +142,8 @@ export async function submitAppointmentRequest(
         phone: parsed.data.phone,
         schedulePreference: parsed.data.schedulePreference,
         careType: parsed.data.careType,
+        appointmentDate: parsed.data.appointmentDate,
+        appointmentTime: parsed.data.appointmentTime,
         message: parsed.data.message,
       },
     };
@@ -150,6 +182,8 @@ export async function submitAppointmentRequest(
         phone: parsed.data.phone,
         schedulePreference: parsed.data.schedulePreference,
         careType: parsed.data.careType,
+        appointmentDate: parsed.data.appointmentDate,
+        appointmentTime: parsed.data.appointmentTime,
         message: parsed.data.message,
       },
     };

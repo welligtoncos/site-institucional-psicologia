@@ -33,12 +33,22 @@ function formatCareType(value: AppointmentInput["careType"]) {
   }
 }
 
+function formatAppointmentDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleDateString("pt-BR");
+}
+
 export function buildAppointmentEmail(data: AppointmentInput) {
   const submittedAt = new Date(Number(data.submittedAt)).toLocaleString("pt-BR");
   const payload = {
     name: escapeHtml(data.name),
     email: escapeHtml(data.email),
     phone: escapeHtml(data.phone),
+    appointmentDate: escapeHtml(formatAppointmentDate(data.appointmentDate)),
+    appointmentTime: escapeHtml(data.appointmentTime),
     schedulePreference: escapeHtml(formatSchedulePreference(data.schedulePreference)),
     careType: escapeHtml(formatCareType(data.careType)),
     message: escapeHtml(data.message).replaceAll("\n", "<br />"),
@@ -57,6 +67,7 @@ export function buildAppointmentEmail(data: AppointmentInput) {
           <tr><td style="padding: 8px 0; font-weight: bold;">Nome:</td><td style="padding: 8px 0;">${payload.name}</td></tr>
           <tr><td style="padding: 8px 0; font-weight: bold;">E-mail:</td><td style="padding: 8px 0;">${payload.email}</td></tr>
           <tr><td style="padding: 8px 0; font-weight: bold;">Telefone:</td><td style="padding: 8px 0;">${payload.phone}</td></tr>
+          <tr><td style="padding: 8px 0; font-weight: bold;">Horario do pedido:</td><td style="padding: 8px 0;">${payload.appointmentDate} as ${payload.appointmentTime}</td></tr>
           <tr><td style="padding: 8px 0; font-weight: bold;">Preferencia de horario:</td><td style="padding: 8px 0;">${payload.schedulePreference}</td></tr>
           <tr><td style="padding: 8px 0; font-weight: bold;">Tipo de atendimento:</td><td style="padding: 8px 0;">${payload.careType}</td></tr>
           <tr><td style="padding: 8px 0; font-weight: bold;">Enviado em:</td><td style="padding: 8px 0;">${payload.submittedAt}</td></tr>
@@ -76,6 +87,7 @@ export function buildAppointmentEmail(data: AppointmentInput) {
     `Nome: ${data.name}`,
     `E-mail: ${data.email}`,
     `Telefone: ${data.phone}`,
+    `Horario do pedido: ${formatAppointmentDate(data.appointmentDate)} as ${data.appointmentTime}`,
     `Preferencia de horario: ${formatSchedulePreference(data.schedulePreference)}`,
     `Tipo de atendimento: ${formatCareType(data.careType)}`,
     `Enviado em: ${submittedAt}`,

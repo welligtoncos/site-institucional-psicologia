@@ -29,6 +29,8 @@ export const appointmentSchema = z.object({
     .trim()
     .min(10, "Escreva uma mensagem com pelo menos 10 caracteres.")
     .max(1000, "Mensagem muito longa."),
+  appointmentDate: z.string().trim().min(1, "Selecione uma data disponivel."),
+  appointmentTime: z.string().trim().min(1, "Selecione um horario disponivel."),
   website: z.string().trim().optional().default(""),
   submittedAt: z
     .string()

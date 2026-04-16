@@ -6,10 +6,14 @@ export type AppointmentFieldValues = {
   phone: string;
   schedulePreference: (typeof schedulePreferences)[number];
   careType: (typeof careTypes)[number];
+  appointmentDate: string;
+  appointmentTime: string;
   message: string;
 };
 
-export type AppointmentFieldErrors = Partial<Record<keyof AppointmentFieldValues, string>>;
+export type AppointmentFieldErrors = Partial<
+  Record<keyof AppointmentFieldValues | "appointmentSlot", string>
+>;
 
 export type AppointmentFormState = {
   status: "idle" | "success" | "error";
@@ -24,6 +28,8 @@ export const initialAppointmentFormValues: AppointmentFieldValues = {
   phone: "",
   schedulePreference: "flexivel",
   careType: "presencial",
+  appointmentDate: "",
+  appointmentTime: "",
   message: "",
 };
 

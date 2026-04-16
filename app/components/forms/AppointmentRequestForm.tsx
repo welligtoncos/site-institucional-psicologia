@@ -1,12 +1,17 @@
 "use client";
 
-import { useActionState, useMemo } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { submitAppointmentRequest } from "@/app/contato/actions";
+import { appointmentAvailability } from "@/app/lib/mock/appointment-availability";
+import { AvailabilityPicker } from "./AvailabilityPicker";
 import {
   initialAppointmentFormState,
   type AppointmentFieldErrors,
 } from "@/app/contato/form-state";
+
+const defaultAvailabilityDay = appointmentAvailability[0];
+const defaultAvailableSlot = defaultAvailabilityDay?.slots.find((slot) => slot.status !== "unavailable");
 
 function FieldError({ error }: { error?: string }) {
   if (!error) return null;
@@ -114,12 +119,35 @@ function statusClassByType(status: "idle" | "success" | "error") {
 export function AppointmentRequestForm() {
   const [state, formAction] = useActionState(submitAppointmentRequest, initialAppointmentFormState);
   const submittedAt = useMemo(() => String(Date.now()), [state.status]);
+  const [appointmentDate, setAppointmentDate] = useState(
+    state.values.appointmentDate || defaultAvailabilityDay?.date || "",
+  );
+  const [appointmentTime, setAppointmentTime] = useState(
+    state.values.appointmentTime || defaultAvailableSlot?.time || "",
+  );
   const errors: AppointmentFieldErrors = state.fieldErrors;
+
+  useEffect(() => {
+    if (state.status === "success") {
+      setAppointmentDate(defaultAvailabilityDay?.date || "");
+      setAppointmentTime(defaultAvailableSlot?.time || "");
+      return;
+    }
+
+    if (state.values.appointmentDate) {
+      setAppointmentDate(state.values.appointmentDate);
+    }
+    if (state.values.appointmentTime) {
+      setAppointmentTime(state.values.appointmentTime);
+    }
+  }, [state.status, state.values.appointmentDate, state.values.appointmentTime]);
 
   return (
     <form action={formAction} className="mt-8 grid gap-4 sm:grid-cols-2">
       <input type="text" name="website" autoComplete="off" tabIndex={-1} className="hidden" />
       <input type="hidden" name="submittedAt" value={submittedAt} />
+      <input type="hidden" name="appointmentDate" value={appointmentDate} />
+      <input type="hidden" name="appointmentTime" value={appointmentTime} />
 
       {state.status !== "idle" && state.message ? (
         <p className={`sm:col-span-2 rounded-xl border px-4 py-3 text-sm ${statusClassByType(state.status)}`}>
@@ -155,6 +183,14 @@ export function AppointmentRequestForm() {
         defaultValue={state.values.email}
         autoComplete="email"
         error={errors.email}
+      />
+
+      <AvailabilityPicker
+        selectedDate={appointmentDate}
+        selectedTime={appointmentTime}
+        onSelectDate={setAppointmentDate}
+        onSelectTime={setAppointmentTime}
+        error={errors.appointmentSlot}
       />
 
       <SelectInput
