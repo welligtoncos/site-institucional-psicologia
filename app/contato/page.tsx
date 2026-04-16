@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AppointmentRequestForm } from "../components/forms/AppointmentRequestForm";
 import { PageHero } from "../components/internal/PageHero";
 import { Container, Section } from "../components/ui/SitePrimitives";
 import { siteConfig } from "../lib/site";
@@ -27,74 +28,7 @@ export default function ContatoPage() {
               primeiro atendimento.
             </p>
 
-            <form className="mt-8 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium text-slate-700 sm:col-span-2">
-                Nome completo
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                  placeholder="Digite seu nome"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Telefone
-                <input
-                  type="tel"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                  placeholder="(00) 00000-0000"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                E-mail
-                <input
-                  type="email"
-                  autoComplete="email"
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                  placeholder="voce@email.com"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Modalidade de preferencia
-                <select className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200">
-                  <option>Presencial</option>
-                  <option>Online</option>
-                  <option>Tanto faz</option>
-                </select>
-              </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Melhor periodo
-                <select className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200">
-                  <option>Manha</option>
-                  <option>Tarde</option>
-                  <option>Noite</option>
-                </select>
-              </label>
-
-              <label className="text-sm font-medium text-slate-700 sm:col-span-2">
-                Mensagem
-                <textarea
-                  rows={4}
-                  className="mt-1 w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                  placeholder="Conte brevemente o que voce precisa."
-                />
-              </label>
-
-              <p className="text-xs leading-relaxed text-slate-500 sm:col-span-2">
-                Ao enviar, voce concorda com o contato da equipe para orientacoes iniciais de
-                atendimento. Seus dados sao tratados com confidencialidade.
-              </p>
-
-              <button
-                type="button"
-                className="sm:col-span-2 inline-flex items-center justify-center rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-sky-700"
-              >
-                Enviar solicitacao
-              </button>
-            </form>
+            <AppointmentRequestForm />
           </article>
 
           <aside className="space-y-4">

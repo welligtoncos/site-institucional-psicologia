@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Clinica Harmonia - Site Institucional
 
-## Getting Started
+Projeto em Next.js (App Router) para site de clinica de psicologia, com fluxo profissional de
+"Solicitar agendamento" via formulario + Server Action + envio de e-mail com Resend.
 
-First, run the development server:
+## Requisitos
+
+- Node.js 20+
+- Conta no [Resend](https://resend.com/)
+
+## Como executar
+
+1. Instale dependencias:
+
+```bash
+npm install
+```
+
+2. Crie o arquivo `.env.local` com base em `.env.example`:
+
+```bash
+# PowerShell (Windows)
+Copy-Item .env.example .env.local
+```
+
+3. Configure as variaveis:
+
+- `RESEND_API_KEY`: chave da API Resend
+- `RESEND_FROM_EMAIL`: remetente autorizado no Resend
+- `CLINIC_CONTACT_EMAIL`: e-mail que recebera os agendamentos
+
+4. Rode o projeto:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. Acesse:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+[http://localhost:3000](http://localhost:3000)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Estrutura da funcionalidade de agendamento
 
-## Learn More
+```text
+app/
+  contato/
+    actions.ts                  # Server Action (validacao + envio via Resend)
+    form-state.ts               # tipos e estado inicial do formulario
+    page.tsx                    # pagina de contato
+  components/
+    forms/
+      AppointmentRequestForm.tsx # formulario client-side com feedback
+  lib/
+    validations/
+      appointment.ts            # schema Zod
+    email/
+      appointment-email-template.ts # template HTML/text do e-mail
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Boas praticas aplicadas
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Validacao robusta com `zod`
+- Server Action no servidor (`"use server"`)
+- Feedback de sucesso/erro no frontend
+- Campo honeypot + validacao de tempo minimo de envio (anti-bot)
+- Uso de variaveis de ambiente para credenciais e destinos
+- Estrutura modular para evolucao futura (escalabilidade)
