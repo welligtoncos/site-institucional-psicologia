@@ -3,28 +3,29 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { submitAppointmentRequest } from "@/app/contato/actions";
-import { appointmentAvailability } from "@/app/lib/mock/appointment-availability";
+import { toPublicAvailabilitySchedule, type AppointmentAvailabilityDay } from "@/app/lib/availability";
 import { AvailabilityPicker } from "./AvailabilityPicker";
 import {
   initialAppointmentFormState,
   type AppointmentFieldErrors,
 } from "@/app/contato/form-state";
 
-const defaultAvailabilityDay = appointmentAvailability[0];
-const defaultAvailableSlot = defaultAvailabilityDay?.slots.find((slot) => slot.status !== "unavailable");
+type AppointmentRequestFormProps = {
+  availability: AppointmentAvailabilityDay[];
+};
 
 function FieldError({ error }: { error?: string }) {
   if (!error) return null;
   return <p className="mt-1 text-xs text-rose-600">{error}</p>;
 }
 
-function SubmitButton() {
+function SubmitButton({ disabled }: { disabled?: boolean }) {
   const { pending } = useFormStatus();
 
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       className="sm:col-span-2 inline-flex items-center justify-center rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
     >
       {pending ? "Enviando..." : "Enviar solicitacao"}
@@ -116,21 +117,60 @@ function statusClassByType(status: "idle" | "success" | "error") {
   return "";
 }
 
-export function AppointmentRequestForm() {
+export function AppointmentRequestForm({ availability }: AppointmentRequestFormProps) {
+  const bookableDays = useMemo(() => toPublicAvailabilitySchedule(availability), [availability]);
+  const defaultBookableDay = bookableDays[0];
+  const defaultBookableTime = defaultBookableDay?.slots[0]?.time ?? "";
+
   const [state, formAction] = useActionState(submitAppointmentRequest, initialAppointmentFormState);
   const submittedAt = useMemo(() => String(Date.now()), [state.status]);
   const [appointmentDate, setAppointmentDate] = useState(
-    state.values.appointmentDate || defaultAvailabilityDay?.date || "",
+    state.values.appointmentDate || defaultBookableDay?.date || "",
   );
   const [appointmentTime, setAppointmentTime] = useState(
-    state.values.appointmentTime || defaultAvailableSlot?.time || "",
+    state.values.appointmentTime || defaultBookableTime,
   );
   const errors: AppointmentFieldErrors = state.fieldErrors;
 
   useEffect(() => {
+    if (bookableDays.length === 0) {
+      setAppointmentDate("");
+      setAppointmentTime("");
+      return;
+    }
+
+    setAppointmentDate((currentDate) => {
+      const dateStillBookable = bookableDays.some((day) => day.date === currentDate);
+      if (dateStillBookable) {
+        return currentDate;
+      }
+      const first = bookableDays[0];
+      const firstTime = first.slots[0]?.time ?? "";
+      setAppointmentTime(firstTime);
+      return first.date;
+    });
+  }, [bookableDays]);
+
+  useEffect(() => {
+    if (bookableDays.length === 0 || !appointmentDate) {
+      return;
+    }
+
+    const day = bookableDays.find((item) => item.date === appointmentDate);
+    if (!day) {
+      return;
+    }
+
+    const timeStillValid = day.slots.some((slot) => slot.time === appointmentTime);
+    if (!timeStillValid) {
+      setAppointmentTime(day.slots[0]?.time ?? "");
+    }
+  }, [bookableDays, appointmentDate, appointmentTime]);
+
+  useEffect(() => {
     if (state.status === "success") {
-      setAppointmentDate(defaultAvailabilityDay?.date || "");
-      setAppointmentTime(defaultAvailableSlot?.time || "");
+      setAppointmentDate(defaultBookableDay?.date || "");
+      setAppointmentTime(defaultBookableTime);
       return;
     }
 
@@ -140,7 +180,13 @@ export function AppointmentRequestForm() {
     if (state.values.appointmentTime) {
       setAppointmentTime(state.values.appointmentTime);
     }
-  }, [state.status, state.values.appointmentDate, state.values.appointmentTime]);
+  }, [
+    state.status,
+    state.values.appointmentDate,
+    state.values.appointmentTime,
+    defaultBookableDay?.date,
+    defaultBookableTime,
+  ]);
 
   return (
     <form action={formAction} className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -186,6 +232,7 @@ export function AppointmentRequestForm() {
       />
 
       <AvailabilityPicker
+        availability={bookableDays}
         selectedDate={appointmentDate}
         selectedTime={appointmentTime}
         onSelectDate={setAppointmentDate}
@@ -236,7 +283,7 @@ export function AppointmentRequestForm() {
         Seus dados sao tratados com confidencialidade.
       </p>
 
-      <SubmitButton />
+      <SubmitButton disabled={!appointmentTime} />
     </form>
   );
 }

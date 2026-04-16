@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppointmentRequestForm } from "../components/forms/AppointmentRequestForm";
 import { PageHero } from "../components/internal/PageHero";
 import { Container, Section } from "../components/ui/SitePrimitives";
+import { getProgressiveAvailability } from "../lib/server/availability-store";
 import { siteConfig } from "../lib/site";
 
 export const metadata: Metadata = {
@@ -10,7 +11,9 @@ export const metadata: Metadata = {
     "Entre em contato com a Clinica Harmonia para agendar sua consulta presencial ou online.",
 };
 
-export default function ContatoPage() {
+export default async function ContatoPage() {
+  const availability = await getProgressiveAvailability();
+
   return (
     <>
       <PageHero
@@ -28,7 +31,7 @@ export default function ContatoPage() {
               primeiro atendimento.
             </p>
 
-            <AppointmentRequestForm />
+            <AppointmentRequestForm availability={availability} />
           </article>
 
           <aside className="space-y-4">

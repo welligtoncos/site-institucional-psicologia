@@ -1,0 +1,16 @@
+{
+  "2026-04-16": {
+    "08:00": "available",
+    "14:00": "unavailable",
+    "18:30": "unavailable",
+    "15:30": "unavailable",
+    "09:30": "available",
+    "11:00": "available",
+    "17:00": "unavailable"
+  },
+  "2026-04-17": {
+    "08:00": "available",
+    "09:30": "available",
+    "11:00": "available"
+  }
+}

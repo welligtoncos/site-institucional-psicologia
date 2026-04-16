@@ -2,7 +2,7 @@
 
 import { Resend } from "resend";
 import { buildAppointmentEmail } from "../lib/email/appointment-email-template";
-import { isAvailableSlot } from "../lib/mock/appointment-availability";
+import { isAvailableSlot } from "../lib/server/availability-store";
 import { siteConfig } from "../lib/site";
 import { appointmentSchema } from "../lib/validations/appointment";
 import {
@@ -82,7 +82,7 @@ export async function submitAppointmentRequest(
     };
   }
 
-  if (!isAvailableSlot(parsed.data.appointmentDate, parsed.data.appointmentTime)) {
+  if (!(await isAvailableSlot(parsed.data.appointmentDate, parsed.data.appointmentTime))) {
     return {
       status: "error",
       message: "O horario selecionado nao esta mais disponivel. Escolha outro para continuar.",
