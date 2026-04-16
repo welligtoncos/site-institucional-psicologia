@@ -48,9 +48,14 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h1 className="text-2xl font-semibold text-slate-900">Login do portal</h1>
-      <p className="text-sm text-slate-600">Use as credenciais da API principal (`app_backend`).</p>
+    <form
+      onSubmit={handleSubmit}
+      className="mx-auto w-full max-w-md space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg shadow-slate-200/60 sm:p-7"
+    >
+      <div>
+        <h2 className="text-2xl font-semibold text-slate-900">Login do portal</h2>
+        <p className="mt-1 text-sm text-slate-600">Use suas credenciais para entrar no ambiente interno.</p>
+      </div>
 
       <div className="space-y-2">
         <label htmlFor="email" className="text-sm font-medium text-slate-700">
@@ -62,7 +67,7 @@ export function LoginForm() {
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+          className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
           placeholder="usuario@exemplo.com"
         />
       </div>
@@ -77,7 +82,7 @@ export function LoginForm() {
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+          className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
           placeholder="Sua senha"
         />
       </div>

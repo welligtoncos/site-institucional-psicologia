@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Footer } from "./components/Footer";
-import { Header } from "./components/Header";
-import { WhatsAppButton } from "./components/WhatsAppButton";
+import { AppShell } from "./components/AppShell";
 import { siteConfig } from "./lib/site";
 import "./globals.css";
 
@@ -63,12 +61,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-slate-50 text-slate-800">
-        <div className="flex min-h-screen flex-col">
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-          <WhatsAppButton />
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
