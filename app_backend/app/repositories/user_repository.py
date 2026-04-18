@@ -31,7 +31,7 @@ class UserRepository:
         name: str,
         email: str,
         password_hash: str,
-        role: UserRole = UserRole.user,
+        role: UserRole = UserRole.patient,
     ) -> User:
         user = User(
             name=name.strip(),

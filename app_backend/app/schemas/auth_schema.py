@@ -12,8 +12,9 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 class UserRoleSchema(str, Enum):
     """Espelha `UserRole` para documentação OpenAPI."""
 
+    patient = "patient"
+    psychologist = "psychologist"
     admin = "admin"
-    user = "user"
 
 
 class UserRegisterRequest(BaseModel):

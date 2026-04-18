@@ -14,10 +14,11 @@ from app.core.database import Base
 
 
 class UserRole(str, enum.Enum):
-    """Papel do usuário para autorização futura."""
+    """Papel do usuário (RF-002 / RF-001): paciente, psicólogo, administrador."""
 
+    patient = "patient"
+    psychologist = "psychologist"
     admin = "admin"
-    user = "user"
 
 
 class User(Base):
@@ -34,7 +35,7 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role_enum", native_enum=True),
         nullable=False,
-        default=UserRole.user,
+        default=UserRole.patient,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(

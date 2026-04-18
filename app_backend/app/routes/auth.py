@@ -40,7 +40,7 @@ async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar usuário",
-    description="Valida e-mail único, grava senha com hash bcrypt, retorna dados públicos (sem senha).",
+    description="Valida e-mail único, grava senha com hash bcrypt, perfil padrão paciente (`patient`), retorna dados públicos (sem senha).",
 )
 async def register(
     payload: UserRegisterRequest,

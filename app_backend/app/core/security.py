@@ -36,12 +36,13 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_access_token(*, subject: str) -> str:
-    """JWT de acesso; `sub` = id do usuário (string)."""
+def create_access_token(*, subject: str, role: str) -> str:
+    """JWT de acesso; `sub` = id do usuário; `role` = perfil atual (RF-001)."""
     settings = get_settings()
     expire = _now_utc() + timedelta(minutes=settings.access_token_expire_minutes)
     payload: dict[str, Any] = {
         "sub": subject,
+        "role": role,
         "type": TOKEN_TYPE_ACCESS,
         "jti": str(uuid4()),
         "exp": int(expire.timestamp()),
@@ -50,12 +51,13 @@ def create_access_token(*, subject: str) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
-def create_refresh_token(*, subject: str) -> str:
+def create_refresh_token(*, subject: str, role: str) -> str:
     """JWT de renovação; TTL maior que o access token."""
     settings = get_settings()
     expire = _now_utc() + timedelta(days=settings.refresh_token_expire_days)
     payload: dict[str, Any] = {
         "sub": subject,
+        "role": role,
         "type": TOKEN_TYPE_REFRESH,
         "jti": str(uuid4()),
         "exp": int(expire.timestamp()),

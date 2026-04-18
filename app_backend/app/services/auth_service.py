@@ -32,7 +32,7 @@ class AuthService:
         self._users = UserRepository(db)
 
     async def register(self, data: UserRegisterRequest) -> UserResponse:
-        """E-mail único, hash bcrypt, perfil padrão `user`."""
+        """E-mail único, hash bcrypt, perfil padrão paciente (`patient`)."""
         email_norm = str(data.email).strip().lower()
         if await self._users.get_by_email(email_norm) is not None:
             raise ConflictError("E-mail já cadastrado.")
@@ -43,7 +43,7 @@ class AuthService:
             name=data.name,
             email=email_norm,
             password_hash=pwd_hash,
-            role=UserRole.user,
+            role=UserRole.patient,
         )
         return UserResponse.model_validate(user)
 
@@ -56,8 +56,8 @@ class AuthService:
         if not user.is_active:
             raise AuthenticationError("Conta desativada.")
 
-        access = create_access_token(subject=str(user.id))
-        refresh = create_refresh_token(subject=str(user.id))
+        access = create_access_token(subject=str(user.id), role=user.role.value)
+        refresh = create_refresh_token(subject=str(user.id), role=user.role.value)
         # REQ: JWT ou mecanismo equivalente (access + refresh emitidos no login).
         return TokenResponse(access_token=access, refresh_token=refresh)
 
@@ -86,6 +86,6 @@ class AuthService:
         if user is None or not user.is_active:
             raise AuthenticationError("Usuário inválido para renovação.")
 
-        access = create_access_token(subject=str(user.id))
-        refresh = create_refresh_token(subject=str(user.id))
+        access = create_access_token(subject=str(user.id), role=user.role.value)
+        refresh = create_refresh_token(subject=str(user.id), role=user.role.value)
         return TokenResponse(access_token=access, refresh_token=refresh)

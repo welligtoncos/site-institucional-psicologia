@@ -49,4 +49,9 @@ async def get_current_user(
     user = await UserRepository(db).get_by_id(user_id)
     if user is None or not user.is_active:
         raise AuthenticationError("Usuário não autorizado.")
+
+    claimed_role = payload.get("role")
+    if isinstance(claimed_role, str) and claimed_role and claimed_role != user.role.value:
+        raise AuthenticationError("Sessão desatualizada. Faça login novamente.")
+
     return user

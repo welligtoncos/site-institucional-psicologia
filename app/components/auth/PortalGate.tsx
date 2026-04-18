@@ -11,7 +11,7 @@ type MeResponse = {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "user";
+  role: "patient" | "psychologist" | "admin";
   is_active: boolean;
   created_at: string;
   detail?: string;
