@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { PortalNav } from "@/app/components/portal/PortalNav";
+import { siteConfig } from "@/app/lib/site";
 
 type PortalLayoutProps = {
   children: React.ReactNode;
@@ -22,13 +23,77 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
       </header>
 
       <div className="mx-auto grid w-full max-w-6xl gap-6 px-5 py-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
-        <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-6">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Menu</p>
           <PortalNav />
         </aside>
 
-        <main>{children}</main>
+        <main className="min-w-0">{children}</main>
       </div>
+
+      <footer className="mt-4 border-t border-slate-200 bg-white/80">
+        <div className="mx-auto max-w-6xl px-5 py-8 sm:px-6 lg:px-8">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Suporte</p>
+              <p className="mt-2 text-sm text-slate-600">
+                Fale com a recepção da <span className="font-medium text-slate-800">{siteConfig.fullName}</span> em horário comercial.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contato</p>
+              <ul className="mt-2 space-y-1.5 text-sm text-slate-700">
+                <li>
+                  <a
+                    href={`tel:+55${siteConfig.phoneDisplay.replace(/\D/g, "")}`}
+                    className="underline hover:text-sky-800"
+                  >
+                    {siteConfig.phoneDisplay}
+                  </a>
+                </li>
+                <li>
+                  <a href={`mailto:${siteConfig.email}`} className="underline hover:text-sky-800">
+                    {siteConfig.email}
+                  </a>
+                </li>
+                <li>
+                  <a href={siteConfig.whatsappHref} className="font-medium text-emerald-800 underline hover:text-emerald-950">
+                    WhatsApp
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ajuda rápida</p>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                <li>
+                  <Link href="/portal" className="text-sky-800 underline hover:text-sky-950">
+                    Início do portal
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/contato" className="text-sky-800 underline hover:text-sky-950">
+                    Dúvidas frequentes / contato
+                  </Link>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Privacidade</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Tratamos seus dados com sigilo.{" "}
+                <Link href="/contato" className="font-semibold text-sky-800 underline hover:text-sky-950">
+                  Política e LGPD
+                </Link>{" "}
+                — solicite pelo canal oficial da clínica.
+              </p>
+            </div>
+          </div>
+          <p className="mt-8 border-t border-slate-100 pt-6 text-center text-xs text-slate-500">
+            {siteConfig.address} · {siteConfig.businessHours}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
