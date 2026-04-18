@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import get_settings
-from app.core.exceptions import AuthenticationError, ConflictError, NotFoundError
+from app.core.exceptions import AuthenticationError, ConflictError, ForbiddenError, NotFoundError
 from app.routes import api_router
 
 settings = get_settings()
@@ -55,6 +55,11 @@ async def _conflict(_: Request, exc: ConflictError) -> JSONResponse:
 @app.exception_handler(NotFoundError)
 async def _not_found(_: Request, exc: NotFoundError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(ForbiddenError)
+async def _forbidden(_: Request, exc: ForbiddenError) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 
 @app.exception_handler(OperationalError)

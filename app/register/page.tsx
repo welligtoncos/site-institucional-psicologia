@@ -54,6 +54,15 @@ export default function RegisterPage() {
               </li>
             </ul>
             <p className="mt-8 text-sm text-slate-600">
+              Psicólogo(a) da equipe?{" "}
+              <Link
+                href="/register/psicologo"
+                className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
+              >
+                Cadastro de psicólogo
+              </Link>
+            </p>
+            <p className="mt-3 text-sm text-slate-600">
               Já se cadastrou?{" "}
               <Link
                 href="/login?next=/portal"

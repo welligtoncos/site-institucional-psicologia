@@ -16,9 +16,9 @@ import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import jwt
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_admin_user, get_current_user
 from app.core.config import get_settings
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, ForbiddenError
 from app.core.security import TOKEN_TYPE_ACCESS
 from app.models.user import UserRole
 
@@ -116,3 +116,19 @@ async def test_get_current_user_rejects_inactive() -> None:
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         with pytest.raises(AuthenticationError, match="não autorizado"):
             await get_current_user(credentials=creds, db=AsyncMock())
+
+
+@pytest.mark.asyncio
+async def test_get_current_admin_accepts_admin() -> None:
+    """Administrador passa na dependência de admin."""
+    admin = SimpleNamespace(role=UserRole.admin)
+    out = await get_current_admin_user(admin)  # type: ignore[arg-type]
+    assert out is admin
+
+
+@pytest.mark.asyncio
+async def test_get_current_admin_rejects_non_admin() -> None:
+    """Papel diferente de admin recebe 403 de domínio."""
+    user = SimpleNamespace(role=UserRole.psychologist)
+    with pytest.raises(ForbiddenError, match="administradores"):
+        await get_current_admin_user(user)  # type: ignore[arg-type]

@@ -17,7 +17,7 @@ import pytest
 
 from app.core.exceptions import AuthenticationError, ConflictError
 from app.models.user import UserRole
-from app.schemas.auth_schema import UserLoginRequest, UserRegisterRequest
+from app.schemas.auth_schema import PsychologistRegisterRequest, UserLoginRequest, UserRegisterRequest
 from app.services.auth_service import AuthService
 
 
@@ -56,15 +56,27 @@ def mock_db() -> AsyncMock:
     return AsyncMock()
 
 
+def _patch_user_and_clinical(mock_db: AsyncMock):
+    """Patch repositórios instanciados por `AuthService` (cadastro toca `ClinicalRepository`)."""
+    repo = AsyncMock()
+    clin = AsyncMock()
+    return (
+        patch("app.services.auth_service.UserRepository", return_value=repo),
+        patch("app.services.auth_service.ClinicalRepository", return_value=clin),
+        repo,
+        clin,
+    )
+
+
 @pytest.mark.asyncio
 async def test_register_creates_patient(mock_db: AsyncMock) -> None:
-    """Registro grava papel paciente, normaliza e-mail para minúsculas."""
-    with patch("app.services.auth_service.UserRepository") as repo_cls:
-        repo = AsyncMock()
-        repo_cls.return_value = repo
+    """Registro grava papel paciente, normaliza e-mail para minúsculas e cria `pacientes`."""
+    p_user, p_clin, repo, clin = _patch_user_and_clinical(mock_db)
+    with p_user, p_clin:
         created = _user(role=UserRole.patient)
         repo.get_by_email = AsyncMock(return_value=None)
         repo.create = AsyncMock(return_value=created)
+        clin.create_paciente = AsyncMock(return_value=SimpleNamespace(id=uuid4(), usuario_id=created.id))
 
         svc = AuthService(mock_db)
         req = UserRegisterRequest(
@@ -73,6 +85,7 @@ async def test_register_creates_patient(mock_db: AsyncMock) -> None:
             phone="11999998888",
             password="SenhaSegura123",
             accept_terms=True,
+            contato_emergencia="  Fulano (11) 91111-2222  ",
         )
         out = await svc.register(req)
 
@@ -85,6 +98,10 @@ async def test_register_creates_patient(mock_db: AsyncMock) -> None:
         assert out.phone == "11999998888"
         assert out.terms_accepted_at is not None
         assert out.role.value == "patient"
+        clin.create_paciente.assert_awaited_once_with(
+            usuario_id=created.id,
+            contato_emergencia="Fulano (11) 91111-2222",
+        )
 
 
 @pytest.mark.asyncio
@@ -112,12 +129,12 @@ async def test_register_conflict_email(mock_db: AsyncMock) -> None:
 @pytest.mark.asyncio
 async def test_register_passes_stripped_phone_to_repository(mock_db: AsyncMock) -> None:
     """Telefone já normalizado pelo schema chega assim no create do repositório."""
-    with patch("app.services.auth_service.UserRepository") as repo_cls:
-        repo = AsyncMock()
-        repo_cls.return_value = repo
+    p_user, p_clin, repo, clin = _patch_user_and_clinical(mock_db)
+    with p_user, p_clin:
         created = _user(role=UserRole.patient, phone="11999998888")
         repo.get_by_email = AsyncMock(return_value=None)
         repo.create = AsyncMock(return_value=created)
+        clin.create_paciente = AsyncMock(return_value=SimpleNamespace())
 
         svc = AuthService(mock_db)
         req = UserRegisterRequest(
@@ -129,6 +146,68 @@ async def test_register_passes_stripped_phone_to_repository(mock_db: AsyncMock) 
         )
         await svc.register(req)
         assert repo.create.await_args.kwargs["phone"] == "11999998888"
+
+
+@pytest.mark.asyncio
+async def test_register_psychologist_creates_psicologo(mock_db: AsyncMock) -> None:
+    """Cadastro de psicólogo cria usuário com papel correto e linha em `psicologos`."""
+    from decimal import Decimal
+
+    p_user, p_clin, repo, clin = _patch_user_and_clinical(mock_db)
+    with p_user, p_clin:
+        created = _user(role=UserRole.psychologist, email="joao@example.com")
+        repo.get_by_email = AsyncMock(return_value=None)
+        repo.create = AsyncMock(return_value=created)
+        clin.create_psicologo = AsyncMock(return_value=SimpleNamespace(id=uuid4(), usuario_id=created.id))
+
+        svc = AuthService(mock_db)
+        req = PsychologistRegisterRequest(
+            name="Dr. João",
+            email="Joao@Example.com",
+            phone="11988887777",
+            password="SenhaSegura123",
+            accept_terms=True,
+            crp="06/123456-SP",
+            bio="Terapia cognitivo-comportamental.",
+            valor_sessao_padrao=Decimal("180.00"),
+            duracao_minutos_padrao=50,
+        )
+        out = await svc.register_psychologist(req)
+
+        assert out.email == "joao@example.com"
+        assert out.role.value == "psychologist"
+        clin.create_psicologo.assert_awaited_once_with(
+            usuario_id=created.id,
+            crp="06/123456-SP",
+            bio="Terapia cognitivo-comportamental.",
+            valor_sessao_padrao=Decimal("180.00"),
+            duracao_minutos_padrao=50,
+        )
+
+
+@pytest.mark.asyncio
+async def test_register_psychologist_rolls_back_user_on_clinical_conflict(mock_db: AsyncMock) -> None:
+    """Se `create_psicologo` falha com conflito, o usuário recém-criado é removido."""
+    p_user, p_clin, repo, clin = _patch_user_and_clinical(mock_db)
+    with p_user, p_clin:
+        created = _user(role=UserRole.psychologist)
+        repo.get_by_email = AsyncMock(return_value=None)
+        repo.create = AsyncMock(return_value=created)
+        clin.create_psicologo = AsyncMock(side_effect=ConflictError("CRP duplicado"))
+        repo.delete_by_id = AsyncMock()
+
+        svc = AuthService(mock_db)
+        req = PsychologistRegisterRequest(
+            name="X",
+            email="x@y.com",
+            phone="11999998888",
+            password="SenhaSegura123",
+            accept_terms=True,
+            crp="06/1-SP",
+        )
+        with pytest.raises(ConflictError, match="CRP duplicado"):
+            await svc.register_psychologist(req)
+        repo.delete_by_id.assert_awaited_once_with(created.id)
 
 
 @pytest.mark.asyncio

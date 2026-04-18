@@ -9,6 +9,7 @@ from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.auth_schema import (
+    PsychologistRegisterRequest,
     RefreshTokenRequest,
     TokenResponse,
     UserLoginRequest,
@@ -25,7 +26,7 @@ router = APIRouter(
         201: {"description": "Recurso criado"},
         400: {"description": "Requisição inválida"},
         401: {"description": "Não autorizado"},
-        409: {"description": "Conflito (ex.: e-mail já cadastrado)"},
+        409: {"description": "Conflito (ex.: e-mail ou CRP já cadastrado)"},
         422: {"description": "Erro de validação (schema)"},
     },
 )
@@ -40,13 +41,44 @@ async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Cadastro de paciente",
-    description="RF-001: nome, e-mail, telefone, senha e aceite explícito de termos; perfil paciente (`patient`).",
+    description=(
+        "RF-001: nome, e-mail, telefone, senha e aceite explícito de termos; papel `patient`. "
+        "Cria também a linha em `pacientes` (opcional `contato_emergencia`)."
+    ),
 )
 async def register(
     payload: UserRegisterRequest,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
     return await auth_service.register(payload)
+
+
+@router.post(
+    "/register/patient",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastro de paciente (explícito)",
+    description="Equivalente a POST /auth/register — mantido para clareza na documentação e no front.",
+)
+async def register_patient(
+    payload: UserRegisterRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> UserResponse:
+    return await auth_service.register(payload)
+
+
+@router.post(
+    "/register/psychologist",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastro de psicólogo",
+    description="Cria usuário com papel `psychologist` e perfil em `psicologos` (CRP obrigatório).",
+)
+async def register_psychologist(
+    payload: PsychologistRegisterRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> UserResponse:
+    return await auth_service.register_psychologist(payload)
 
 
 @router.post(

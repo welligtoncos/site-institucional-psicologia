@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ detail: "Payload invalido." }, { status: 400 });
   }
 
-  const response = await fetch(`${getBackendApiUrl()}/auth/register/patient`, {
+  const response = await fetch(`${getBackendApiUrl()}/auth/register/psychologist`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

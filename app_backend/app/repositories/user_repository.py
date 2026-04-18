@@ -5,7 +5,7 @@ Persistência de `User` — apenas SQLAlchemy / `AsyncSession` (sem regra de neg
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,3 +52,8 @@ class UserRepository:
             raise ConflictError("E-mail já cadastrado.") from exc
         await self._db.refresh(user)
         return user
+
+    async def delete_by_id(self, user_id: UUID) -> None:
+        """Remove usuário (uso interno, ex.: compensação após falha no perfil clínico)."""
+        await self._db.execute(delete(User).where(User.id == user_id))
+        await self._db.commit()

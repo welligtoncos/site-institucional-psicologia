@@ -12,7 +12,7 @@ type RegisterResponse = {
   detail?: unknown;
 };
 
-export function RegisterForm() {
+export function PsychologistRegisterForm() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -20,7 +20,10 @@ export function RegisterForm() {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
-  const [contatoEmergencia, setContatoEmergencia] = useState("");
+  const [crp, setCrp] = useState("");
+  const [bio, setBio] = useState("");
+  const [valorSessao, setValorSessao] = useState("");
+  const [duracaoMin, setDuracaoMin] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -41,23 +44,43 @@ export function RegisterForm() {
       return;
     }
 
-    try {
-      const body: Record<string, unknown> = {
-        name: name.trim(),
-        email: email.trim(),
-        phone,
-        password,
-        accept_terms: true,
-      };
-      const ce = contatoEmergencia.trim();
-      if (ce) {
-        body.contato_emergencia = ce;
-      }
+    const payload: Record<string, unknown> = {
+      name: name.trim(),
+      email: email.trim(),
+      phone,
+      password,
+      accept_terms: true,
+      crp: crp.trim(),
+      bio: bio.trim(),
+    };
 
-      const response = await fetch("/api/portal/register/patient", {
+    const vs = valorSessao.trim().replace(",", ".");
+    if (vs !== "") {
+      const n = Number(vs);
+      if (!Number.isFinite(n) || n < 0) {
+        setErrorMessage("Informe um valor de sessão válido ou deixe em branco.");
+        setLoading(false);
+        return;
+      }
+      payload.valor_sessao_padrao = n;
+    }
+
+    const dm = duracaoMin.trim();
+    if (dm !== "") {
+      const d = parseInt(dm, 10);
+      if (!Number.isFinite(d) || d < 15 || d > 240) {
+        setErrorMessage("Duração deve estar entre 15 e 240 minutos, ou deixe em branco.");
+        setLoading(false);
+        return;
+      }
+      payload.duracao_minutos_padrao = d;
+    }
+
+    try {
+      const response = await fetch("/api/portal/register/psychologist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
 
       const data = (await response.json()) as RegisterResponse;
@@ -65,7 +88,7 @@ export function RegisterForm() {
         throw new Error(formatApiErrorDetail(data, "Não foi possível concluir o cadastro. Verifique os dados."));
       }
 
-      router.push("/login?registered=1");
+      router.push("/login?registered=1&role=psychologist");
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Algo saiu do esperado. Tente novamente ou fale com a clínica.",
@@ -79,59 +102,56 @@ export function RegisterForm() {
     <form
       onSubmit={handleSubmit}
       className="mx-auto w-full max-w-md space-y-5 rounded-3xl border border-slate-200/90 bg-white p-6 shadow-lg shadow-slate-200/50 sm:p-8"
-      aria-labelledby="register-heading"
+      aria-labelledby="register-psych-heading"
     >
       <div>
-        <h2 id="register-heading" className="text-2xl font-semibold text-slate-900">
-          Dados do cadastro
+        <h2 id="register-psych-heading" className="text-2xl font-semibold text-slate-900">
+          Cadastro profissional
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Mesmo que você já seja atendido presencialmente, use aqui o e-mail que quiser para o acesso online — ele será
-          seu usuário no portal.
+          Seus dados serão gravados no sistema: conta de usuário com perfil de psicólogo e registro do CRP conforme a
+          base de dados da clínica.
         </p>
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="register-name" className="text-sm font-medium text-slate-800">
+        <label htmlFor="psych-name" className="text-sm font-medium text-slate-800">
           Nome completo
         </label>
         <input
-          id="register-name"
+          id="psych-name"
           name="name"
           type="text"
           required
           autoComplete="name"
           value={name}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(e) => setName(e.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="Como prefere ser chamado(a) no cadastro"
         />
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="register-email" className="text-sm font-medium text-slate-800">
+        <label htmlFor="psych-email" className="text-sm font-medium text-slate-800">
           E-mail
         </label>
         <input
-          id="register-email"
+          id="psych-email"
           name="email"
           type="email"
           required
           autoComplete="email"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(e) => setEmail(e.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="nome@email.com"
         />
-        <p className="text-xs text-slate-500">Será usado para você entrar no portal.</p>
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="register-phone" className="text-sm font-medium text-slate-800">
+        <label htmlFor="psych-phone" className="text-sm font-medium text-slate-800">
           Celular ou telefone (com DDD)
         </label>
         <input
-          id="register-phone"
+          id="psych-phone"
           name="phone"
           type="tel"
           required
@@ -140,62 +160,110 @@ export function RegisterForm() {
           autoComplete="tel"
           inputMode="tel"
           value={phone}
-          onChange={(event) => setPhone(event.target.value)}
+          onChange={(e) => setPhone(e.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="(11) 99999-9999 ou 11999998888"
         />
-        <p className="text-xs text-slate-500">Mínimo de 8 números, com DDD.</p>
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="register-contato-emergencia" className="text-sm font-medium text-slate-800">
-          Contato de emergência <span className="font-normal text-slate-500">(opcional)</span>
+        <label htmlFor="psych-crp" className="text-sm font-medium text-slate-800">
+          CRP
+        </label>
+        <input
+          id="psych-crp"
+          name="crp"
+          type="text"
+          required
+          minLength={5}
+          maxLength={32}
+          value={crp}
+          onChange={(e) => setCrp(e.target.value)}
+          className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
+          placeholder="Ex.: 06/123456-SP"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="psych-bio" className="text-sm font-medium text-slate-800">
+          Apresentação (bio)
         </label>
         <textarea
-          id="register-contato-emergencia"
-          name="contato_emergencia"
-          rows={2}
-          maxLength={5000}
-          value={contatoEmergencia}
-          onChange={(event) => setContatoEmergencia(event.target.value)}
+          id="psych-bio"
+          name="bio"
+          rows={4}
+          maxLength={8000}
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
           className="w-full resize-y rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="Nome e telefone de alguém para contato em situação de urgência"
+          placeholder="Abordagens, experiência, público que atende…"
         />
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <label htmlFor="psych-valor" className="text-sm font-medium text-slate-800">
+            Valor padrão da sessão (opcional)
+          </label>
+          <input
+            id="psych-valor"
+            name="valor_sessao_padrao"
+            type="text"
+            inputMode="decimal"
+            value={valorSessao}
+            onChange={(e) => setValorSessao(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
+            placeholder="Ex.: 180 ou 180,50"
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="psych-duracao" className="text-sm font-medium text-slate-800">
+            Duração padrão (min, opcional)
+          </label>
+          <input
+            id="psych-duracao"
+            name="duracao_minutos_padrao"
+            type="number"
+            min={15}
+            max={240}
+            value={duracaoMin}
+            onChange={(e) => setDuracaoMin(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
+            placeholder="Padrão: 50"
+          />
+        </div>
+      </div>
+
       <div className="space-y-2">
-        <label htmlFor="register-password" className="text-sm font-medium text-slate-800">
+        <label htmlFor="psych-password" className="text-sm font-medium text-slate-800">
           Senha
         </label>
         <input
-          id="register-password"
+          id="psych-password"
           name="password"
           type="password"
           required
           minLength={8}
           autoComplete="new-password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(e) => setPassword(e.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="No mínimo 8 caracteres"
         />
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="register-password-confirm" className="text-sm font-medium text-slate-800">
+        <label htmlFor="psych-password-confirm" className="text-sm font-medium text-slate-800">
           Repetir senha
         </label>
         <input
-          id="register-password-confirm"
+          id="psych-password-confirm"
           name="password-confirm"
           type="password"
           required
           minLength={8}
           autoComplete="new-password"
           value={passwordConfirm}
-          onChange={(event) => setPasswordConfirm(event.target.value)}
+          onChange={(e) => setPasswordConfirm(e.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="Digite a mesma senha de cima"
         />
       </div>
 
@@ -203,7 +271,7 @@ export function RegisterForm() {
         <input
           type="checkbox"
           checked={acceptTerms}
-          onChange={(event) => setAcceptTerms(event.target.checked)}
+          onChange={(e) => setAcceptTerms(e.target.checked)}
           className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
         />
         <span>
@@ -226,24 +294,23 @@ export function RegisterForm() {
         disabled={loading}
         className="w-full rounded-full bg-sky-600 px-4 py-3.5 text-sm font-semibold text-white shadow-sm shadow-sky-600/20 transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading ? "Salvando seu cadastro…" : "Concluir cadastro"}
+        {loading ? "Salvando cadastro…" : "Concluir cadastro de psicólogo"}
       </button>
 
       <p className="border-t border-slate-100 pt-5 text-center text-sm leading-relaxed text-slate-600">
-        É psicólogo(a)?{" "}
+        É paciente?{" "}
         <Link
-          href="/register/psicologo"
+          href="/register"
           className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
         >
-          Cadastro profissional
+          Cadastro de paciente
         </Link>
-        <br />
-        Já possui acesso?{" "}
+        {" · "}
         <Link
           href="/login?next=/portal"
           className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
         >
-          Voltar para a entrada
+          Entrar
         </Link>
       </p>
     </form>

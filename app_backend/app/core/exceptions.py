@@ -15,3 +15,7 @@ class AuthenticationError(DomainError):
 
 class NotFoundError(DomainError):
     """Recurso não encontrado."""
+
+
+class ForbiddenError(DomainError):
+    """Operação não permitida para o papel ou contexto atual."""
