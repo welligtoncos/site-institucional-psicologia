@@ -74,6 +74,18 @@ export function AppointmentsBoard() {
     setHydrated(true);
   }, []);
 
+  useEffect(() => {
+    function reload() {
+      setRows(loadStored());
+    }
+    window.addEventListener("portal-billing-changed", reload);
+    window.addEventListener("storage", reload);
+    return () => {
+      window.removeEventListener("portal-billing-changed", reload);
+      window.removeEventListener("storage", reload);
+    };
+  }, []);
+
   const persist = useCallback((next: MockAppointment[]) => {
     setRows(next);
     if (typeof window !== "undefined") {

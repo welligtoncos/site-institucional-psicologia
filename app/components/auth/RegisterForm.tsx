@@ -209,7 +209,7 @@ export function RegisterForm() {
       <p className="border-t border-slate-100 pt-5 text-center text-sm leading-relaxed text-slate-600">
         Já possui acesso?{" "}
         <Link
-          href="/login"
+          href="/login?next=/portal"
           className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
         >
           Voltar para a entrada

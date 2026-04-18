@@ -17,5 +17,5 @@ export const navItems = [
   { href: "/equipe", label: "Equipe" },
   { href: "/contato", label: "Contato" },
   { href: "/register", label: "Cadastro" },
-  { href: "/login", label: "Portal" },
+  { href: "/login?next=/portal", label: "Portal" },
 ];

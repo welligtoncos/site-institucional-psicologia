@@ -16,12 +16,20 @@ export default function PsicologoLayout({ children }: LayoutProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">{siteConfig.name}</p>
             <p className="text-sm font-semibold text-slate-900">Área do psicólogo</p>
           </div>
-          <Link
-            href="/"
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Site institucional
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/psicologo/sessao"
+              className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100"
+            >
+              Iniciar sessão
+            </Link>
+            <Link
+              href="/"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Site institucional
+            </Link>
+          </div>
         </div>
       </header>
 

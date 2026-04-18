@@ -9,6 +9,7 @@ const items = [
   { href: "/portal/ofertas", label: "Profissional" },
   { href: "/portal/agendar", label: "Agendar" },
   { href: "/portal/consultas", label: "Consultas" },
+  { href: "/portal/atendimento", label: "Atendimento ao vivo" },
   { href: "/portal/faturamento", label: "Faturamento e notas" },
 ];
 

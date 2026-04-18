@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
@@ -69,7 +69,11 @@ const APPOINTMENTS: Appointment[] = [
   },
 ];
 
-export function PortalGate() {
+type PortalGateProps = {
+  children?: ReactNode;
+};
+
+export function PortalGate({ children }: PortalGateProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
@@ -176,7 +180,7 @@ export function PortalGate() {
   function handleLogout() {
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-    router.push("/login");
+    router.push("/login?next=/portal");
   }
 
   const nextConsultation = useMemo(
@@ -205,13 +209,17 @@ export function PortalGate() {
       <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
         <p className="text-sm text-rose-700">{errorMessage}</p>
         <Link
-          href="/login"
+          href="/login?next=/portal"
           className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
         >
           Voltar para login
         </Link>
       </div>
     );
+  }
+
+  if (children != null) {
+    return <>{children}</>;
   }
 
   return (

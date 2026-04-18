@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 
 import { PsychologistAuthShell } from "@/app/components/auth/PsychologistAuthShell";
-import { PsychologistPatientsBoard } from "@/app/components/psicologo/PsychologistPatientsBoard";
+import { PsychologistInvoicesBoard } from "@/app/components/psicologo/PsychologistInvoicesBoard";
 
 export const metadata: Metadata = {
-  title: "Pacientes",
+  title: "Minhas consultas",
   robots: { index: false, follow: false },
 };
 
-export default function PsicologoPacientesPage() {
+export default function PsicologoFaturasPage() {
   return (
     <PsychologistAuthShell>
-      <PsychologistPatientsBoard />
+      <PsychologistInvoicesBoard />
     </PsychologistAuthShell>
   );
 }

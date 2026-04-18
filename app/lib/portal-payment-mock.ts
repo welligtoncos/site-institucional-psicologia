@@ -181,3 +181,22 @@ export function appendAppointment(appointment: MockAppointment): void {
   list.push(appointment);
   saveAppointmentsRaw(list);
 }
+
+/**
+ * Marca a consulta do portal como realizada quando o psicólogo encerra a sessão ao vivo (mock).
+ */
+export function markAppointmentCompletedAfterLiveSession(appointmentId: string): boolean {
+  if (typeof window === "undefined") return false;
+  const list = loadAppointmentsRaw();
+  const idx = list.findIndex((a) => a.id === appointmentId);
+  if (idx === -1) return false;
+  const apt = list[idx]!;
+  const noteExtra = "Atendimento concluído (sessão ao vivo — demonstração).";
+  list[idx] = {
+    ...apt,
+    status: "realizada",
+    notes: apt.notes?.includes("concluído") ? apt.notes : [apt.notes?.trim(), noteExtra].filter(Boolean).join(" · "),
+  };
+  saveAppointmentsRaw(list);
+  return true;
+}

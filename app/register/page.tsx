@@ -56,7 +56,7 @@ export default function RegisterPage() {
             <p className="mt-8 text-sm text-slate-600">
               Já se cadastrou?{" "}
               <Link
-                href="/login"
+                href="/login?next=/portal"
                 className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
               >
                 Ir para a tela de entrada

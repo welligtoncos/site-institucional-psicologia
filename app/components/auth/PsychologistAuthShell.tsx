@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
 
+/** @deprecated prefer login com `next` apontando para a rota desejada (ex.: `/psicologo/sessao`) */
 export const PSYCHOLOGIST_LOGIN_NEXT = "/login?next=/psicologo";
+
+function buildPsychologistLoginUrl(pathname: string | null): string {
+  const nextPath = pathname && pathname.startsWith("/psicologo") ? pathname : "/psicologo";
+  return `/login?next=${encodeURIComponent(nextPath)}`;
+}
 
 type MeResponse = {
   id: string;
@@ -55,6 +61,9 @@ type PsychologistAuthShellProps = {
  */
 export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<PsychologistSessionUser | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -85,7 +94,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
       const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
 
       if (!accessToken) {
-        router.push(PSYCHOLOGIST_LOGIN_NEXT);
+        router.push(buildPsychologistLoginUrl(pathnameRef.current));
         return;
       }
 
@@ -107,7 +116,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
 
       if (!refreshToken) {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-        router.push(PSYCHOLOGIST_LOGIN_NEXT);
+        router.push(buildPsychologistLoginUrl(pathnameRef.current));
         return;
       }
 
@@ -119,7 +128,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
       ) {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
         window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-        router.push(PSYCHOLOGIST_LOGIN_NEXT);
+        router.push(buildPsychologistLoginUrl(pathnameRef.current));
         return;
       }
 
@@ -174,7 +183,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
       <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
         <p className="text-sm text-rose-800">{errorMessage}</p>
         <Link
-          href={PSYCHOLOGIST_LOGIN_NEXT}
+          href={buildPsychologistLoginUrl(pathname)}
           className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
         >
           Voltar ao login
