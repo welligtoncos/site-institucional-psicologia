@@ -11,7 +11,7 @@ type AppShellProps = {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const isSystemArea = pathname.startsWith("/portal");
+  const isSystemArea = pathname.startsWith("/portal") || pathname.startsWith("/psicologo");
 
   if (isSystemArea) {
     return <div className="min-h-screen bg-slate-950 text-slate-100">{children}</div>;

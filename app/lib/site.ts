@@ -16,5 +16,7 @@ export const navItems = [
   { href: "/especialidades", label: "Especialidades" },
   { href: "/equipe", label: "Equipe" },
   { href: "/contato", label: "Contato" },
+  { href: "/register", label: "Cadastro" },
+  { href: "/psicologo", label: "Área profissional" },
   { href: "/login", label: "Portal" },
 ];

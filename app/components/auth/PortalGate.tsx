@@ -111,6 +111,10 @@ export function PortalGate() {
 
       const meAttempt = await fetchMeWithToken(accessToken);
       if (meAttempt.response.ok) {
+        if (meAttempt.data.role !== "patient") {
+          router.replace("/psicologo");
+          return;
+        }
         if (!mounted) return;
         setUserName(meAttempt.data.name);
         setUserEmail(meAttempt.data.email);
@@ -144,6 +148,11 @@ export function PortalGate() {
         if (!mounted) return;
         setErrorMessage(retriedMe.data.detail || "Nao foi possivel validar a sessao.");
         setLoading(false);
+        return;
+      }
+
+      if (retriedMe.data.role !== "patient") {
+        router.replace("/psicologo");
         return;
       }
 
