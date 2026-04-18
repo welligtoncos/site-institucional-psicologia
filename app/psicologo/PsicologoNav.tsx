@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 
 const items = [
   { href: "/psicologo", label: "Painel", exact: true },
+  { href: "/psicologo/perfil", label: "Perfil" },
+  { href: "/psicologo/disponibilidade", label: "Disponibilidade" },
   { href: "/psicologo/agenda", label: "Agenda" },
-  { href: "/psicologo/pacientes", label: "Pacientes" },
 ];
 
 function isActive(pathname: string, href: string, exact: boolean) {

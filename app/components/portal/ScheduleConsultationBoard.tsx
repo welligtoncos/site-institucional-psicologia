@@ -1,46 +1,35 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
-  ALL_SPECIALTY_LABELS,
-  MOCK_PSYCHOLOGISTS,
-  filterPsychologists,
+  MOCK_PSYCHOLOGIST,
   mockSlotsForDate,
   nextDates,
-  type MockPsychologist,
+  type MockAppointment,
 } from "@/app/lib/portal-mocks";
-
-const MAX_PRICE = 300;
+import {
+  appendAppointment,
+  createChargeForAppointment,
+  registerGatewayPaymentSuccess,
+  type MockPaymentCharge,
+} from "@/app/lib/portal-payment-mock";
 
 function formatDateLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" });
+  return new Date(y, m - 1, d).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" });
 }
 
 export function ScheduleConsultationBoard() {
-  const searchParams = useSearchParams();
-  const prePsych = searchParams.get("psych");
+  const psych = MOCK_PSYCHOLOGIST;
 
-  const [specialty, setSpecialty] = useState("todas");
-  const [maxPrice, setMaxPrice] = useState(MAX_PRICE);
-  const [onlyAvailable, setOnlyAvailable] = useState(false);
-  const [selectedId, setSelectedId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"pix" | "card" | "boleto">("pix");
-  const [paymentStatus, setPaymentStatus] = useState<"idle" | "processing" | "approved">("idle");
-  const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [lastCharge, setLastCharge] = useState<MockPaymentCharge | null>(null);
 
   const dateOptions = useMemo(() => nextDates(new Date(), 7), []);
-
-  useEffect(() => {
-    if (prePsych && MOCK_PSYCHOLOGISTS.some((p) => p.id === prePsych)) {
-      setSelectedId(prePsych);
-    }
-  }, [prePsych]);
 
   useEffect(() => {
     if (!selectedDate && dateOptions.length > 0) {
@@ -48,268 +37,168 @@ export function ScheduleConsultationBoard() {
     }
   }, [dateOptions, selectedDate]);
 
-  const filtered = useMemo(
-    () =>
-      filterPsychologists({
-        specialty: specialty === "todas" ? "todas" : specialty,
-        maxPrice,
-        onlyAvailable,
-      }),
-    [specialty, maxPrice, onlyAvailable],
-  );
-
-  /** Só considera selecionado quem ainda aparece na lista filtrada (evita select “mudar” e agenda ficar no profissional errado). */
-  const selected: MockPsychologist | null = selectedId
-    ? (filtered.find((p) => p.id === selectedId) ?? null)
-    : null;
-
   const slotsForDay = useMemo(() => {
-    if (!selected || !selectedDate) return [];
-    return mockSlotsForDate(selected.id, selectedDate);
-  }, [selected, selectedDate]);
-
-  function handleSelectPsych(id: string) {
-    setSelectedId(id);
-    setSelectedTime("");
-    setConfirmed(false);
-    setPaymentStatus("idle");
-  }
+    if (!selectedDate) return [];
+    return mockSlotsForDate(psych.id, selectedDate);
+  }, [psych.id, selectedDate]);
 
   function handleConfirm() {
-    if (!selected || !selectedDate || !selectedTime) return;
-    setPaymentStatus("processing");
+    if (!selectedDate || !selectedTime) {
+      toast.error("Escolha data e horário.");
+      return;
+    }
+    setSubmitting(true);
     window.setTimeout(() => {
-      setPaymentStatus("approved");
-      setConfirmed(true);
-    }, 900);
+      const id = `apt_${Date.now()}`;
+      const appointment: MockAppointment = {
+        id,
+        psychId: psych.id,
+        psychologist: psych.name,
+        specialty: psych.specialties[0] ?? "Consulta",
+        isoDate: selectedDate,
+        time: selectedTime,
+        format: "Online",
+        price: psych.price,
+        durationMin: psych.durationMin,
+        payment: "Pendente",
+        status: "agendada",
+        reminder: "Cobrança gerada. Conclua o pagamento para confirmar.",
+      };
+      appendAppointment(appointment);
+      const charge = createChargeForAppointment(id, psych.price);
+      setLastCharge(charge);
+      setSubmitting(false);
+      toast.success("Consulta criada. Cobrança registrada (RF-009 — mock).");
+    }, 400);
   }
 
-  const specialtyOptions = ["todas", ...ALL_SPECIALTY_LABELS];
+  function handleSimulateGateway() {
+    if (!lastCharge) return;
+    const result = registerGatewayPaymentSuccess(lastCharge.id);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    setLastCharge(result.charge);
+    toast.success("Pagamento registrado (RF-010 — retorno do gateway simulado).");
+  }
 
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Agenda</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Agendar consulta</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Filtre por especialidade, preço e disponibilidade; escolha o profissional, a data e o horário. Fluxo mockado —
-          nenhum dado é enviado ao servidor.
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Agendar</p>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900">Nova consulta</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Após confirmar, o sistema gera a cobrança e prepara o vínculo com o gateway de pagamento (demonstração).
         </p>
       </section>
 
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex sm:items-center sm:gap-4">
+        <div
+          className={`mx-auto flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${psych.avatarClass} text-sm font-bold text-white sm:mx-0`}
+        >
+          {psych.initials}
+        </div>
+        <div className="mt-3 text-center sm:mt-0 sm:text-left">
+          <p className="font-semibold text-slate-900">{psych.name}</p>
+          <p className="text-xs text-slate-500">R$ {psych.price.toFixed(2).replace(".", ",")} · {psych.durationMin} min</p>
+        </div>
+      </div>
+
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-slate-900">Filtros da agenda</p>
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start">
-          <label className="flex min-w-[200px] max-w-full flex-1 flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-500">Especialidade</span>
-            <select
-              name="portal-specialty"
-              value={specialty}
-              onChange={(e) => setSpecialty(e.target.value)}
-              className="block w-full min-h-11 appearance-auto rounded-xl border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200/90"
+        <p className="text-sm font-semibold text-slate-900">Data</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {dateOptions.map((iso) => (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => {
+                setSelectedDate(iso);
+                setSelectedTime("");
+              }}
+              className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                selectedDate === iso ? "border-sky-400 bg-sky-50 font-semibold text-sky-900" : "border-slate-200 text-slate-700"
+              }`}
             >
-              {specialtyOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s === "todas" ? "Todas" : s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex min-w-[220px] flex-1 flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-500">Preço máximo (R$ {maxPrice})</span>
-            <input
-              type="range"
-              min={150}
-              max={MAX_PRICE}
-              step={10}
-              value={maxPrice}
-              onChange={(e) => setMaxPrice(Number(e.target.value))}
-              className="w-full accent-sky-600"
-            />
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-            <input
-              type="checkbox"
-              checked={onlyAvailable}
-              onChange={(e) => setOnlyAvailable(e.target.checked)}
-              className="rounded border-slate-300 text-sky-600"
-            />
-            <span className="text-sm text-slate-700">Só com disponibilidade (mock)</span>
-          </label>
+              {formatDateLabel(iso)}
+            </button>
+          ))}
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-slate-900">1. Profissional</p>
-          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
-            {filtered.map((p) => {
-              const active = p.id === selectedId;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleSelectPsych(p.id)}
-                  className={`flex w-full gap-3 rounded-xl border p-3 text-left transition ${
-                    active ? "border-sky-400 bg-sky-50" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  <div
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${p.avatarClass} text-xs font-bold text-white`}
-                  >
-                    {p.initials}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900">{p.name}</p>
-                    <p className="text-xs text-slate-600">{p.primarySpecialty}</p>
-                    <p className="mt-1 text-xs font-semibold text-sky-700">
-                      R$ {p.price.toFixed(2).replace(".", ",")}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          {filtered.length === 0 ? (
-            <p className="mt-3 text-sm text-amber-800">Nenhum profissional com esses filtros.</p>
-          ) : null}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm font-semibold text-slate-900">Horário</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {slotsForDay.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setSelectedTime(t)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                selectedTime === t ? "border-sky-400 bg-sky-50 text-sky-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
         </div>
+      </section>
 
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">2. Data</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {dateOptions.map((iso) => {
-                const on = iso === selectedDate;
-                return (
-                  <button
-                    key={iso}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDate(iso);
-                      setSelectedTime("");
-                      setConfirmed(false);
-                    }}
-                    disabled={!selected}
-                    className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
-                      on ? "border-sky-400 bg-sky-50 font-semibold text-sky-900" : "border-slate-200 text-slate-700"
-                    } disabled:cursor-not-allowed disabled:opacity-50`}
-                  >
-                    {formatDateLabel(iso)}
-                  </button>
-                );
-              })}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm text-slate-700">
+          <span className="font-semibold text-slate-900">Resumo:</span>{" "}
+          {selectedDate && selectedTime
+            ? `${formatDateLabel(selectedDate)} às ${selectedTime}`
+            : "Selecione data e horário."}
+        </p>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={submitting || !selectedDate || !selectedTime}
+          className="mt-4 w-full rounded-full bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {submitting ? "Gerando consulta e cobrança…" : "Confirmar e gerar cobrança"}
+        </button>
+      </section>
+
+      {lastCharge ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+          <p className="text-sm font-semibold text-amber-950">Pagamento</p>
+          <p className="mt-1 text-xs text-amber-900/90">
+            Integração futura: o gateway receberá o <code className="rounded bg-white/80 px-1">{lastCharge.gatewayIntentId}</code> para
+            checkout real.
+          </p>
+          <dl className="mt-3 space-y-1 text-xs text-amber-950">
+            <div>
+              <dt className="inline text-amber-800">Cobrança:</dt>{" "}
+              <dd className="inline font-mono">{lastCharge.id}</dd>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">3. Horário disponível</p>
-            {!selected ? (
-              <p className="mt-3 text-sm text-slate-500">Selecione um profissional.</p>
-            ) : (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {slotsForDay.map((t) => {
-                  const on = t === selectedTime;
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => {
-                        setSelectedTime(t);
-                        setConfirmed(false);
-                        setPaymentStatus("idle");
-                      }}
-                      className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-                        on ? "border-sky-400 bg-sky-50 text-sky-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {selected && slotsForDay.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">Sem horários mock para esta data.</p>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">4. Pagamento (mock)</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {[
-                { id: "pix" as const, label: "PIX" },
-                { id: "card" as const, label: "Cartão" },
-                { id: "boleto" as const, label: "Boleto" },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setPaymentMethod(m.id);
-                    setConfirmed(false);
-                    setPaymentStatus("idle");
-                  }}
-                  className={`rounded-xl border px-3 py-2 text-sm font-medium ${
-                    paymentMethod === m.id
-                      ? "border-sky-400 bg-sky-50 text-sky-900"
-                      : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
+            <div>
+              <dt className="inline text-amber-800">Valor:</dt>{" "}
+              <dd className="inline">
+                R$ {(lastCharge.amountCents / 100).toFixed(2).replace(".", ",")}
+              </dd>
             </div>
+            <div>
+              <dt className="inline text-amber-800">Status gateway:</dt>{" "}
+              <dd className="inline font-medium">
+                {lastCharge.gatewayStatus === "awaiting_payment" ? "aguardando pagamento" : "pago"}
+              </dd>
+            </div>
+          </dl>
+          {lastCharge.gatewayStatus === "awaiting_payment" ? (
             <button
               type="button"
-              onClick={handleConfirm}
-              disabled={!selected || !selectedDate || !selectedTime || paymentStatus === "processing"}
-              className="mt-5 w-full rounded-full bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleSimulateGateway}
+              className="mt-4 w-full rounded-full border border-amber-400 bg-white px-4 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100"
             >
-              {paymentStatus === "processing" ? "Confirmando…" : "Confirmar agendamento"}
+              Simular pagamento aprovado (webhook)
             </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-slate-900">Resumo</p>
-        {selected && selectedDate && selectedTime ? (
-          <ul className="mt-3 space-y-1.5 text-sm text-slate-700">
-            <li>
-              <span className="font-semibold text-slate-900">Profissional:</span> {selected.name}
-            </li>
-            <li>
-              <span className="font-semibold text-slate-900">Data:</span> {formatDateLabel(selectedDate)} ({selectedDate})
-            </li>
-            <li>
-              <span className="font-semibold text-slate-900">Horário:</span> {selectedTime}
-            </li>
-            <li>
-              <span className="font-semibold text-slate-900">Valor:</span> R${" "}
-              {selected.price.toFixed(2).replace(".", ",")}
-            </li>
-            <li>
-              <span className="font-semibold text-slate-900">Pagamento:</span>{" "}
-              {paymentMethod === "pix" ? "PIX" : paymentMethod === "card" ? "Cartão" : "Boleto"}
-            </li>
-          </ul>
-        ) : (
-          <p className="mt-3 text-sm text-slate-500">Preencha profissional, data e horário.</p>
-        )}
-        {paymentStatus === "approved" ? (
-          <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
-            Consulta criada com sucesso (mock). Em produção, você receberia confirmação por e-mail e veria na lista de
-            consultas.
-          </p>
-        ) : null}
-        {confirmed ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Dica: o profissional pré-selecionado vindo da lista de psicólogos usa o parâmetro{" "}
-            <code className="rounded bg-slate-100 px-1">?psych=</code> na URL.
-          </p>
-        ) : null}
-      </section>
+          ) : (
+            <p className="mt-3 text-sm font-medium text-emerald-800">Pagamento registrado. Veja em Minhas consultas.</p>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

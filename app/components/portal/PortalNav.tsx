@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/portal", label: "Dashboard", exact: true },
+  { href: "/portal", label: "Início", exact: true },
   { href: "/portal/perfil", label: "Meu perfil" },
-  { href: "/portal/ofertas", label: "Psicólogos" },
+  { href: "/portal/ofertas", label: "Profissional" },
   { href: "/portal/agendar", label: "Agendar" },
   { href: "/portal/consultas", label: "Consultas" },
+  { href: "/portal/faturamento", label: "Faturamento e notas" },
 ];
 
 function active(pathname: string, href: string, exact?: boolean) {
@@ -37,8 +38,6 @@ export function PortalNav() {
           </Link>
         );
       })}
-      <p className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-400">Diário emocional (em breve)</p>
-      <p className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-400">Mensagens (em breve)</p>
     </nav>
   );
 }

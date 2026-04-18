@@ -43,64 +43,23 @@ export function mockSlotsForDate(psychId: string, isoDate: string): string[] {
   return base;
 }
 
-export const MOCK_PSYCHOLOGISTS: MockPsychologist[] = [
-  {
-    id: "psy-ana",
-    name: "Ana Clara Mendes",
-    crp: "06/123456",
-    initials: "AM",
-    avatarClass: "from-sky-400 to-indigo-500",
-    specialties: ["Ansiedade e estresse", "TCC"],
-    primarySpecialty: "Ansiedade e estresse",
-    bio: "Psicóloga clínica com foco em ansiedade generalizada e síndrome do pânico. Trabalho com TCC e técnicas de regulação emocional em um ambiente acolhedor.",
-    price: 190,
-    durationMin: 50,
-    formats: ["Online", "Presencial"],
-    availableThisWeek: true,
-  },
-  {
-    id: "psy-beatriz",
-    name: "Beatriz Lima",
-    crp: "06/234567",
-    initials: "BL",
-    avatarClass: "from-rose-400 to-orange-400",
-    specialties: ["Terapia de casal", "Relacionamentos"],
-    primarySpecialty: "Terapia de casal",
-    bio: "Especialista em dinâmicas de casal e comunicação não violenta. Experiência em mediação de conflitos e reaproximação afetiva.",
-    price: 240,
-    durationMin: 60,
-    formats: ["Presencial"],
-    availableThisWeek: true,
-  },
-  {
-    id: "psy-rafael",
-    name: "Rafael Souza",
-    crp: "06/345678",
-    initials: "RS",
-    avatarClass: "from-emerald-400 to-teal-600",
-    specialties: ["Depressão e luto", "Adultos"],
-    primarySpecialty: "Depressão e luto",
-    bio: "Atendimento a adultos em processos de luto complicado e humor deprimido, com abordagem humanista integrada a recursos da psicoeducação.",
-    price: 210,
-    durationMin: 50,
-    formats: ["Online"],
-    availableThisWeek: true,
-  },
-  {
-    id: "psy-lucia",
-    name: "Lúcia Ferreira",
-    crp: "06/456789",
-    initials: "LF",
-    avatarClass: "from-violet-400 to-purple-600",
-    specialties: ["Adolescentes", "Autoestima"],
-    primarySpecialty: "Adolescentes",
-    bio: "Atua com adolescentes e famílias em mediação de limites saudáveis e fortalecimento de autoestima. Abordagem sistêmica.",
-    price: 200,
-    durationMin: 50,
-    formats: ["Online", "Presencial"],
-    availableThisWeek: false,
-  },
-];
+/** Profissional única cadastrada no mock (demonstração). */
+export const MOCK_PSYCHOLOGIST: MockPsychologist = {
+  id: "psy-ana",
+  name: "Ana Clara Mendes",
+  crp: "06/123456",
+  initials: "AM",
+  avatarClass: "from-sky-400 to-indigo-500",
+  specialties: ["Ansiedade", "TCC"],
+  primarySpecialty: "Ansiedade e TCC",
+  bio: "Psicóloga clínica com TCC e foco em ansiedade. Atendimento online e presencial.",
+  price: 190,
+  durationMin: 50,
+  formats: ["Online", "Presencial"],
+  availableThisWeek: true,
+};
+
+export const MOCK_PSYCHOLOGISTS: MockPsychologist[] = [MOCK_PSYCHOLOGIST];
 
 export const ALL_SPECIALTY_LABELS = Array.from(
   new Set(MOCK_PSYCHOLOGISTS.flatMap((p) => p.specialties)),
@@ -143,10 +102,15 @@ export type MockAppointment = {
   durationMin: number;
   payment: "Pago" | "Pendente";
   status: MockAppointmentStatus;
+  /** RF-009: vínculo com registro financeiro / cobrança (gateway). */
+  chargeId?: string;
   reminder?: string;
   videoCallLink?: string;
   notes?: string;
 };
+
+/** Chave única do localStorage das consultas (paciente). */
+export const PORTAL_APPOINTMENTS_STORAGE_KEY = "portal_appointments_mock_v1";
 
 /** Antecedência mínima para cancelar ou remarcar (horas). */
 export const PORTAL_CANCEL_MIN_HOURS = 24;
@@ -179,113 +143,68 @@ export function formatAppointmentDatePt(isoDate: string): string {
   });
 }
 
-const psychById = (id: string) => MOCK_PSYCHOLOGISTS.find((p) => p.id === id);
+const P = MOCK_PSYCHOLOGIST;
 
 export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
   {
     id: "apt-1",
-    psychId: "psy-ana",
-    psychologist: psychById("psy-ana")?.name ?? "Ana Clara Mendes",
-    specialty: "Ansiedade e estresse",
+    psychId: P.id,
+    psychologist: P.name,
+    specialty: "Ansiedade",
     isoDate: "2026-04-20",
     time: "14:00",
     format: "Online",
-    price: 190,
-    durationMin: 50,
+    price: P.price,
+    durationMin: P.durationMin,
     payment: "Pago",
     status: "confirmada",
-    reminder: "Lembrete: 2 h antes da sessão.",
-    videoCallLink: "https://meet.exemplo.com/sessao-apt-1",
-    notes: "Sessão de acompanhamento.",
+    reminder: "Lembrete 2 h antes.",
+    videoCallLink: "https://meet.exemplo.com/sessao-1",
+    notes: "",
   },
   {
     id: "apt-2",
-    psychId: "psy-beatriz",
-    psychologist: psychById("psy-beatriz")?.name ?? "Beatriz Lima",
-    specialty: "Terapia de casal",
+    psychId: P.id,
+    psychologist: P.name,
+    specialty: "Ansiedade",
     isoDate: "2026-04-23",
-    time: "19:00",
+    time: "10:00",
     format: "Presencial",
-    price: 240,
-    durationMin: 60,
+    price: P.price,
+    durationMin: P.durationMin,
     payment: "Pendente",
     status: "agendada",
-    reminder: "Confirme o pagamento para liberar o lembrete automático.",
-    notes: "Recepção: chegar com 15 min de antecedência.",
-  },
-  {
-    id: "apt-3",
-    psychId: "psy-rafael",
-    psychologist: psychById("psy-rafael")?.name ?? "Rafael Souza",
-    specialty: "Depressão e luto",
-    isoDate: "2026-04-17",
-    time: "16:00",
-    format: "Online",
-    price: 210,
-    durationMin: 50,
-    payment: "Pago",
-    status: "em_andamento",
-    reminder: "Sessão em andamento ou iniciando em breve.",
-    videoCallLink: "https://meet.exemplo.com/sessao-apt-3",
-    notes: "Demonstração: status “em andamento”.",
-  },
-  {
-    id: "apt-4",
-    psychId: "psy-ana",
-    psychologist: psychById("psy-ana")?.name ?? "Ana Clara Mendes",
-    specialty: "Ansiedade e estresse",
-    isoDate: "2026-04-25",
-    time: "09:00",
-    format: "Online",
-    price: 190,
-    durationMin: 50,
-    payment: "Pago",
-    status: "confirmada",
-    reminder: "Lembrete: 24 h antes.",
-    videoCallLink: "https://meet.exemplo.com/sessao-apt-4",
-    notes: "Retorno agendado.",
+    chargeId: "chg_demo_apt2",
+    reminder: "Aguardando pagamento da consulta.",
+    notes: "",
   },
   {
     id: "apt-h1",
-    psychId: "psy-rafael",
-    psychologist: psychById("psy-rafael")?.name ?? "Rafael Souza",
-    specialty: "Depressão e luto",
+    psychId: P.id,
+    psychologist: P.name,
+    specialty: "Ansiedade",
     isoDate: "2026-04-05",
     time: "10:30",
     format: "Online",
-    price: 210,
-    durationMin: 50,
+    price: P.price,
+    durationMin: P.durationMin,
     payment: "Pago",
     status: "realizada",
-    notes: "Sessão concluída; exercícios de respiração combinados.",
+    notes: "Sessão concluída.",
   },
   {
     id: "apt-h2",
-    psychId: "psy-beatriz",
-    psychologist: psychById("psy-beatriz")?.name ?? "Beatriz Lima",
-    specialty: "Terapia de casal",
-    isoDate: "2026-03-30",
-    time: "18:00",
-    format: "Presencial",
-    price: 240,
-    durationMin: 60,
-    payment: "Pendente",
-    status: "cancelada",
-    notes: "Cancelada pelo paciente dentro do prazo.",
-  },
-  {
-    id: "apt-h3",
-    psychId: "psy-lucia",
-    psychologist: psychById("psy-lucia")?.name ?? "Lúcia Ferreira",
-    specialty: "Adolescentes",
-    isoDate: "2026-04-10",
+    psychId: P.id,
+    psychologist: P.name,
+    specialty: "Ansiedade",
+    isoDate: "2026-03-28",
     time: "15:00",
     format: "Online",
-    price: 200,
-    durationMin: 50,
+    price: P.price,
+    durationMin: P.durationMin,
     payment: "Pago",
-    status: "nao_compareceu",
-    notes: "Não comparecimento sem aviso prévio.",
+    status: "cancelada",
+    notes: "Cancelada pelo paciente.",
   },
 ];
 

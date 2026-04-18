@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
   MOCK_APPOINTMENTS_SEED,
+  PORTAL_APPOINTMENTS_STORAGE_KEY,
   PORTAL_CANCEL_MIN_HOURS,
   canModifyAppointment,
   formatAppointmentDatePt,
@@ -15,8 +17,7 @@ import {
   type MockAppointment,
   type MockAppointmentStatus,
 } from "@/app/lib/portal-mocks";
-
-const STORAGE_KEY = "portal_appointments_mock_v1";
+import { getChargeById, registerGatewayPaymentSuccess } from "@/app/lib/portal-payment-mock";
 
 function statusLabel(s: MockAppointmentStatus): string {
   const map: Record<MockAppointmentStatus, string> = {
@@ -46,7 +47,7 @@ type HistoryFilter = "todos" | "realizada" | "cancelada" | "falta";
 function loadStored(): MockAppointment[] {
   if (typeof window === "undefined") return MOCK_APPOINTMENTS_SEED;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(PORTAL_APPOINTMENTS_STORAGE_KEY);
     if (!raw) return MOCK_APPOINTMENTS_SEED;
     const parsed = JSON.parse(raw) as MockAppointment[];
     if (!Array.isArray(parsed) || parsed.length === 0) return MOCK_APPOINTMENTS_SEED;
@@ -67,7 +68,6 @@ export function AppointmentsBoard() {
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
-  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     setRows(loadStored());
@@ -77,9 +77,22 @@ export function AppointmentsBoard() {
   const persist = useCallback((next: MockAppointment[]) => {
     setRows(next);
     if (typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(PORTAL_APPOINTMENTS_STORAGE_KEY, JSON.stringify(next));
     }
   }, []);
+
+  const handleSimulateGatewayPayment = useCallback(
+    (chargeId: string) => {
+      const result = registerGatewayPaymentSuccess(chargeId);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Pagamento registrado. Consulta atualizada.");
+      setRows(loadStored());
+    },
+    [],
+  );
 
   const upcoming = useMemo(() => rows.filter(isAppointmentUpcoming), [rows]);
   const history = useMemo(() => rows.filter(isAppointmentHistory), [rows]);
@@ -117,16 +130,11 @@ export function AppointmentsBoard() {
     return mockSlotsForDate(rescheduleTarget.psychId, rescheduleDate);
   }, [rescheduleTarget, rescheduleDate]);
 
-  function showToast(msg: string) {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 4200);
-  }
-
   function handleCancelConfirm() {
     if (!cancelTarget) return;
     const check = canModifyAppointment(cancelTarget.isoDate, cancelTarget.time);
     if (!check.ok) {
-      showToast(check.message);
+      toast.error(check.message);
       setCancelId(null);
       return;
     }
@@ -140,14 +148,14 @@ export function AppointmentsBoard() {
     setCancelId(null);
     setMainTab("historico");
     setHistoryFilter("cancelada");
-    showToast("Consulta cancelada. Ela aparece no histórico como cancelada.");
+    toast.success("Consulta cancelada.");
   }
 
   function handleRescheduleConfirm() {
     if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) return;
     const check = canModifyAppointment(rescheduleTarget.isoDate, rescheduleTarget.time);
     if (!check.ok) {
-      showToast(check.message);
+      toast.error(check.message);
       setRescheduleId(null);
       return;
     }
@@ -166,13 +174,13 @@ export function AppointmentsBoard() {
     );
     setRescheduleId(null);
     setRescheduleTime("");
-    showToast("Consulta remarcada com sucesso (mock). Verifique a data e o horário na lista.");
+    toast.success("Consulta remarcada.");
   }
 
   function openReschedule(a: MockAppointment) {
     const check = canModifyAppointment(a.isoDate, a.time);
     if (!check.ok) {
-      showToast(check.message);
+      toast.error(check.message);
       return;
     }
     setRescheduleDate(a.isoDate);
@@ -190,15 +198,6 @@ export function AppointmentsBoard() {
 
   return (
     <div className="space-y-6">
-      {toast ? (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-xl border border-sky-200 bg-sky-950 px-4 py-3 text-sm text-sky-50 shadow-lg"
-        >
-          {toast}
-        </div>
-      ) : null}
-
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Minhas consultas</p>
         <h1 className="mt-2 text-3xl font-semibold text-slate-900">Próximas sessões e histórico</h1>
@@ -279,6 +278,7 @@ export function AppointmentsBoard() {
                 onToggleDetails={() => setExpandedId((id) => (id === a.id ? null : a.id))}
                 onCancel={() => setCancelId(a.id)}
                 onReschedule={() => openReschedule(a)}
+                onSimulateGatewayPayment={handleSimulateGatewayPayment}
               />
             ))
           )}
@@ -435,6 +435,7 @@ function AppointmentCard({
   onToggleDetails,
   onCancel,
   onReschedule,
+  onSimulateGatewayPayment,
   readOnly,
 }: {
   a: MockAppointment;
@@ -442,10 +443,18 @@ function AppointmentCard({
   onToggleDetails: () => void;
   onCancel?: () => void;
   onReschedule?: () => void;
+  onSimulateGatewayPayment?: (chargeId: string) => void;
   readOnly?: boolean;
 }) {
   const modCheck = canModifyAppointment(a.isoDate, a.time);
   const canAct = !readOnly && isAppointmentUpcoming(a) && modCheck.ok;
+  const charge = a.chargeId ? getChargeById(a.chargeId) : undefined;
+  const canSimulatePay =
+    !readOnly &&
+    a.payment === "Pendente" &&
+    charge &&
+    charge.gatewayStatus === "awaiting_payment" &&
+    onSimulateGatewayPayment;
 
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -506,6 +515,15 @@ function AppointmentCard({
             Abrir sessão online
           </a>
         ) : null}
+        {canSimulatePay ? (
+          <button
+            type="button"
+            onClick={() => onSimulateGatewayPayment!(a.chargeId!)}
+            className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+          >
+            Registrar pagamento (simular gateway)
+          </button>
+        ) : null}
         {canAct ? (
           <>
             <button
@@ -536,6 +554,25 @@ function AppointmentCard({
             {" · "}
             <span className="text-slate-500">Duração:</span> {a.durationMin} min
           </p>
+          {charge ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+              <p className="font-semibold text-slate-800">Registro financeiro (RF-009)</p>
+              <p className="mt-1 text-slate-600">
+                Cobrança: <code className="rounded bg-white px-1">{charge.id}</code> · Intent:{" "}
+                <code className="rounded bg-white px-1">{charge.gatewayIntentId}</code>
+              </p>
+              <p className="mt-1 text-slate-600">
+                Gateway: {charge.gatewayProvider} · Status:{" "}
+                <span className="font-medium">
+                  {charge.gatewayStatus === "awaiting_payment"
+                    ? "aguardando pagamento"
+                    : charge.gatewayStatus === "succeeded"
+                      ? "pago"
+                      : "falhou"}
+                </span>
+              </p>
+            </div>
+          ) : null}
           {a.notes ? (
             <p className="mt-2 text-slate-600">
               <span className="font-medium text-slate-800">Observações:</span> {a.notes}

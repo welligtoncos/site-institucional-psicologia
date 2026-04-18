@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "./components/AppShell";
+import { ToasterProvider } from "./components/ToasterProvider";
 import { siteConfig } from "./lib/site";
 import "./globals.css";
 
@@ -62,6 +63,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-slate-50 text-slate-800">
         <AppShell>{children}</AppShell>
+        <ToasterProvider />
       </body>
     </html>
   );

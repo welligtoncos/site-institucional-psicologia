@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 const STORAGE_KEY = "portal_patient_profile_mock_v1";
 
@@ -32,7 +33,6 @@ const empty: PatientProfileMock = {
 
 export function PatientProfileForm() {
   const [data, setData] = useState<PatientProfileMock>(empty);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     try {
@@ -46,8 +46,7 @@ export function PatientProfileForm() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 4000);
+    toast.success("Perfil salvo neste navegador.");
   }
 
   function field<K extends keyof PatientProfileMock>(key: K, value: string) {
@@ -177,12 +176,6 @@ export function PatientProfileForm() {
             />
           </label>
         </fieldset>
-
-        {saved ? (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
-            Dados salvos localmente (mock). Em produção serão enviados à clínica com segurança.
-          </p>
-        ) : null}
 
         <button
           type="submit"
