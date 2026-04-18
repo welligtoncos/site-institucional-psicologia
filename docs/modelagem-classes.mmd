@@ -1,0 +1,134 @@
+%% Modelagem de classes (domínio mock + sessão ao vivo) — site-institucional-psicologia
+%% Fontes: app/lib/portal-mocks.ts, portal-payment-mock.ts, live-session-shared.ts, psicologo-mocks.ts, contato/form-state.ts
+
+classDiagram
+  direction TB
+
+  class MockPsychologist {
+    +string id
+    +string name
+    +string crp
+    +number price
+    +number durationMin
+    +string specialties
+    +string formats
+  }
+
+  class MockAppointment {
+    +string id
+    +string psychId
+    +string psychologist
+    +string isoDate
+    +string time
+    +string format
+    +number price
+    +number durationMin
+    +string payment
+    +string status
+    +string patientName
+    +string chargeId
+    +string videoCallLink
+    +string reminder
+    +string notes
+  }
+
+  class MockPaymentCharge {
+    +string id
+    +string appointmentId
+    +number amountCents
+    +string currency
+    +string gatewayProvider
+    +string gatewayIntentId
+    +string gatewayStatus
+    +string createdAt
+    +string paidAt
+  }
+
+  class SharedLiveSessionState {
+    +number version
+    +string ref
+    +string phase
+    +string patientName
+    +string psychologistName
+    +string isoDate
+    +string time
+    +number durationMin
+    +string format
+    +string meetUrl
+    +number psychUnlockStartButtonAtMs
+    +number patientJoinedAtMs
+    +number startedAtMs
+    +number endedAtMs
+    +number updatedAtMs
+  }
+
+  class PsychologistAgendaAppointment {
+    +string id
+    +string patientId
+    +string patientName
+    +string isoDate
+    +string time
+    +string format
+    +string status
+    +boolean pagamentoPendente
+  }
+
+  class PsychologistProfileMock {
+    +string crp
+    +string bio
+    +number sessionPrice
+    +string photoDataUrl
+    +string specialties
+  }
+
+  class PsychologistAvailabilityMock {
+    +DaySlot weekly
+    +TimeBlock blocks
+  }
+
+  class DaySlot {
+    +number weekday
+    +boolean enabled
+    +string start
+    +string end
+  }
+
+  class TimeBlock {
+    +string id
+    +string isoDate
+    +boolean allDay
+    +string startTime
+    +string endTime
+    +string note
+  }
+
+  class AppointmentFieldValues {
+    +string name
+    +string email
+    +string phone
+    +string schedulePreference
+    +string careType
+    +string appointmentDate
+    +string appointmentTime
+    +string message
+  }
+
+  class AppointmentFieldErrors {
+    +string fieldErrorsMap
+  }
+
+  class AppointmentFormState {
+    +string status
+    +string message
+    +AppointmentFieldValues values
+    +AppointmentFieldErrors fieldErrors
+  }
+
+  MockPsychologist "1" <-- "0..*" MockAppointment : psychId
+  MockAppointment "1" --> "0..1" MockPaymentCharge : chargeId
+  PsychologistAvailabilityMock "1" *-- "*" DaySlot
+  PsychologistAvailabilityMock "1" *-- "*" TimeBlock
+  AppointmentFormState "1" *-- "1" AppointmentFieldValues
+  AppointmentFormState "1" *-- "0..1" AppointmentFieldErrors
+
+  note for SharedLiveSessionState "ref correlaciona consulta portal:id ou agenda:id sem FK tipada"

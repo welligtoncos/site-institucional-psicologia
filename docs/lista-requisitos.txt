@@ -1,0 +1,96 @@
+================================================================================
+LISTA DE REQUISITOS — Clínica Harmonia (site + portal + ERP em evolução)
+Fonte: docs/analise-requisitos.md | Versão: 1.0 | Data referência: 2026-04-17
+================================================================================
+
+REQUISITOS FUNCIONAIS — Autenticação e cadastro (backend)
+--------------------------------------------------------------------------------
+RF-001  Cadastro de paciente: nome, e-mail, telefone, senha (mín. 8 caracteres),
+        aceite explícito de termos (accept_terms obrigatoriamente verdadeiro).
+        Senha persistida como hash (bcrypt). Telefone e data de aceite persistidos.
+
+RF-002  Papéis de usuário: patient, psychologist, admin (controle de acesso e JWT).
+
+RF-003  Login com e-mail e senha; resposta com tokens de acesso e renovação.
+
+RF-004  Refresh de token para manter sessão sem novo login a cada requisição.
+
+RF-005  Perfil autenticado: endpoint que devolve dados do usuário logado (sem senha).
+        (/auth/me, proxy Next /api/portal/me)
+
+RF-006  Tratamento adequado para token inválido ou expirado (401, logout / re-login).
+
+
+REQUISITOS FUNCIONAIS — Portal do paciente (front)
+--------------------------------------------------------------------------------
+RF-007  Início do portal: saudação, próxima consulta (data, hora, psicólogo,
+        modalidade, status, valor), ação principal contextual (pagar, fluxo,
+        entrar no atendimento online).
+
+RF-008  Minhas consultas: futuras e histórico; filtros; cancelar e remarcar com
+        antecedência mínima (PORTAL_CANCEL_MIN_HOURS).
+
+RF-009  Cobrança vinculada à consulta: registro financeiro (mock) com intent id;
+        associar chargeId à consulta.
+
+RF-010  Simulação de retorno do gateway: marcar cobrança paga e atualizar consulta.
+
+RF-011  Atendimento ao vivo (demo): sala de espera; link quando psicólogo envia;
+        cronômetro só após play no painel; fases espera / ao vivo / encerrado.
+
+RF-012  Perfil / cadastro: edição de dados do paciente (demonstração). /portal/perfil
+
+RF-013  Agendar nova consulta (demonstração com slots mockados). /portal/agendar
+
+
+REQUISITOS FUNCIONAIS — Área do psicólogo (front)
+--------------------------------------------------------------------------------
+RF-014  Agenda: consultas do dia (mock), origem portal vs agenda.
+
+RF-015  Sessão online: consulta, link Meet/Zoom, abrir sala, iniciar cronômetro
+        conforme regras; encerrar e refletir conclusão na consulta (mock).
+
+RF-016  Identificar qual paciente está na sala de espera (nome + ref da consulta).
+
+RF-017  Listagens de pacientes e faturas (mocks) na área profissional.
+
+
+REGRAS DE NEGÓCIO — Sessão ao vivo (demonstração)
+--------------------------------------------------------------------------------
+RN-001  Estado compartilhado: uma chave localStorage; propagação por evento,
+        BroadcastChannel e polling curto.
+
+RN-002  Paciente e psicólogo no mesmo origin (não misturar localhost com 127.0.0.1).
+
+RN-003  Com paciente na espera e link salvo, play pode ter espera mínima
+        (PSYCH_START_MIN_WAIT_MS) antes de liberar (simulação).
+
+RN-004  Encerramento da sessão ao vivo marca consulta como realizada no mock
+        quando ref for portal:{id}.
+
+
+REQUISITOS NÃO FUNCIONAIS
+--------------------------------------------------------------------------------
+RNF-001  Segurança: senhas nunca na resposta de API; JWT; HTTPS em produção.
+
+RNF-002  Privacidade / ética: sigilo; linguagem acolhedora; LGPD como meta.
+
+RNF-003  Usabilidade: ação principal evidente no dashboard; fluxo link → sala → play.
+
+RNF-004  Manutenibilidade: domínio consultas/cobranças em portal-mocks e
+        portal-payment-mock; substituir por API real mantendo regras de produto.
+
+RNF-005  Observabilidade: mensagens claras em erro de auth; toasts em pagamento e sessão.
+
+
+RASTREABILIDADE RESUMIDA
+--------------------------------------------------------------------------------
+RF-001 a RF-006     app_backend (auth, schemas, testes)
+RF-007 a RF-013     app/components/portal/*, app/portal/*
+RF-014 a RF-017     app/components/psicologo/*, app/lib/psicologo-mocks.ts
+RF-009, RF-010      app/lib/portal-payment-mock.ts
+RF-011, RN-001 a RN-004   app/lib/live-session-shared.ts, boards de sessão
+
+
+Documento detalhado: docs/analise-requisitos.md
+Diagrama de classes (persistência): docs/diagrama-classes-banco-dados.mmd

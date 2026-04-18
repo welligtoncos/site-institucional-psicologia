@@ -1,0 +1,717 @@
+-- =============================================================================
+-- SQL manual — 2 pacientes + 1 psicóloga: fluxo completo de teleconsulta (duas vezes)
+-- =============================================================================
+-- Domínio de teste: e-mails *@fluxo.manual.test (a SEÇÃO 0 apaga só estes dados).
+--
+-- ---------------------------------------------------------------------------
+-- PASSO A PASSO — validação manual + inserção (copiar e colar no PowerShell)
+-- Abra o PowerShell na RAIZ do repositório: site-institucional-psicologia
+-- (Se estiver dentro de app_backend, use os comandos "ALT" abaixo em cada passo.)
+-- ---------------------------------------------------------------------------
+--
+-- 0) Subir só o Postgres (se ainda não estiver no ar)
+--    RAIZ: docker compose -f app_backend/docker-compose.yml up -d db
+--    ALT (pasta app_backend): docker compose up -d db
+--
+-- 1) Criar o banco de teste (rode uma vez; se já existir, pode ignorar o erro)
+--    RAIZ: docker compose -f app_backend/docker-compose.yml exec -T db psql -U app -d postgres -c "CREATE DATABASE appdb_test OWNER app;"
+--    ALT (pasta app_backend): docker compose exec -T db psql -U app -d postgres -c "CREATE DATABASE appdb_test OWNER app;"
+--
+-- 2) Migrações Alembic no appdb_test (obrigatório: tabela users antes do schema físico)
+--    cd app_backend
+--    docker compose run --rm -e DATABASE_URL=postgresql+asyncpg://app:app@db:5432/appdb_test api alembic upgrade head
+--    cd ..
+--
+-- 3) Aplicar o diagrama físico (schema)
+--    RAIZ:
+--    Get-Content -Raw docs/schema-fisico-postgresql.sql | docker compose -f app_backend/docker-compose.yml exec -T db psql -U app -d appdb_test -v ON_ERROR_STOP=1
+--    ALT (pasta app_backend):
+--    Get-Content -Raw ../docs/schema-fisico-postgresql.sql | docker compose -f docker-compose.yml exec -T db psql -U app -d appdb_test -v ON_ERROR_STOP=1
+--
+-- 4) Rodar este arquivo inteiro (limpeza + inserts + updates + selects de verificação)
+--    RAIZ:
+--    Get-Content -Raw docs/queries-manual-fluxo-completo.txt | docker compose -f app_backend/docker-compose.yml exec -T db psql -U app -d appdb_test -v ON_ERROR_STOP=1
+--    ALT (pasta app_backend):
+--    Get-Content -Raw ../docs/queries-manual-fluxo-completo.txt | docker compose -f docker-compose.yml exec -T db psql -U app -d appdb_test -v ON_ERROR_STOP=1
+--
+-- 5) Conferir sucesso: o comando acima deve terminar sem ERROR; no final espera-se
+--    painel com 2 consultas realizadas (Ana e Bruno), enums, agregações (SEÇÃO 11) e contagens (SEÇÃO 12).
+--    No DBeaver: host localhost, porta 5433, database appdb_test, user app, senha app.
+--
+-- 6) Só validar sem reinserir: copie a SEÇÃO 12 (final deste arquivo) no DBeaver/pgAdmin.
+--
+-- Dica: no psql não use caminhos Windows com .\pasta\arquivo — a sequência \q é comando do psql.
+-- =============================================================================
+--
+-- ---------------------------------------------------------------------------
+-- FUNCIONALIDADES COBERTAS (cada SEÇÃO abaixo) + saída esperada no psql
+-- ---------------------------------------------------------------------------
+-- SEÇÃO 0  Limpeza segura (respeita FKs); permite rerodar o script sem duplicar e-mail/CRP.
+-- SEÇÃO 1  Cadastro de identidade: admin + pacientes + psicólogo (user_role_enum); telefone e termos.
+-- SEÇÃO 2  Perfis 1:1 com users: pacientes (contato emergência) e psicólogos (CRP, valor/duração padrão).
+-- SEÇÃO 3  Agenda: disponibilidade semanal (dias/horários) + bloqueios (dia inteiro e janela horária).
+-- SEÇÃO 4  Paciente Ana — agendamento Online + cobrança + sessão ao vivo (início do fluxo).
+-- SEÇÃO 5  Ana — confirmação, sessão live, consulta em_andamento.
+-- SEÇÃO 6  Ana — pagamento succeeded, Pago, sessão ended, consulta realizada.
+-- SEÇÃO 7  Paciente Bruno — mesmo fluxo inicial (outro horário, mesma psicóloga Marina).
+-- SEÇÃO 8  Bruno — confirmação, sessão live, em_andamento.
+-- SEÇÃO 9  Bruno — pagamento succeeded, Pago, sessão ended, consulta realizada.
+-- SEÇÃO 10 Visão integrada (joins) + enums no catálogo pg_type.
+-- SEÇÃO 11 Agregações: status de consulta e de cobrança (esperado: 2 realizadas, 2 succeeded).
+-- SEÇÃO 12 Checklist só leitura: contagens (2 consultas, 2 cobranças, 2 sessões ao vivo).
+--
+-- Após o PASSO 4, no terminal costuma aparecer, entre outros:
+--   INSERT 0 4 (users); INSERT 0 2 (pacientes); INSERT 0 1 (psicóloga); 2 dispon.; 2 bloqueios;
+--   2 consultas; 2 cobranças; 2 sessões ao vivo; painel SEÇÃO 10 com 2 linhas (Ana e Bruno, realizadas);
+--   SEÇÃO 12: users 4, pacientes 2, psicologos 1, disponibilidade_semanal 2, bloqueios_agenda 2,
+--   consultas 2, cobrancas 2, sessoes_ao_vivo 2.
+-- ---------------------------------------------------------------------------
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 0 — Limpeza (executar antes de repetir o roteiro inteiro)
+-- Funcionalidade: reset dos dados *@fluxo.manual.test sem quebrar integridade referencial.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+DELETE FROM cobrancas c
+USING consultas co
+WHERE c.consulta_id = co.id
+  AND co.paciente_id IN (
+    SELECT p.id FROM pacientes p
+    JOIN users u ON u.id = p.usuario_id
+    WHERE u.email LIKE '%@fluxo.manual.test'
+  );
+
+DELETE FROM sessoes_ao_vivo s
+USING consultas co
+WHERE s.consulta_id = co.id
+  AND co.paciente_id IN (
+    SELECT p.id FROM pacientes p
+    JOIN users u ON u.id = p.usuario_id
+    WHERE u.email LIKE '%@fluxo.manual.test'
+  );
+
+DELETE FROM consultas co
+WHERE co.paciente_id IN (
+  SELECT p.id FROM pacientes p
+  JOIN users u ON u.id = p.usuario_id
+  WHERE u.email LIKE '%@fluxo.manual.test'
+);
+
+DELETE FROM bloqueios_agenda b
+WHERE b.psicologo_id IN (
+  SELECT ps.id FROM psicologos ps
+  JOIN users u ON u.id = ps.usuario_id
+  WHERE u.email LIKE '%@fluxo.manual.test'
+);
+
+DELETE FROM disponibilidade_semanal d
+WHERE d.psicologo_id IN (
+  SELECT ps.id FROM psicologos ps
+  JOIN users u ON u.id = ps.usuario_id
+  WHERE u.email LIKE '%@fluxo.manual.test'
+);
+
+DELETE FROM pacientes p
+USING users u
+WHERE p.usuario_id = u.id AND u.email LIKE '%@fluxo.manual.test';
+
+DELETE FROM psicologos ps
+USING users u
+WHERE ps.usuario_id = u.id AND u.email LIKE '%@fluxo.manual.test';
+
+DELETE FROM users WHERE email LIKE '%@fluxo.manual.test';
+
+COMMIT;
+
+-- Verificação: não deve sobrar usuário do roteiro
+SELECT id, email, role FROM users WHERE email LIKE '%@fluxo.manual.test';
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 1 — Usuários (admin, pacientes, psicólogo) + leitura
+-- Funcionalidade: contas e papéis (RF identidade); pacientes com terms_accepted_at preenchido.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO users (id, name, email, phone, password_hash, role, is_active, terms_accepted_at)
+VALUES
+  (
+    'f0000001-0001-0001-0001-000000000001'::uuid,
+    'Admin Fluxo',
+    'admin@fluxo.manual.test',
+    '11000000001',
+    '$2b$12$dummyhashmanualfluxoNAOusarproducao00001',
+    'admin',
+    true,
+    NULL
+  ),
+  (
+    'f0000001-0001-0001-0001-000000000002'::uuid,
+    'Ana Paciente',
+    'ana@fluxo.manual.test',
+    '11988887771',
+    '$2b$12$dummyhashmanualfluxoNAOusarproducao00002',
+    'patient',
+    true,
+    now()
+  ),
+  (
+    'f0000001-0001-0001-0001-000000000003'::uuid,
+    'Bruno Paciente',
+    'bruno@fluxo.manual.test',
+    '11988887772',
+    '$2b$12$dummyhashmanualfluxoNAOusarproducao00003',
+    'patient',
+    true,
+    now()
+  ),
+  (
+    'f0000001-0001-0001-0001-000000000004'::uuid,
+    'Marina Psicóloga',
+    'marina@fluxo.manual.test',
+    '11988887773',
+    '$2b$12$dummyhashmanualfluxoNAOusarproducao00004',
+    'psychologist',
+    true,
+    NULL
+  );
+
+COMMIT;
+
+SELECT id, name, email, role, is_active, phone, terms_accepted_at IS NOT NULL AS aceitou_termos
+FROM users
+WHERE email LIKE '%@fluxo.manual.test'
+ORDER BY email;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 2 — Perfis pacientes + psicólogo + leitura
+-- Funcionalidade: vínculo 1:1 usuario_id em pacientes e psicólogos; CRP único.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO pacientes (id, usuario_id, contato_emergencia)
+VALUES
+  (
+    'f1000001-0001-0001-0001-000000000001'::uuid,
+    'f0000001-0001-0001-0001-000000000002'::uuid,
+    'Emergência Ana: 11977776661'
+  ),
+  (
+    'f1000001-0001-0001-0001-000000000002'::uuid,
+    'f0000001-0001-0001-0001-000000000003'::uuid,
+    'Emergência Bruno: 11977776662'
+  );
+
+INSERT INTO psicologos (id, usuario_id, crp, bio, valor_sessao_padrao, duracao_minutos_padrao)
+VALUES (
+  'f2000001-0001-0001-0001-000000000001'::uuid,
+  'f0000001-0001-0001-0001-000000000004'::uuid,
+  '99/888888-RJ',
+  'Psicóloga clínica — atendimento individual (teste manual).',
+  220.00,
+  50
+);
+
+COMMIT;
+
+SELECT p.id AS paciente_id, u.name, u.email, p.contato_emergencia
+FROM pacientes p
+JOIN users u ON u.id = p.usuario_id
+WHERE u.email LIKE '%@fluxo.manual.test'
+ORDER BY u.email;
+
+SELECT ps.id AS psicologo_id, u.name, u.email, ps.crp, ps.valor_sessao_padrao, ps.duracao_minutos_padrao
+FROM psicologos ps
+JOIN users u ON u.id = ps.usuario_id
+WHERE u.email LIKE '%@fluxo.manual.test';
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 3 — Disponibilidade semanal + bloqueios (dia inteiro e janela) + leitura
+-- Funcionalidade: regras de agenda (dia_semana 0–6); bloqueio integral vs faixa horária (CHECK).
+-- ------------------------------------------------------------------------------
+-- dia_semana: 0=domingo … 6=sábado
+BEGIN;
+
+INSERT INTO disponibilidade_semanal (id, psicologo_id, dia_semana, ativo, hora_inicio, hora_fim)
+VALUES
+  (
+    'f3000001-0001-0001-0001-000000000001'::uuid,
+    'f2000001-0001-0001-0001-000000000001'::uuid,
+    1,
+    true,
+    '08:00',
+    '12:00'
+  ),
+  (
+    'f3000001-0001-0001-0001-000000000002'::uuid,
+    'f2000001-0001-0001-0001-000000000001'::uuid,
+    3,
+    true,
+    '14:00',
+    '18:00'
+  );
+
+INSERT INTO bloqueios_agenda (id, psicologo_id, data_bloqueio, dia_inteiro, hora_inicio, hora_fim, motivo)
+VALUES
+  (
+    'f4000001-0001-0001-0001-000000000001'::uuid,
+    'f2000001-0001-0001-0001-000000000001'::uuid,
+    CURRENT_DATE + 40,
+    true,
+    NULL,
+    NULL,
+    'Congresso (dia inteiro — teste)'
+  ),
+  (
+    'f4000001-0001-0001-0001-000000000002'::uuid,
+    'f2000001-0001-0001-0001-000000000001'::uuid,
+    CURRENT_DATE + 12,
+    false,
+    '12:00',
+    '13:00',
+    'Almoço reservado (janela — teste)'
+  );
+
+COMMIT;
+
+SELECT d.dia_semana, d.ativo, d.hora_inicio, d.hora_fim
+FROM disponibilidade_semanal d
+WHERE d.psicologo_id = 'f2000001-0001-0001-0001-000000000001'::uuid
+ORDER BY d.dia_semana;
+
+SELECT b.data_bloqueio, b.dia_inteiro, b.hora_inicio, b.hora_fim, b.motivo
+FROM bloqueios_agenda b
+WHERE b.psicologo_id = 'f2000001-0001-0001-0001-000000000001'::uuid
+ORDER BY b.data_bloqueio;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 4 — Paciente Ana (1/2): consulta Online agendada + cobrança + sessão ao vivo
+-- Funcionalidade: primeiro agendamento com a psicóloga; 1 cobrança e 1 sessão por consulta.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO consultas (
+  id,
+  paciente_id,
+  psicologo_id,
+  data_agendada,
+  hora_inicio,
+  duracao_minutos,
+  modalidade,
+  status,
+  situacao_pagamento,
+  valor_acordado,
+  especialidade_atendida,
+  link_videochamada_opcional,
+  observacoes
+)
+VALUES (
+  'f5000001-0001-0001-0001-000000000001'::uuid,
+  'f1000001-0001-0001-0001-000000000001'::uuid,
+  'f2000001-0001-0001-0001-000000000001'::uuid,
+  CURRENT_DATE + 14,
+  '09:00',
+  50,
+  'Online',
+  'agendada',
+  'Pendente',
+  220.00,
+  'Ansiedade',
+  NULL,
+  'Primeira sessão — roteiro manual'
+);
+
+INSERT INTO cobrancas (
+  id,
+  consulta_id,
+  valor_centavos,
+  moeda,
+  provedor_gateway,
+  id_intent_gateway,
+  status_gateway
+)
+VALUES (
+  'f6000001-0001-0001-0001-000000000001'::uuid,
+  'f5000001-0001-0001-0001-000000000001'::uuid,
+  22000,
+  'BRL',
+  'stripe_compatible_mock',
+  'pi_manual_fluxo_consulta_01',
+  'awaiting_payment'
+);
+
+INSERT INTO sessoes_ao_vivo (id, consulta_id, fase, url_meet)
+VALUES (
+  'f7000001-0001-0001-0001-000000000001'::uuid,
+  'f5000001-0001-0001-0001-000000000001'::uuid,
+  'patient_waiting',
+  'https://meet.example.com/manual-fluxo-ana-01'
+);
+
+COMMIT;
+
+SELECT
+  c.id,
+  c.data_agendada,
+  c.hora_inicio,
+  c.status,
+  c.modalidade,
+  c.situacao_pagamento,
+  c.valor_acordado,
+  cb.status_gateway,
+  cb.valor_centavos,
+  sv.fase AS sessao_fase,
+  sv.url_meet
+FROM consultas c
+LEFT JOIN cobrancas cb ON cb.consulta_id = c.id
+LEFT JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE c.id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 5 — Ana: confirmação → sessão live → consulta em_andamento
+-- Funcionalidade: transição de status e fase da teleconsulta (timestamps da sessão).
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+UPDATE consultas
+SET status = 'confirmada', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+UPDATE sessoes_ao_vivo
+SET
+  fase = 'live',
+  paciente_entrou_em = now(),
+  desbloqueio_play_em = now() + interval '30 seconds',
+  cronometro_iniciado_em = now() + interval '1 minute',
+  atualizado_em = now()
+WHERE consulta_id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+UPDATE consultas
+SET status = 'em_andamento', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+COMMIT;
+
+SELECT c.status, sv.fase, sv.paciente_entrou_em IS NOT NULL AS paciente_entrou
+FROM consultas c
+JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE c.id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 6 — Ana: pagamento aprovado + sessão encerrada + consulta realizada
+-- Funcionalidade: conciliação pagamento (gateway + situacao_pagamento) e fechamento clínico.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+UPDATE cobrancas
+SET status_gateway = 'succeeded', pago_em = now()
+WHERE consulta_id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+UPDATE consultas
+SET situacao_pagamento = 'Pago', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+UPDATE sessoes_ao_vivo
+SET
+  fase = 'ended',
+  encerrada_em = now(),
+  atualizado_em = now()
+WHERE consulta_id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+UPDATE consultas
+SET status = 'realizada', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+COMMIT;
+
+SELECT c.status, c.situacao_pagamento, cb.status_gateway, cb.pago_em, sv.fase, sv.encerrada_em
+FROM consultas c
+JOIN cobrancas cb ON cb.consulta_id = c.id
+JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE c.id = 'f5000001-0001-0001-0001-000000000001'::uuid;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 7 — Paciente Bruno (2/2): consulta Online agendada + cobrança + sessão (mesma psicóloga)
+-- Funcionalidade: segundo slot no mesmo dia (15:00) após Ana às 09:00 já realizada; índice único ok.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO consultas (
+  id,
+  paciente_id,
+  psicologo_id,
+  data_agendada,
+  hora_inicio,
+  duracao_minutos,
+  modalidade,
+  status,
+  situacao_pagamento,
+  valor_acordado,
+  especialidade_atendida,
+  link_videochamada_opcional,
+  observacoes
+)
+VALUES (
+  'f5000001-0001-0001-0001-000000000002'::uuid,
+  'f1000001-0001-0001-0001-000000000002'::uuid,
+  'f2000001-0001-0001-0001-000000000001'::uuid,
+  CURRENT_DATE + 14,
+  '15:00',
+  50,
+  'Online',
+  'agendada',
+  'Pendente',
+  220.00,
+  'Humor',
+  NULL,
+  'Segunda teleconsulta — mesmo psicólogo (Marina)'
+);
+
+INSERT INTO cobrancas (
+  id,
+  consulta_id,
+  valor_centavos,
+  moeda,
+  provedor_gateway,
+  id_intent_gateway,
+  status_gateway
+)
+VALUES (
+  'f6000001-0001-0001-0001-000000000002'::uuid,
+  'f5000001-0001-0001-0001-000000000002'::uuid,
+  22000,
+  'BRL',
+  'stripe_compatible_mock',
+  'pi_manual_fluxo_consulta_02',
+  'awaiting_payment'
+);
+
+INSERT INTO sessoes_ao_vivo (id, consulta_id, fase, url_meet)
+VALUES (
+  'f7000001-0001-0001-0001-000000000002'::uuid,
+  'f5000001-0001-0001-0001-000000000002'::uuid,
+  'patient_waiting',
+  'https://meet.example.com/manual-fluxo-bruno-02'
+);
+
+COMMIT;
+
+SELECT
+  c.id,
+  up.name AS paciente,
+  c.data_agendada,
+  c.hora_inicio,
+  c.status,
+  cb.status_gateway,
+  sv.fase AS sessao_fase
+FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users up ON up.id = p.usuario_id
+LEFT JOIN cobrancas cb ON cb.consulta_id = c.id
+LEFT JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE c.id IN (
+  'f5000001-0001-0001-0001-000000000001'::uuid,
+  'f5000001-0001-0001-0001-000000000002'::uuid
+)
+ORDER BY c.data_agendada, c.hora_inicio;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 8 — Bruno: confirmação → sessão live → consulta em_andamento
+-- Funcionalidade: mesmo fluxo operacional da SEÇÃO 5, segundo paciente.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+UPDATE consultas
+SET status = 'confirmada', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+UPDATE sessoes_ao_vivo
+SET
+  fase = 'live',
+  paciente_entrou_em = now(),
+  desbloqueio_play_em = now() + interval '30 seconds',
+  cronometro_iniciado_em = now() + interval '1 minute',
+  atualizado_em = now()
+WHERE consulta_id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+UPDATE consultas
+SET status = 'em_andamento', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+COMMIT;
+
+SELECT up.name AS paciente, c.status, sv.fase, sv.paciente_entrou_em IS NOT NULL AS paciente_entrou
+FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users up ON up.id = p.usuario_id
+JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE c.id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 9 — Bruno: pagamento aprovado + sessão encerrada + consulta realizada
+-- Funcionalidade: mesmo encerramento feliz da SEÇÃO 6, segundo paciente.
+-- ------------------------------------------------------------------------------
+BEGIN;
+
+UPDATE cobrancas
+SET status_gateway = 'succeeded', pago_em = now()
+WHERE consulta_id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+UPDATE consultas
+SET situacao_pagamento = 'Pago', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+UPDATE sessoes_ao_vivo
+SET
+  fase = 'ended',
+  encerrada_em = now(),
+  atualizado_em = now()
+WHERE consulta_id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+UPDATE consultas
+SET status = 'realizada', atualizado_em = now()
+WHERE id = 'f5000001-0001-0001-0001-000000000002'::uuid;
+
+COMMIT;
+
+SELECT up.name AS paciente, c.status, c.situacao_pagamento, cb.status_gateway, sv.fase
+FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users up ON up.id = p.usuario_id
+JOIN cobrancas cb ON cb.consulta_id = c.id
+JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE c.id IN (
+  'f5000001-0001-0001-0001-000000000001'::uuid,
+  'f5000001-0001-0001-0001-000000000002'::uuid
+)
+ORDER BY up.name;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 10 — Painel: consultas dos pacientes de teste + enums do schema físico
+-- Funcionalidade: leitura tipo “portal” (joins) + auditoria de tipos ENUM no catálogo pg_type.
+-- Esperado: 2 linhas (Ana e Bruno), mesma psicóloga, ambas realizadas / Pago / succeeded / ended.
+-- ------------------------------------------------------------------------------
+SELECT
+  c.id AS consulta_id,
+  c.data_agendada,
+  c.hora_inicio,
+  c.status::text AS status,
+  c.modalidade::text AS modalidade,
+  c.situacao_pagamento::text AS situacao_pagamento,
+  up.name AS paciente,
+  ups.name AS psicologo,
+  ps.crp,
+  cb.id AS cobranca_id,
+  cb.status_gateway::text AS gateway,
+  sv.fase::text AS sessao_fase
+FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users up ON up.id = p.usuario_id
+JOIN psicologos ps ON ps.id = c.psicologo_id
+JOIN users ups ON ups.id = ps.usuario_id
+LEFT JOIN cobrancas cb ON cb.consulta_id = c.id
+LEFT JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE up.email LIKE '%@fluxo.manual.test'
+ORDER BY c.data_agendada, c.hora_inicio;
+
+SELECT typname
+FROM pg_type
+WHERE typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+  AND typtype = 'e'
+  AND typname IN (
+    'consulta_status',
+    'consulta_modalidade',
+    'consulta_situacao_pagamento',
+    'cobranca_status_gateway',
+    'sessao_ao_vivo_fase',
+    'user_role_enum'
+  )
+ORDER BY typname;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 11 — Resumo por status (agregações simples)
+-- Funcionalidade: métricas operacionais (distribuição de status de consulta e de cobrança).
+-- Esperado: 2 x realizada; 2 x succeeded.
+-- ------------------------------------------------------------------------------
+SELECT status::text, count(*) AS qtd
+FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users u ON u.id = p.usuario_id
+WHERE u.email LIKE '%@fluxo.manual.test'
+GROUP BY status
+ORDER BY status;
+
+SELECT cb.status_gateway::text, count(*) AS qtd
+FROM cobrancas cb
+JOIN consultas co ON co.id = cb.consulta_id
+JOIN pacientes p ON p.id = co.paciente_id
+JOIN users u ON u.id = p.usuario_id
+WHERE u.email LIKE '%@fluxo.manual.test'
+GROUP BY cb.status_gateway
+ORDER BY cb.status_gateway;
+
+
+-- ------------------------------------------------------------------------------
+-- SEÇÃO 12 — Só leitura (cole no cliente SQL após o PASSO 4; não altera dados)
+-- Funcionalidade: checklist de validação manual (contagens + visão resumida das consultas).
+-- Esperado após roteiro completo: 4 users, 2 pacientes, 1 psicóloga, 2 dispon.,
+-- 2 bloqueios, 2 consultas, 2 cobranças, 2 sessões ao vivo (fluxo completo x2).
+-- ------------------------------------------------------------------------------
+SELECT 'users' AS tabela, count(*)::text AS qtd
+FROM users WHERE email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'pacientes', count(*)::text FROM pacientes p
+JOIN users u ON u.id = p.usuario_id WHERE u.email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'psicologos', count(*)::text FROM psicologos ps
+JOIN users u ON u.id = ps.usuario_id WHERE u.email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'disponibilidade_semanal', count(*)::text FROM disponibilidade_semanal d
+JOIN psicologos ps ON ps.id = d.psicologo_id
+JOIN users u ON u.id = ps.usuario_id WHERE u.email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'bloqueios_agenda', count(*)::text FROM bloqueios_agenda b
+JOIN psicologos ps ON ps.id = b.psicologo_id
+JOIN users u ON u.id = ps.usuario_id WHERE u.email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'consultas', count(*)::text FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users u ON u.id = p.usuario_id WHERE u.email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'cobrancas', count(*)::text FROM cobrancas cb
+JOIN consultas co ON co.id = cb.consulta_id
+JOIN pacientes p ON p.id = co.paciente_id
+JOIN users u ON u.id = p.usuario_id WHERE u.email LIKE '%@fluxo.manual.test'
+UNION ALL
+SELECT 'sessoes_ao_vivo', count(*)::text FROM sessoes_ao_vivo s
+JOIN consultas co ON co.id = s.consulta_id
+JOIN pacientes p ON p.id = co.paciente_id
+JOIN users u ON u.id = p.usuario_id WHERE u.email LIKE '%@fluxo.manual.test';
+
+SELECT id, email, role FROM users WHERE email LIKE '%@fluxo.manual.test' ORDER BY email;
+
+SELECT
+  c.id,
+  c.status::text AS status,
+  c.modalidade::text AS modalidade,
+  c.situacao_pagamento::text AS pagamento,
+  cb.status_gateway::text AS gateway,
+  sv.fase::text AS sessao
+FROM consultas c
+JOIN pacientes p ON p.id = c.paciente_id
+JOIN users u ON u.id = p.usuario_id
+LEFT JOIN cobrancas cb ON cb.consulta_id = c.id
+LEFT JOIN sessoes_ao_vivo sv ON sv.consulta_id = c.id
+WHERE u.email LIKE '%@fluxo.manual.test'
+ORDER BY c.data_agendada, c.hora_inicio;
