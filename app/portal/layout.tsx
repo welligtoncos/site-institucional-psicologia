@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { PortalNav } from "@/app/components/portal/PortalNav";
+
 type PortalLayoutProps = {
   children: React.ReactNode;
 };
@@ -22,34 +24,7 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
       <div className="mx-auto grid w-full max-w-6xl gap-6 px-5 py-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
         <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Menu</p>
-          <nav className="space-y-2">
-            <Link
-              href="/portal"
-              className="block rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/portal/ofertas"
-              className="block rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
-            >
-              Ofertas de consulta
-            </Link>
-            <Link
-              href="/portal/agendar"
-              className="block rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
-            >
-              Agendar consulta
-            </Link>
-            <Link
-              href="/portal/consultas"
-              className="block rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
-            >
-              Consultas agendadas
-            </Link>
-            <p className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500">Diario emocional</p>
-            <p className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500">Mensagens</p>
-          </nav>
+          <PortalNav />
         </aside>
 
         <main>{children}</main>

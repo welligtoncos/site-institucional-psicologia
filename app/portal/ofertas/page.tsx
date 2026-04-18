@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { OffersBoard } from "@/app/components/portal/OffersBoard";
 
 export const metadata: Metadata = {
-  title: "Ofertas",
-  description: "Ambiente de ofertas de consulta com preco, psicologa e especialidade.",
+  title: "Psicólogos",
+  description: "Lista de psicólogos ativos com especialidades, biografia e valor da consulta (demonstração).",
   robots: {
     index: false,
     follow: false,

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { AppointmentsBoard } from "@/app/components/portal/AppointmentsBoard";
 
 export const metadata: Metadata = {
-  title: "Consultas agendadas",
-  description: "Ambiente para verificar consultas agendadas do paciente.",
+  title: "Minhas consultas",
+  description: "Próximas sessões, histórico, cancelamento e remarcação (demonstração no navegador).",
   robots: {
     index: false,
     follow: false,

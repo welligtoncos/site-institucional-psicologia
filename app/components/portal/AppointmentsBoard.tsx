@@ -1,489 +1,551 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-type AppointmentStatus =
-  | "agendada"
-  | "confirmada"
-  | "realizada"
-  | "cancelada"
-  | "reagendada"
-  | "pendente_confirmacao";
+import {
+  MOCK_APPOINTMENTS_SEED,
+  PORTAL_CANCEL_MIN_HOURS,
+  canModifyAppointment,
+  formatAppointmentDatePt,
+  isAppointmentHistory,
+  isAppointmentUpcoming,
+  mockSlotsForDate,
+  nextDates,
+  type MockAppointment,
+  type MockAppointmentStatus,
+} from "@/app/lib/portal-mocks";
 
-type AppointmentTab = "proximas" | "historico" | "canceladas";
+const STORAGE_KEY = "portal_appointments_mock_v1";
 
-type AppointmentItem = {
-  id: string;
-  psychologist: string;
-  specialty: string;
-  date: string;
-  time: string;
-  format: "Online" | "Presencial";
-  status: AppointmentStatus;
-  payment: "Pago" | "Pendente";
-  price: number;
-  duration: string;
-  tab: AppointmentTab;
-  reminder: string;
-  videoCallLink?: string;
-  preSessionGuidance: string;
-  adminNotes: string;
-};
+function statusLabel(s: MockAppointmentStatus): string {
+  const map: Record<MockAppointmentStatus, string> = {
+    agendada: "Agendada",
+    confirmada: "Confirmada",
+    em_andamento: "Em andamento",
+    realizada: "Concluída",
+    cancelada: "Cancelada",
+    nao_compareceu: "Não compareceu",
+  };
+  return map[s];
+}
 
-const APPOINTMENTS: AppointmentItem[] = [
-  {
-    id: "c1",
-    psychologist: "Dra. Ana Souza",
-    specialty: "Ansiedade e estresse",
-    date: "20/04/2026",
-    time: "14:00",
-    format: "Online",
-    status: "confirmada",
-    payment: "Pago",
-    price: 190,
-    duration: "50 min",
-    tab: "proximas",
-    reminder: "Lembrete ativo: 2h antes da consulta.",
-    videoCallLink: "https://meet.exemplo.com/consulta-c1",
-    preSessionGuidance: "Entrar 10 minutos antes e estar em local silencioso.",
-    adminNotes: "Documento de consentimento enviado por e-mail.",
-  },
-  {
-    id: "c2",
-    psychologist: "Dra. Beatriz Lima",
-    specialty: "Terapia de casal",
-    date: "23/04/2026",
-    time: "19:00",
-    format: "Presencial",
-    status: "pendente_confirmacao",
-    payment: "Pendente",
-    price: 240,
-    duration: "60 min",
-    tab: "proximas",
-    reminder: "Lembrete sera enviado apos confirmacao.",
-    preSessionGuidance: "Chegar 15 minutos antes para recepcao.",
-    adminNotes: "Aguardando confirmacao da agenda da profissional.",
-  },
-  {
-    id: "c3",
-    psychologist: "Dr. Rafael Souza",
-    specialty: "Depressao e luto",
-    date: "05/04/2026",
-    time: "10:30",
-    format: "Online",
-    status: "realizada",
-    payment: "Pago",
-    price: 210,
-    duration: "50 min",
-    tab: "historico",
-    reminder: "Consulta concluida.",
-    videoCallLink: "https://meet.exemplo.com/consulta-c3",
-    preSessionGuidance: "Teste audio e camera antes da sessao.",
-    adminNotes: "Sessao concluida com orientacao de exercicio de respiracao.",
-  },
-  {
-    id: "c4",
-    psychologist: "Dra. Ana Souza",
-    specialty: "Ansiedade e estresse",
-    date: "12/04/2026",
-    time: "14:00",
-    format: "Online",
-    status: "reagendada",
-    payment: "Pago",
-    price: 190,
-    duration: "50 min",
-    tab: "proximas",
-    reminder: "Lembrete ativo para o novo horario.",
-    videoCallLink: "https://meet.exemplo.com/consulta-c4",
-    preSessionGuidance: "Entrar com 5 minutos de antecedencia.",
-    adminNotes: "Horario reagendado a pedido do paciente.",
-  },
-  {
-    id: "c5",
-    psychologist: "Dra. Beatriz Lima",
-    specialty: "Terapia de casal",
-    date: "30/03/2026",
-    time: "18:00",
-    format: "Presencial",
-    status: "cancelada",
-    payment: "Pendente",
-    price: 240,
-    duration: "60 min",
-    tab: "canceladas",
-    reminder: "Consulta cancelada.",
-    preSessionGuidance: "Sem orientacoes.",
-    adminNotes: "Cancelada por indisponibilidade do paciente.",
-  },
-  {
-    id: "c6",
-    psychologist: "Dr. Rafael Souza",
-    specialty: "Depressao e luto",
-    date: "15/04/2026",
-    time: "09:00",
-    format: "Online",
-    status: "agendada",
-    payment: "Pago",
-    price: 210,
-    duration: "50 min",
-    tab: "proximas",
-    reminder: "Lembrete ativo: 24h antes da consulta.",
-    videoCallLink: "https://meet.exemplo.com/consulta-c6",
-    preSessionGuidance: "Ambiente sem interrupcoes.",
-    adminNotes: "Consulta agendada com confirmacao automatica pendente.",
-  },
-];
-
-function statusPillClass(status: AppointmentStatus) {
-  if (status === "confirmada" || status === "realizada") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "pendente_confirmacao") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "cancelada") return "border-rose-200 bg-rose-50 text-rose-700";
-  if (status === "reagendada") return "border-sky-200 bg-sky-50 text-sky-700";
+function statusStyles(s: MockAppointmentStatus): string {
+  if (s === "confirmada" || s === "realizada") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (s === "em_andamento") return "border-violet-200 bg-violet-50 text-violet-800";
+  if (s === "agendada") return "border-sky-200 bg-sky-50 text-sky-800";
+  if (s === "cancelada") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (s === "nao_compareceu") return "border-amber-200 bg-amber-50 text-amber-900";
   return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
-function statusLabel(status: AppointmentStatus) {
-  if (status === "pendente_confirmacao") return "Pendente de confirmacao";
-  if (status === "agendada") return "Agendada";
-  if (status === "confirmada") return "Confirmada";
-  if (status === "realizada") return "Realizada";
-  if (status === "cancelada") return "Cancelada";
-  return "Reagendada";
+type MainTab = "proximas" | "historico";
+
+type HistoryFilter = "todos" | "realizada" | "cancelada" | "falta";
+
+function loadStored(): MockAppointment[] {
+  if (typeof window === "undefined") return MOCK_APPOINTMENTS_SEED;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return MOCK_APPOINTMENTS_SEED;
+    const parsed = JSON.parse(raw) as MockAppointment[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return MOCK_APPOINTMENTS_SEED;
+    return parsed;
+  } catch {
+    return MOCK_APPOINTMENTS_SEED;
+  }
 }
 
 export function AppointmentsBoard() {
-  const [tab, setTab] = useState<AppointmentTab>("proximas");
+  const [rows, setRows] = useState<MockAppointment[]>(MOCK_APPOINTMENTS_SEED);
+  const [hydrated, setHydrated] = useState(false);
+  const [mainTab, setMainTab] = useState<MainTab>("proximas");
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("todos");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const visibleAppointments = useMemo(
-    () => APPOINTMENTS.filter((appointment) => appointment.tab === tab),
-    [tab],
-  );
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [toast, setToast] = useState<string | null>(null);
 
-  const completedSummary = useMemo(() => {
-    const completed = APPOINTMENTS.filter((item) => item.status === "realizada");
-    const professionals = Array.from(new Set(completed.map((item) => item.psychologist)));
-    return {
-      totalCompleted: completed.length,
-      professionals,
-    };
+  useEffect(() => {
+    setRows(loadStored());
+    setHydrated(true);
   }, []);
 
-  const pendingPayments = useMemo(
-    () => APPOINTMENTS.filter((item) => item.payment === "Pendente").length,
-    [],
-  );
+  const persist = useCallback((next: MockAppointment[]) => {
+    setRows(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    }
+  }, []);
 
-  const latestCompleted = useMemo(
-    () => APPOINTMENTS.find((item) => item.status === "realizada") ?? null,
-    [],
-  );
+  const upcoming = useMemo(() => rows.filter(isAppointmentUpcoming), [rows]);
+  const history = useMemo(() => rows.filter(isAppointmentHistory), [rows]);
 
-  const nextConsultation = useMemo(
-    () => APPOINTMENTS.find((item) => item.tab === "proximas" && item.status !== "cancelada") ?? null,
-    [],
-  );
+  const historyVisible = useMemo(() => {
+    return history.filter((a) => {
+      if (historyFilter === "todos") return true;
+      if (historyFilter === "realizada") return a.status === "realizada";
+      if (historyFilter === "cancelada") return a.status === "cancelada";
+      return a.status === "nao_compareceu";
+    });
+  }, [history, historyFilter]);
+
+  const nextSlot = useMemo(() => {
+    const sorted = [...upcoming].sort((a, b) => {
+      const da = a.isoDate.localeCompare(b.isoDate);
+      if (da !== 0) return da;
+      return a.time.localeCompare(b.time);
+    });
+    return sorted[0] ?? null;
+  }, [upcoming]);
+
+  const cancelTarget = cancelId ? rows.find((r) => r.id === cancelId) : null;
+  const rescheduleTarget = rescheduleId ? rows.find((r) => r.id === rescheduleId) : null;
+
+  const rescheduleDates = useMemo(() => nextDates(new Date(), 14), []);
+  useEffect(() => {
+    if (rescheduleTarget && !rescheduleDate && rescheduleDates.length > 0) {
+      setRescheduleDate(rescheduleDates[0]!);
+    }
+  }, [rescheduleTarget, rescheduleDate, rescheduleDates]);
+
+  const rescheduleSlots = useMemo(() => {
+    if (!rescheduleTarget || !rescheduleDate) return [];
+    return mockSlotsForDate(rescheduleTarget.psychId, rescheduleDate);
+  }, [rescheduleTarget, rescheduleDate]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 4200);
+  }
+
+  function handleCancelConfirm() {
+    if (!cancelTarget) return;
+    const check = canModifyAppointment(cancelTarget.isoDate, cancelTarget.time);
+    if (!check.ok) {
+      showToast(check.message);
+      setCancelId(null);
+      return;
+    }
+    persist(
+      rows.map((r) =>
+        r.id === cancelTarget.id
+          ? { ...r, status: "cancelada" as const, reminder: undefined, videoCallLink: undefined, notes: r.notes ?? "Cancelada pelo paciente no portal (mock)." }
+          : r,
+      ),
+    );
+    setCancelId(null);
+    setMainTab("historico");
+    setHistoryFilter("cancelada");
+    showToast("Consulta cancelada. Ela aparece no histórico como cancelada.");
+  }
+
+  function handleRescheduleConfirm() {
+    if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) return;
+    const check = canModifyAppointment(rescheduleTarget.isoDate, rescheduleTarget.time);
+    if (!check.ok) {
+      showToast(check.message);
+      setRescheduleId(null);
+      return;
+    }
+    persist(
+      rows.map((r) =>
+        r.id === rescheduleTarget.id
+          ? {
+              ...r,
+              isoDate: rescheduleDate,
+              time: rescheduleTime,
+              status: "confirmada" as const,
+              reminder: "Horário atualizado. Novo lembrete será enviado (mock).",
+            }
+          : r,
+      ),
+    );
+    setRescheduleId(null);
+    setRescheduleTime("");
+    showToast("Consulta remarcada com sucesso (mock). Verifique a data e o horário na lista.");
+  }
+
+  function openReschedule(a: MockAppointment) {
+    const check = canModifyAppointment(a.isoDate, a.time);
+    if (!check.ok) {
+      showToast(check.message);
+      return;
+    }
+    setRescheduleDate(a.isoDate);
+    setRescheduleTime(a.time);
+    setRescheduleId(a.id);
+  }
+
+  if (!hydrated) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+        Carregando suas consultas…
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      {toast ? (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-xl border border-sky-200 bg-sky-950 px-4 py-3 text-sm text-sky-50 shadow-lg"
+        >
+          {toast}
+        </div>
+      ) : null}
+
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Minhas consultas</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Tudo simples, seguro e claro</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">
-          Aqui voce acompanha suas consultas, acessa a sessao online, recebe lembretes e resolve reagendamento,
-          cancelamento e pagamento com poucos cliques.
+        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Próximas sessões e histórico</h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          Veja datas, valores e status. Você pode <strong className="font-semibold text-slate-800">cancelar</strong> ou{" "}
+          <strong className="font-semibold text-slate-800">remarcar</strong> respeitando pelo menos{" "}
+          {PORTAL_CANCEL_MIN_HOURS} horas de antecedência (demonstração no navegador).
         </p>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Consultas realizadas</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{completedSummary.totalCompleted}</p>
-          <p className="mt-1 text-xs text-slate-600">
-            {completedSummary.professionals.length > 0
-              ? `Com: ${completedSummary.professionals.join(", ")}`
-              : "Sem historico ainda."}
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href="/portal/agendar"
+          className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
+        >
+          Nova consulta
+        </Link>
+        {nextSlot ? (
+          <p className="text-sm text-slate-600">
+            Próxima:{" "}
+            <span className="font-medium text-slate-900">
+              {formatAppointmentDatePt(nextSlot.isoDate)} às {nextSlot.time}
+            </span>{" "}
+            · {nextSlot.psychologist}
           </p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Pagamentos pendentes</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{pendingPayments}</p>
-          <p className="mt-1 text-xs text-slate-600">Visualize valor e comprovante quando disponivel.</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Privacidade</p>
-          <p className="mt-1 text-sm font-medium text-slate-900">Dados protegidos</p>
-          <p className="mt-1 text-xs text-slate-600">Informacoes pessoais e de saude em ambiente seguro.</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Agendamento</p>
-          <Link
-            href="/portal/agendar"
-            className="mt-2 inline-flex rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-sky-700"
-          >
-            Agendar consulta
-          </Link>
-        </article>
-      </section>
+        ) : (
+          <p className="text-sm text-slate-500">Nenhuma consulta futura na lista.</p>
+        )}
+      </div>
 
-      {latestCompleted ? (
-        <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-            Consulta realizada com sucesso
-          </p>
-          <div className="mt-3 grid gap-3 text-sm text-slate-700 md:grid-cols-2 lg:grid-cols-5">
-            <p>
-              <span className="font-semibold text-slate-900">Psicologo:</span> {latestCompleted.psychologist}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Data:</span> {latestCompleted.date}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Horario:</span> {latestCompleted.time}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Status:</span> {statusLabel(latestCompleted.status)}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Valor pago:</span> R${" "}
-              {latestCompleted.price.toFixed(2).replace(".", ",")}
-            </p>
-          </div>
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
+        <button
+          type="button"
+          onClick={() => setMainTab("proximas")}
+          className={`rounded-t-lg px-4 py-2 text-sm font-semibold transition ${
+            mainTab === "proximas"
+              ? "border border-b-0 border-slate-200 bg-white text-sky-900"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Próximas e em andamento
+          {upcoming.length > 0 ? (
+            <span className="ml-1.5 rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-800">{upcoming.length}</span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab("historico")}
+          className={`rounded-t-lg px-4 py-2 text-sm font-semibold transition ${
+            mainTab === "historico"
+              ? "border border-b-0 border-slate-200 bg-white text-sky-900"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Histórico
+          {history.length > 0 ? (
+            <span className="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{history.length}</span>
+          ) : null}
+        </button>
+      </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href="/portal/agendar"
-              className="rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-sky-700"
-            >
-              Agendar nova consulta
-            </Link>
-            <button
-              type="button"
-              onClick={() => setTab("historico")}
-              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
-              Ver historico
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
-              Baixar recibo
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
-              Solicitar declaracao
-            </button>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="grid gap-4 lg:grid-cols-3">
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Proximo passo</p>
-          {nextConsultation ? (
-            <div className="mt-2 text-sm text-slate-700">
-              <p>
-                Proxima consulta: <span className="font-semibold text-slate-900">{nextConsultation.date}</span> as{" "}
-                <span className="font-semibold text-slate-900">{nextConsultation.time}</span> com{" "}
-                <span className="font-semibold text-slate-900">{nextConsultation.psychologist}</span>.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
-                >
-                  Confirmar atendimento
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                >
-                  Remarcar
-                </button>
-              </div>
-            </div>
+      {mainTab === "proximas" ? (
+        <section className="space-y-4">
+          {upcoming.length === 0 ? (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+              Você não tem consultas futuras aqui.{" "}
+              <Link href="/portal/agendar" className="font-semibold text-sky-700 underline">
+                Agendar uma sessão
+              </Link>
+              .
+            </p>
           ) : (
-            <p className="mt-2 text-sm text-slate-600">Nenhuma consulta futura no momento.</p>
+            upcoming.map((a) => (
+              <AppointmentCard
+                key={a.id}
+                a={a}
+                expanded={expandedId === a.id}
+                onToggleDetails={() => setExpandedId((id) => (id === a.id ? null : a.id))}
+                onCancel={() => setCancelId(a.id)}
+                onReschedule={() => openReschedule(a)}
+              />
+            ))
           )}
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Avaliacao da experiencia</p>
-          <p className="mt-2 text-sm text-slate-600">Como foi sua experiencia na ultima sessao?</p>
-          <div className="mt-3 flex gap-2">
-            {[1, 2, 3, 4, 5].map((score) => (
+        </section>
+      ) : (
+        <section className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["todos", "Todos"],
+                ["realizada", "Concluídas"],
+                ["cancelada", "Canceladas"],
+                ["falta", "Faltas"],
+              ] as const
+            ).map(([id, label]) => (
               <button
-                key={score}
+                key={id}
                 type="button"
-                className="h-8 w-8 rounded-full border border-slate-300 bg-white text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                onClick={() => setHistoryFilter(id)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  historyFilter === id
+                    ? "border-sky-400 bg-sky-50 text-sky-900"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
               >
-                {score}
+                {label}
               </button>
             ))}
           </div>
-        </article>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: "proximas", label: "Proximas consultas" },
-            { id: "historico", label: "Historico" },
-            { id: "canceladas", label: "Canceladas" },
-          ].map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id as AppointmentTab)}
-              className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${
-                tab === item.id
-                  ? "border-sky-300 bg-sky-50 text-sky-800"
-                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        {visibleAppointments.map((appointment) => (
-          <article key={appointment.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">{appointment.psychologist}</h2>
-                <p className="text-sm text-slate-600">{appointment.specialty}</p>
-              </div>
-              <span
-                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${statusPillClass(appointment.status)}`}
-              >
-                {statusLabel(appointment.status)}
-              </span>
-            </div>
-
-            <dl className="mt-4 grid gap-3 text-sm text-slate-700 md:grid-cols-2 xl:grid-cols-5">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Data</dt>
-                <dd className="mt-1 font-medium text-slate-900">{appointment.date}</dd>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Horario</dt>
-                <dd className="mt-1 font-medium text-slate-900">{appointment.time}</dd>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Modalidade</dt>
-                <dd className="mt-1 font-medium text-slate-900">{appointment.format}</dd>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Pagamento</dt>
-                <dd className={`mt-1 font-medium ${appointment.payment === "Pago" ? "text-emerald-700" : "text-amber-700"}`}>
-                  {appointment.payment}
-                </dd>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Valor</dt>
-                <dd className="mt-1 font-medium text-slate-900">R$ {appointment.price.toFixed(2).replace(".", ",")}</dd>
-              </div>
-            </dl>
-
-            <p className="mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-700">
-              {appointment.reminder}
+          {historyVisible.length === 0 ? (
+            <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
+              Nenhum registro neste filtro.
             </p>
+          ) : (
+            historyVisible.map((a) => (
+              <AppointmentCard
+                key={a.id}
+                a={a}
+                expanded={expandedId === a.id}
+                onToggleDetails={() => setExpandedId((id) => (id === a.id ? null : a.id))}
+                readOnly
+              />
+            ))
+          )}
+        </section>
+      )}
 
-            <div className="mt-4 flex flex-wrap gap-2">
+      {cancelTarget ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-900">Cancelar consulta?</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              {cancelTarget.psychologist} — {formatAppointmentDatePt(cancelTarget.isoDate)} às {cancelTarget.time}.
+            </p>
+            <p className="mt-3 text-xs text-slate-500">
+              Cancelamentos com pelo menos {PORTAL_CANCEL_MIN_HOURS}h de antecedência seguem a política de reembolso
+              vigente (texto ilustrativo nesta demonstração).
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setExpandedId((previous) => (previous === appointment.id ? null : appointment.id))}
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                onClick={() => setCancelId(null)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                Ver detalhes
-              </button>
-
-              {appointment.format === "Online" ? (
-                <button
-                  type="button"
-                  className="rounded-full border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
-                >
-                  Entrar na consulta
-                </button>
-              ) : null}
-
-              <button
-                type="button"
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-              >
-                Remarcar consulta
+                Voltar
               </button>
               <button
                 type="button"
-                className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                onClick={handleCancelConfirm}
+                className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
               >
-                Cancelar consulta
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
-              >
-                Confirmar presenca
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-              >
-                Visualizar historico
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-              >
-                Baixar recibo
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-              >
-                Enviar mensagem
+                Confirmar cancelamento
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
 
-            {expandedId === appointment.id ? (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <h3 className="text-sm font-semibold text-slate-900">Detalhes da consulta</h3>
-                <dl className="mt-3 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Link da videochamada</dt>
-                    <dd className="mt-1 font-medium text-sky-700">
-                      {appointment.videoCallLink ? appointment.videoCallLink : "Nao se aplica para presencial"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Duracao</dt>
-                    <dd className="mt-1 font-medium text-slate-900">{appointment.duration}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Orientacoes antes da sessao</dt>
-                    <dd className="mt-1 font-medium text-slate-900">{appointment.preSessionGuidance}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Observacoes administrativas</dt>
-                    <dd className="mt-1 font-medium text-slate-900">{appointment.adminNotes}</dd>
-                  </div>
-                </dl>
+      {rescheduleTarget ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-900">Remarcar consulta</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {rescheduleTarget.psychologist} — disponibilidade fictícia para demonstração.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              A mesma regra de {PORTAL_CANCEL_MIN_HOURS}h se aplica à remarcação em relação ao horário atualmente
+              agendado.
+            </p>
+            <div className="mt-4">
+              <p className="text-xs font-medium uppercase text-slate-500">Nova data</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {rescheduleDates.map((iso) => (
+                  <button
+                    key={iso}
+                    type="button"
+                    onClick={() => {
+                      setRescheduleDate(iso);
+                      setRescheduleTime("");
+                    }}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs ${
+                      rescheduleDate === iso ? "border-sky-400 bg-sky-50 font-semibold text-sky-900" : "border-slate-200"
+                    }`}
+                  >
+                    {formatAppointmentDatePt(iso)}
+                  </button>
+                ))}
               </div>
-            ) : null}
-          </article>
-        ))}
-
-        {visibleAppointments.length === 0 ? (
-          <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-            Nenhuma consulta encontrada nesta aba.
-          </p>
-        ) : null}
-      </section>
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-medium uppercase text-slate-500">Horário</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {rescheduleSlots.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setRescheduleTime(t)}
+                    className={`rounded-full border px-3 py-1.5 text-sm ${
+                      rescheduleTime === t ? "border-sky-400 bg-sky-50 font-semibold text-sky-900" : "border-slate-200"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRescheduleId(null)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!rescheduleDate || !rescheduleTime}
+                onClick={handleRescheduleConfirm}
+                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+              >
+                Salvar novo horário
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function AppointmentCard({
+  a,
+  expanded,
+  onToggleDetails,
+  onCancel,
+  onReschedule,
+  readOnly,
+}: {
+  a: MockAppointment;
+  expanded: boolean;
+  onToggleDetails: () => void;
+  onCancel?: () => void;
+  onReschedule?: () => void;
+  readOnly?: boolean;
+}) {
+  const modCheck = canModifyAppointment(a.isoDate, a.time);
+  const canAct = !readOnly && isAppointmentUpcoming(a) && modCheck.ok;
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">{a.psychologist}</h2>
+          <p className="text-sm text-slate-600">{a.specialty}</p>
+        </div>
+        <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${statusStyles(a.status)}`}>
+          {statusLabel(a.status)}
+        </span>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <dt className="text-xs text-slate-500">Data</dt>
+          <dd className="font-medium text-slate-900">{formatAppointmentDatePt(a.isoDate)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Horário</dt>
+          <dd className="font-medium text-slate-900">{a.time}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Modalidade</dt>
+          <dd className="font-medium text-slate-900">{a.format}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Valor</dt>
+          <dd className="font-medium text-slate-900">R$ {a.price.toFixed(2).replace(".", ",")}</dd>
+        </div>
+      </dl>
+
+      {a.reminder ? (
+        <p className="mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">{a.reminder}</p>
+      ) : null}
+
+      {!readOnly && !modCheck.ok && isAppointmentUpcoming(a) ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {modCheck.message}
+        </p>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onToggleDetails}
+          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          {expanded ? "Ocultar detalhes" : "Detalhes"}
+        </button>
+        {a.format === "Online" && a.videoCallLink && isAppointmentUpcoming(a) ? (
+          <a
+            href={a.videoCallLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+          >
+            Abrir sessão online
+          </a>
+        ) : null}
+        {canAct ? (
+          <>
+            <button
+              type="button"
+              onClick={onReschedule}
+              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              Remarcar
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100"
+            >
+              Cancelar
+            </button>
+          </>
+        ) : null}
+      </div>
+
+      {expanded ? (
+        <div className="mt-4 border-t border-slate-100 pt-4 text-sm text-slate-700">
+          <p>
+            <span className="text-slate-500">Pagamento:</span>{" "}
+            <span className={a.payment === "Pago" ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+              {a.payment}
+            </span>
+            {" · "}
+            <span className="text-slate-500">Duração:</span> {a.durationMin} min
+          </p>
+          {a.notes ? (
+            <p className="mt-2 text-slate-600">
+              <span className="font-medium text-slate-800">Observações:</span> {a.notes}
+            </p>
+          ) : null}
+          {a.videoCallLink && a.format === "Online" ? (
+            <p className="mt-2 break-all text-xs text-sky-700">{a.videoCallLink}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
   );
 }
