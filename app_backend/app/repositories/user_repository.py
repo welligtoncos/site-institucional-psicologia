@@ -2,6 +2,7 @@
 Persistência de `User` — apenas SQLAlchemy / `AsyncSession` (sem regra de negócio).
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -30,14 +31,18 @@ class UserRepository:
         *,
         name: str,
         email: str,
+        phone: str,
         password_hash: str,
         role: UserRole = UserRole.patient,
+        terms_accepted_at: datetime | None = None,
     ) -> User:
         user = User(
             name=name.strip(),
             email=email,
+            phone=phone.strip(),
             password_hash=password_hash,
             role=role,
+            terms_accepted_at=terms_accepted_at,
         )
         self._db.add(user)
         try:

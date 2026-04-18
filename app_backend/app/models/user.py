@@ -31,6 +31,7 @@ class User(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    phone: Mapped[str] = mapped_column(String(30), nullable=False, default="")
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role_enum", native_enum=True),
@@ -38,6 +39,10 @@ class User(Base):
         default=UserRole.patient,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

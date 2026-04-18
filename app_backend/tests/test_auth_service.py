@@ -1,9 +1,9 @@
 """
 Regras de negócio de cadastro e login (`AuthService`).
 
-O repositório de usuários é mockado: testamos registro (paciente padrão, e-mail
-em minúsculas, e-mail duplicado), login (sucesso, usuário inexistente, senha errada,
-conta inativa) e renovação de token (sucesso e usuário inexistente).
+O repositório de usuários é mockado: registro RF-001 (paciente, telefone, termos),
+conflito de e-mail, login (sucesso e falhas), refresh. Validação fina de schema
+em `test_auth_schema.py`.
 """
 
 from __future__ import annotations
@@ -25,21 +25,27 @@ def _user(
     *,
     user_id=None,
     email: str = "maria@example.com",
+    phone: str = "11999998888",
     password_plain: str = "SenhaSegura123",
     role: UserRole = UserRole.patient,
     is_active: bool = True,
+    terms_accepted_at=None,
 ):
     """Monta um usuário fake (com hash real de senha) para os mocks do repositório."""
     from app.core.security import hash_password
 
     uid = user_id or uuid4()
+    if terms_accepted_at is None:
+        terms_accepted_at = datetime.now(timezone.utc)
     return SimpleNamespace(
         id=uid,
         name="Maria",
         email=email,
+        phone=phone,
         password_hash=hash_password(password_plain),
         role=role,
         is_active=is_active,
+        terms_accepted_at=terms_accepted_at,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -64,14 +70,20 @@ async def test_register_creates_patient(mock_db: AsyncMock) -> None:
         req = UserRegisterRequest(
             name="Maria",
             email="Maria@Example.com",
+            phone="11999998888",
             password="SenhaSegura123",
+            accept_terms=True,
         )
         out = await svc.register(req)
 
         repo.get_by_email.assert_awaited_once_with("maria@example.com")
         create_kw = repo.create.await_args.kwargs
         assert create_kw["role"] == UserRole.patient
+        assert create_kw["phone"] == "11999998888"
+        assert create_kw["terms_accepted_at"] is not None
         assert out.email == "maria@example.com"
+        assert out.phone == "11999998888"
+        assert out.terms_accepted_at is not None
         assert out.role.value == "patient"
 
 
@@ -88,11 +100,35 @@ async def test_register_conflict_email(mock_db: AsyncMock) -> None:
         req = UserRegisterRequest(
             name="X",
             email="maria@example.com",
+            phone="11999998888",
             password="SenhaSegura123",
+            accept_terms=True,
         )
         with pytest.raises(ConflictError, match="E-mail já cadastrado"):
             await svc.register(req)
         repo.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_register_passes_stripped_phone_to_repository(mock_db: AsyncMock) -> None:
+    """Telefone já normalizado pelo schema chega assim no create do repositório."""
+    with patch("app.services.auth_service.UserRepository") as repo_cls:
+        repo = AsyncMock()
+        repo_cls.return_value = repo
+        created = _user(role=UserRole.patient, phone="11999998888")
+        repo.get_by_email = AsyncMock(return_value=None)
+        repo.create = AsyncMock(return_value=created)
+
+        svc = AuthService(mock_db)
+        req = UserRegisterRequest(
+            name="Maria",
+            email="maria@example.com",
+            phone="  11999998888  ",
+            password="SenhaSegura123",
+            accept_terms=True,
+        )
+        await svc.register(req)
+        assert repo.create.await_args.kwargs["phone"] == "11999998888"
 
 
 @pytest.mark.asyncio

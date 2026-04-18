@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
@@ -14,10 +14,18 @@ type LoginResponse = {
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [registeredHint, setRegisteredHint] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("registered") === "1") {
+      setRegisteredHint(true);
+    }
+  }, [searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,6 +64,12 @@ export function LoginForm() {
         <h2 className="text-2xl font-semibold text-slate-900">Login do portal</h2>
         <p className="mt-1 text-sm text-slate-600">Use suas credenciais para entrar no ambiente interno.</p>
       </div>
+
+      {registeredHint ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Conta criada com sucesso. Entre com seu e-mail e senha.
+        </p>
+      ) : null}
 
       <div className="space-y-2">
         <label htmlFor="email" className="text-sm font-medium text-slate-700">

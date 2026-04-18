@@ -11,8 +11,10 @@ type MeResponse = {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   role: "patient" | "psychologist" | "admin";
   is_active: boolean;
+  terms_accepted_at?: string | null;
   created_at: string;
   detail?: string;
 };

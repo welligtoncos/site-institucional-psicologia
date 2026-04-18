@@ -2,6 +2,7 @@
 Casos de uso de autenticação: cadastro e login. Sem SQL direto — apenas `UserRepository`.
 """
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from jose import JWTError
@@ -32,18 +33,21 @@ class AuthService:
         self._users = UserRepository(db)
 
     async def register(self, data: UserRegisterRequest) -> UserResponse:
-        """E-mail único, hash bcrypt, perfil padrão paciente (`patient`)."""
+        """Cadastro de paciente (RF-001): nome, e-mail, telefone, senha e aceite de termos."""
         email_norm = str(data.email).strip().lower()
         if await self._users.get_by_email(email_norm) is not None:
             raise ConflictError("E-mail já cadastrado.")
 
         # REQ: senha armazenada de forma segura (bcrypt hash, nunca senha em texto).
         pwd_hash = hash_password(data.password)
+        accepted_at = datetime.now(timezone.utc)
         user = await self._users.create(
             name=data.name,
             email=email_norm,
+            phone=data.phone,
             password_hash=pwd_hash,
             role=UserRole.patient,
+            terms_accepted_at=accepted_at,
         )
         return UserResponse.model_validate(user)
 

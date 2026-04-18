@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
 import { LoginForm } from "@/app/components/auth/LoginForm";
 import { Container, Section } from "@/app/components/ui/SitePrimitives";
@@ -29,22 +30,25 @@ export default function LoginPage() {
 
             <div className="mt-6 rounded-2xl border border-sky-100 bg-white/80 p-4 text-sm text-slate-700 shadow-sm">
               <p className="font-semibold text-slate-900">Acesso rapido</p>
-              <p className="mt-2">
-                Ainda nao tem acesso? Cadastre um usuario na API em <code>/docs</code> pelo endpoint{" "}
-                <code>/auth/register</code>.
-              </p>
+              <p className="mt-2">Ainda nao tem conta? Cadastre-se como paciente.</p>
               <Link
-                href="http://127.0.0.1:8000/docs"
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                href="/register"
+                className="mt-3 inline-flex rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100"
               >
-                Abrir Swagger da API
+                Criar conta
               </Link>
             </div>
           </div>
 
-          <LoginForm />
+          <Suspense
+            fallback={
+              <div className="mx-auto w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-lg">
+                Carregando formulario...
+              </div>
+            }
+          >
+            <LoginForm />
+          </Suspense>
         </div>
       </Container>
     </Section>
