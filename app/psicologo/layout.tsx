@@ -29,12 +29,6 @@ export default function PsicologoLayout({ children }: LayoutProps) {
         <aside className="h-fit rounded-2xl border border-emerald-100/80 bg-white p-4 shadow-sm">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Menu</p>
           <PsicologoNav />
-          <Link
-            href="/portal"
-            className="mt-4 block rounded-xl border border-slate-100 px-3 py-2 text-xs text-slate-500 transition hover:bg-slate-50"
-          >
-            ← Portal do paciente (se aplicável)
-          </Link>
         </aside>
 
         <main className="min-w-0">{children}</main>
