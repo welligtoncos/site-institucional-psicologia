@@ -214,8 +214,12 @@ export function AppointmentsBoard() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Minhas consultas</p>
         <h1 className="mt-2 text-3xl font-semibold text-slate-900">Próximas sessões e histórico</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Veja datas, valores e status. Você pode <strong className="font-semibold text-slate-800">cancelar</strong> ou{" "}
-          <strong className="font-semibold text-slate-800">remarcar</strong> respeitando pelo menos{" "}
+          Na aba <strong className="font-semibold text-slate-800">Próximas e em andamento</strong> você vê cada consulta
+          com <strong className="font-semibold text-slate-800">profissional</strong>,{" "}
+          <strong className="font-semibold text-slate-800">data e horário</strong>,{" "}
+          <strong className="font-semibold text-slate-800">status</strong> e, em atendimentos online, o{" "}
+          <strong className="font-semibold text-slate-800">link da sessão</strong> quando estiver disponível. No
+          histórico ficam sessões concluídas, canceladas ou falta. Cancelar ou remarcar exige pelo menos{" "}
           {PORTAL_CANCEL_MIN_HOURS} horas de antecedência (demonstração no navegador).
         </p>
       </section>
@@ -273,6 +277,11 @@ export function AppointmentsBoard() {
 
       {mainTab === "proximas" ? (
         <section className="space-y-4">
+          <p className="text-xs leading-relaxed text-slate-500">
+            Inclui consultas <strong className="font-medium text-slate-700">futuras</strong> (agendada ou confirmada) e
+            sessões já marcadas como <strong className="font-medium text-slate-700">em andamento</strong>. Detalhes
+            extras ficam em &quot;Detalhes&quot;.
+          </p>
           {upcomingSorted.length === 0 ? (
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
               Você não tem consultas futuras aqui.{" "}
@@ -468,11 +477,15 @@ function AppointmentCard({
     charge.gatewayStatus === "awaiting_payment" &&
     onSimulateGatewayPayment;
 
+  const consultaTipo = a.format === "Online" ? "Consulta online" : "Consulta presencial";
+
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{a.psychologist}</h2>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Consulta</p>
+          <h2 className="mt-0.5 text-lg font-semibold text-slate-900">{consultaTipo}</h2>
+          <p className="mt-1 text-sm font-medium text-slate-800">{a.psychologist}</p>
           <p className="text-sm text-slate-600">
             {a.specialty}
             {a.psychologistCrp ? (
@@ -493,7 +506,7 @@ function AppointmentCard({
         </span>
       </div>
 
-      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <div>
           <dt className="text-xs text-slate-500">Data</dt>
           <dd className="font-medium text-slate-900">{formatAppointmentDatePt(a.isoDate)}</dd>
@@ -501,6 +514,10 @@ function AppointmentCard({
         <div>
           <dt className="text-xs text-slate-500">Horário</dt>
           <dd className="font-medium text-slate-900">{a.time}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Status</dt>
+          <dd className="font-medium text-slate-900">{statusLabel(a.status)}</dd>
         </div>
         <div>
           <dt className="text-xs text-slate-500">Modalidade</dt>
@@ -514,12 +531,13 @@ function AppointmentCard({
 
       {a.format === "Online" && isAppointmentUpcoming(a) ? (
         <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/50 px-3 py-3 text-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">Sessão online</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">Link da sessão (online)</p>
           {a.videoCallLink ? (
             <a
               href={a.videoCallLink}
               target="_blank"
               rel="noopener noreferrer"
+              aria-label={`Abrir sessão online com ${a.psychologist} em ${formatAppointmentDatePt(a.isoDate)} às ${a.time}`}
               className="mt-2 inline-flex rounded-full border border-sky-300 bg-white px-4 py-2 text-xs font-semibold text-sky-900 shadow-sm hover:bg-sky-50"
             >
               Abrir link da sessão

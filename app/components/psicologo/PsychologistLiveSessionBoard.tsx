@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   MOCK_PSYCHOLOGIST,
   formatAppointmentDatePt,
+  isPortalOnlinePaidReadyForLive,
   type MockAppointment,
 } from "@/app/lib/portal-mocks";
 import {
@@ -68,7 +69,6 @@ function buildTodaySessions(
   portal: MockAppointment[],
 ): PickableSession[] {
   const rows: PickableSession[] = [];
-  const psychId = MOCK_PSYCHOLOGIST.id;
 
   for (const a of agenda) {
     if (a.isoDate !== today || a.status === "cancelada") continue;
@@ -84,7 +84,7 @@ function buildTodaySessions(
   }
 
   for (const p of portal) {
-    if (p.psychId !== psychId || p.isoDate !== today || p.status === "cancelada") continue;
+    if (p.isoDate !== today || !isPortalOnlinePaidReadyForLive(p)) continue;
     rows.push({
       ref: `portal:${p.id}`,
       patientName: p.patientName?.trim() || `Paciente (consulta ${p.id})`,
@@ -363,7 +363,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       ref: resolvedSession.ref,
       phase: "live",
       patientName: resolvedSession.patientName,
-      psychologistName: MOCK_PSYCHOLOGIST.name,
+      psychologistName: cur?.psychologistName?.trim() || MOCK_PSYCHOLOGIST.name,
       isoDate: resolvedSession.isoDate,
       time: resolvedSession.time,
       durationMin: resolvedSession.durationMin,
@@ -476,25 +476,35 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   if (!hydrated) {
     return (
-      <div className="rounded-2xl border border-emerald-100 bg-white p-10 text-center text-sm text-slate-500">
+      <div className="rounded-2xl border border-sky-100 bg-white p-10 text-center text-sm text-slate-500">
         Carregando…
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <p className="rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-center text-[11px] leading-snug text-amber-950">
+    <div className="space-y-8">
+      <section className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-6 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Atendimento ao vivo</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Sessão com o paciente</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+          Mesmo padrão visual de <strong className="font-semibold text-slate-800">Atendimento online</strong> no portal do paciente:
+          salas do dia, link na sala de espera, paciente acompanhando e <strong className="font-semibold text-slate-800">play</strong>{" "}
+          para o cronômetro oficial.
+        </p>
+      </section>
+
+      <p className="rounded-xl border border-sky-200 bg-sky-50/95 px-3 py-2 text-center text-[11px] leading-snug text-sky-950">
         <span className="font-semibold">Demonstração:</span> use o mesmo endereço no navegador do paciente (ex.: só{" "}
-        <code className="rounded bg-amber-100/80 px-1">localhost:3000</code>, sem misturar com 127.0.0.1).
+        <code className="rounded bg-white px-1 ring-1 ring-sky-200">localhost:3000</code>, sem misturar com 127.0.0.1).
       </p>
 
       {!isRoomPage && showLiveUi && shared ? (
-        <div className="flex flex-col gap-2 rounded-2xl border border-emerald-300 bg-emerald-50/90 px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-medium text-emerald-950">Há uma sessão em andamento neste navegador.</p>
+        <div className="flex flex-col gap-2 rounded-2xl border border-sky-200 bg-sky-50/90 px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium text-sky-950">Há uma sessão em andamento neste navegador.</p>
           <Link
             href={psychologistSessionRoomPath(shared.ref)}
-            className="inline-flex shrink-0 justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="inline-flex shrink-0 justify-center rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700"
           >
             Ver sala e cronômetro
           </Link>
@@ -504,7 +514,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       {showLiveUi && isRoomPage && shared && lockedRoomRef && shared.ref !== lockedRoomRef ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="font-medium">Outra sala está com o cronômetro ativo.</p>
-          <Link href={psychologistSessionRoomPath(shared.ref)} className="mt-2 inline-block font-semibold text-emerald-800 underline">
+          <Link href={psychologistSessionRoomPath(shared.ref)} className="mt-2 inline-block font-semibold text-sky-800 underline">
             Ir para {describeLiveSessionRef(shared.ref)}
           </Link>
         </div>
@@ -512,7 +522,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
       {showPatientInWaitingBanner && shared ? (
         <div
-          className="relative overflow-hidden rounded-2xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-600 to-teal-700 p-4 text-white shadow-lg shadow-emerald-900/20 sm:p-5"
+          className="relative overflow-hidden rounded-2xl border-2 border-sky-300 bg-gradient-to-r from-sky-600 to-indigo-700 p-4 text-white shadow-lg shadow-sky-900/20 sm:p-5"
           role="status"
           aria-live="polite"
         >
@@ -526,10 +536,10 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                 </span>
               </span>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-100">Paciente na sala de espera</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-100">Paciente na sala de espera</p>
                 <p className="mt-0.5 truncate text-lg font-bold tracking-tight">{shared.patientName}</p>
-                <p className="mt-0.5 text-xs text-emerald-100/95">{describeLiveSessionRef(shared.ref)}</p>
-                <p className="mt-1 text-sm text-emerald-50">
+                <p className="mt-0.5 text-xs text-sky-100/95">{describeLiveSessionRef(shared.ref)}</p>
+                <p className="mt-1 text-sm text-sky-50">
                   {waitingSinceLabel} · {formatAppointmentDatePt(shared.isoDate)} · {shared.time} · {shared.format}
                 </p>
               </div>
@@ -538,7 +548,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               {!patientWaitingSameRef ? (
                 <Link
                   href={psychologistSessionRoomPath(shared.ref)}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-900 shadow-md hover:bg-emerald-50"
+                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-900 shadow-md hover:bg-sky-50"
                 >
                   Abrir painel da sala
                 </Link>
@@ -549,7 +559,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               ) : (
                 <Link
                   href={psychologistSessionRoomPath(shared.ref)}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-900 shadow-md hover:bg-emerald-50"
+                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-900 shadow-md hover:bg-sky-50"
                 >
                   Ir para o painel desta sala
                 </Link>
@@ -565,7 +575,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
             <div className="mb-4">
               <Link
                 href="/psicologo/sessao"
-                className="inline-flex text-sm font-semibold text-emerald-800 hover:underline"
+                className="inline-flex text-sm font-semibold text-sky-800 hover:underline"
               >
                 ← Voltar às salas de hoje
               </Link>
@@ -591,7 +601,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           <button
             type="button"
             onClick={handleClearEnded}
-            className="mt-6 rounded-full bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="mt-6 rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white hover:bg-sky-700"
           >
             Limpar e preparar nova sessão
           </button>
@@ -605,7 +615,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               <p className="text-sm text-slate-600">Não há consultas mockadas para hoje ({today}).</p>
               <p className="mt-2 text-xs text-slate-500">
                 Consulte a{" "}
-                <Link href="/psicologo/agenda" className="font-semibold text-emerald-800 underline">
+                <Link href="/psicologo/agenda" className="font-semibold text-sky-800 underline">
                   agenda
                 </Link>
                 .
@@ -615,34 +625,31 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
           {!isRoomPage && (pickableToday.length > 0 || shared?.phase === "patient_waiting") ? (
             <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <header className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-emerald-50/30 px-5 py-5 sm:px-6">
-                <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Salas de hoje</h1>
+              <header className="border-b border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Salas de hoje</p>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Escolha uma sala</h2>
                 <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-                  Abra uma sala para enviar o link da videochamada, ver quando o paciente entra no portal e iniciar o cronômetro do
-                  atendimento.
+                  Cada card é um horário de hoje — mesmo padrão de cards de{" "}
+                  <strong className="font-semibold text-slate-800">/portal/atendimento</strong>. Quando o paciente entrar no portal, o
+                  card destaca a fila.
                 </p>
               </header>
               <div className="px-5 py-6 sm:px-6">
-                <h2 className="text-base font-semibold text-slate-900">Salas disponíveis hoje</h2>
-                <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-600">
-                  Cada card é uma sala virtual ligada a um horário de hoje. Escolha a sala do atendimento — quando o paciente entrar
-                  pelo portal, o card mostra que ele está na fila.
-                </p>
-                <div className="mt-5 grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Salas de atendimento disponíveis hoje">
+                <div className="mt-1 grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Salas de atendimento disponíveis hoje">
                   {roomCards.map((s, idx) => {
                     const patientInThis = shared?.phase === "patient_waiting" && shared.ref === s.ref;
                     return (
                       <Link
                         key={s.ref}
                         href={psychologistSessionRoomPath(s.ref)}
-                        className={`flex min-h-[200px] flex-col rounded-2xl border-2 p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                        className={`flex min-h-[200px] flex-col rounded-2xl border-2 p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
                           patientInThis
-                            ? "border-emerald-500 bg-emerald-50/80 shadow-md ring-2 ring-amber-400 ring-offset-2 ring-offset-white"
-                            : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-slate-50/90"
+                            ? "border-sky-500 bg-sky-50/80 shadow-md ring-2 ring-amber-400 ring-offset-2 ring-offset-white"
+                            : "border-slate-200 bg-white hover:border-sky-300 hover:bg-slate-50/90"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-800">Sala {idx + 1}</span>
+                          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-800">Sala {idx + 1}</span>
                           {patientInThis ? (
                             <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
                               Paciente na sala
@@ -659,7 +666,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                           {s.format} · {s.sourceLabel}
                         </p>
                         <div className="mt-auto border-t border-slate-200/80 pt-4">
-                          <p className="text-xs font-semibold text-emerald-800">Abrir painel desta sala →</p>
+                          <p className="text-xs font-semibold text-sky-800">Abrir painel desta sala →</p>
                         </div>
                       </Link>
                     );
@@ -674,7 +681,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               <div className="mb-2">
                 <Link
                   href="/psicologo/sessao"
-                  className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-800 hover:underline"
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-sky-800 hover:underline"
                 >
                   ← Voltar às salas de hoje
                 </Link>
@@ -687,7 +694,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                   </p>
                   <Link
                     href="/psicologo/sessao"
-                    className="mt-5 inline-flex rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                    className="mt-5 inline-flex rounded-full bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"
                   >
                     Ver salas disponíveis
                   </Link>
@@ -695,9 +702,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               ) : (
                 <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="px-5 py-6 sm:px-6">
-                  <div className="overflow-hidden rounded-2xl border-2 border-emerald-200 bg-gradient-to-b from-emerald-50/50 via-white to-white shadow-inner">
-                    <div className="border-b border-emerald-100/90 bg-emerald-600/5 px-5 py-4 sm:px-6">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-800">Nesta sala</p>
+                  <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-sky-50/50 via-white to-white shadow-inner">
+                    <div className="border-b border-sky-100/90 bg-sky-600/5 px-5 py-4 sm:px-6">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-800">Nesta sala</p>
                       <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
                         <div>
                           <p className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
@@ -727,7 +734,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                       <ol className="space-y-10">
                         <li className="flex gap-4">
                           <span
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white shadow-sm ring-4 ring-white"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-sm font-bold text-white shadow-sm ring-4 ring-white"
                             aria-hidden
                           >
                             1
@@ -750,14 +757,14 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                               placeholder="https://meet.google.com/..."
                               value={meetDraft}
                               onChange={(e) => setMeetDraft(e.target.value)}
-                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
                             />
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
                                 onClick={handleSaveMeetLink}
                                 disabled={!selectedRef}
-                                className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-full bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 Salvar link (paciente vê)
                               </button>
@@ -793,8 +800,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                             <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm">
                               {waitingRoomIsOpen && shared ? (
                                 <p className="text-slate-800">
-                                  <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800">
-                                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" aria-hidden />
+                                  <span className="inline-flex items-center gap-1.5 font-semibold text-sky-800">
+                                    <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" aria-hidden />
                                     Alguém na sala de espera
                                   </span>
                                   {" — "}
@@ -818,7 +825,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
                         <li className="flex gap-4">
                           <span
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white shadow-sm ring-4 ring-white"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-sm font-bold text-white shadow-sm ring-4 ring-white"
                             aria-hidden
                           >
                             3
@@ -833,7 +840,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                               <div
                                 className={`rounded-xl border px-4 py-3 text-sm ${
                                   timeStatus.tone === "now"
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                                    ? "border-sky-200 bg-sky-50 text-sky-950"
                                     : timeStatus.tone === "soon"
                                       ? "border-amber-200 bg-amber-50 text-amber-950"
                                       : timeStatus.tone === "late"
@@ -847,7 +854,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                             ) : null}
 
                             {patientWaitingSameRef && shared ? (
-                              <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+                              <div className="rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-sm text-sky-950">
                                 {!shared.meetUrl?.trim() ? (
                                   <p className="font-medium">Salve o link no passo 1 para o paciente entrar na mesma sala.</p>
                                 ) : (
@@ -861,7 +868,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                                 type="checkbox"
                                 checked={demoUnlock}
                                 onChange={(e) => setDemoUnlock(e.target.checked)}
-                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                               />
                               Sem paciente na fila: permitir iniciar fora do horário da agenda (demo)
                             </label>
@@ -871,7 +878,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                               disabled={!canStartPrep}
                               onClick={handleStart}
                               aria-label="Iniciar cronômetro da sessão"
-                              className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-sky-600 px-6 py-4 text-sm font-semibold text-white shadow-lg shadow-sky-900/15 transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <span className="text-lg leading-none" aria-hidden>
                                 ▶
@@ -901,7 +908,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                               <button
                                 type="button"
                                 onClick={() => void Notification.requestPermission()}
-                                className="text-xs font-semibold text-emerald-800 underline hover:text-emerald-950"
+                                className="text-xs font-semibold text-sky-800 underline hover:text-sky-950"
                               >
                                 Pedir permissão para alertas do navegador
                               </button>
@@ -929,9 +936,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       ) : null}
 
       {showLiveUi && shared && isRoomPage && lockedRoomRef && shared.ref === lockedRoomRef ? (
-        <div className="overflow-hidden rounded-2xl border-2 border-emerald-200 bg-gradient-to-b from-white to-emerald-50/40 shadow-xl">
-          <div className="border-b border-emerald-100 bg-emerald-50/80 px-6 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-900">Em andamento · sincronizado</p>
+        <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-white to-sky-50/40 shadow-xl">
+          <div className="border-b border-sky-100 bg-sky-50/80 px-6 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-900">Em andamento · sincronizado</p>
             <p className="mt-1 text-lg font-semibold text-slate-900">{shared.patientName}</p>
             <p className="text-xs text-slate-600">
               Previsto: {shared.time} · {shared.format} · {shared.durationMin} min
@@ -942,7 +949,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                 href={shared.meetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-block text-sm font-semibold text-emerald-800 underline"
+                className="mt-2 inline-block text-sm font-semibold text-sky-800 underline"
               >
                 Abrir sala de videochamada
               </a>
@@ -955,12 +962,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
           <div className="flex flex-col items-center px-6 py-10">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tempo decorrido</p>
-            <p className="mt-4 font-mono text-6xl font-bold tabular-nums tracking-tight text-emerald-900 sm:text-7xl">
+            <p className="mt-4 font-mono text-6xl font-bold tabular-nums tracking-tight text-sky-900 sm:text-7xl">
               {formatElapsed(elapsedMs)}
             </p>
             <div className="mt-8 h-3 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
               <div
-                className="h-full rounded-full bg-emerald-500 transition-[width] duration-1000 ease-linear"
+                className="h-full rounded-full bg-sky-500 transition-[width] duration-1000 ease-linear"
                 style={{ width: `${progressPct}%` }}
               />
             </div>
@@ -983,8 +990,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
       <p className="text-center text-xs text-slate-500">
         Estado sincronizado entre abas neste navegador.{" "}
-        <Link href="/psicologo/agenda" className="font-medium text-emerald-800 underline">
+        <Link href="/psicologo/agenda" className="font-medium text-sky-800 underline">
           Ver agenda
+        </Link>
+        {" · "}
+        <Link href="/portal/atendimento" className="font-medium text-sky-800 underline">
+          Atendimento no portal do paciente
         </Link>
       </p>
     </div>

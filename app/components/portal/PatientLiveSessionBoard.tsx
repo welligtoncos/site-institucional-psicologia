@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { MOCK_PSYCHOLOGIST, formatAppointmentDatePt, type MockAppointment } from "@/app/lib/portal-mocks";
+import {
+  formatAppointmentDatePt,
+  isPortalOnlinePaidReadyForLive,
+  type MockAppointment,
+  type MockAppointmentStatus,
+} from "@/app/lib/portal-mocks";
 import { getPatientAppointments } from "@/app/lib/portal-payment-mock";
 import {
   clearSharedLiveSession,
@@ -28,6 +33,21 @@ function formatElapsed(ms: number): string {
 
 function portalRef(id: string): string {
   return `portal:${id}`;
+}
+
+function statusShortLabel(s: MockAppointmentStatus): string {
+  if (s === "realizada") return "Concluída";
+  if (s === "agendada") return "Agendada";
+  if (s === "confirmada") return "Confirmada";
+  if (s === "cancelada") return "Cancelada";
+  if (s === "em_andamento") return "Em andamento";
+  if (s === "nao_compareceu") return "Não compareceu";
+  return s;
+}
+
+function isEligibleForLiveSession(a: MockAppointment, todayIsoDate: string): boolean {
+  if (a.isoDate < todayIsoDate) return false;
+  return isPortalOnlinePaidReadyForLive(a);
 }
 
 export function PatientLiveSessionBoard() {
@@ -65,16 +85,10 @@ export function PatientLiveSessionBoard() {
     };
   }, [refresh]);
 
-  /** Consultas futuras ou hoje — o seed pode não ter “hoje”; assim o demo continua utilizável. */
+  /** Consultas online pagas e confirmadas (ou em andamento), qualquer profissional — alinhado ao portal real (UUID no psychId). */
   const eligibleSessions = useMemo(() => {
     return appointments
-      .filter(
-        (a) =>
-          a.psychId === MOCK_PSYCHOLOGIST.id &&
-          a.status !== "cancelada" &&
-          a.status !== "realizada" &&
-          a.isoDate >= today,
-      )
+      .filter((a) => isEligibleForLiveSession(a, today))
       .sort((a, b) => {
         const d = a.isoDate.localeCompare(b.isoDate);
         if (d !== 0) return d;
@@ -94,17 +108,19 @@ export function PatientLiveSessionBoard() {
       return;
     }
     const pendingMeet = getPendingMeetUrl(ref);
+    const meetFromAppointment = apt.videoCallLink?.trim();
+    const meetUrl = pendingMeet || meetFromAppointment || undefined;
     const next: SharedLiveSessionState = {
       version: 1,
       ref,
       phase: "patient_waiting",
       patientName: apt.patientName?.trim() || `Paciente (consulta ${apt.id})`,
-      psychologistName: MOCK_PSYCHOLOGIST.name,
+      psychologistName: apt.psychologist,
       isoDate: apt.isoDate,
       time: apt.time,
       durationMin: apt.durationMin,
       format: apt.format,
-      meetUrl: pendingMeet,
+      meetUrl,
       patientJoinedAtMs: Date.now(),
       updatedAtMs: Date.now(),
     };
@@ -146,23 +162,44 @@ export function PatientLiveSessionBoard() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Atendimento ao vivo</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Entrar no atendimento</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Primeiro você <strong className="font-semibold text-slate-800">aguarda o link</strong> que o psicólogo envia pelo painel.
-          Quando o link aparecer aqui, é sinal de que <strong className="font-semibold text-slate-800">ele está pronto na sala</strong>.
-          Você entra na Meet/Zoom; quando ele apertar <strong className="font-semibold text-slate-800">play</strong>, esta página passa
-          para <strong className="font-semibold text-slate-800">sessão iniciada</strong> com o mesmo cronômetro. Só a sala de espera não
-          liga o tempo.
+          Aparecem aqui só consultas <strong className="font-semibold text-slate-800">online</strong>, já{" "}
+          <strong className="font-semibold text-slate-800">pagas</strong> e com status{" "}
+          <strong className="font-semibold text-slate-800">confirmada</strong> ou{" "}
+          <strong className="font-semibold text-slate-800">em andamento</strong> (hoje ou data futura). Primeiro você{" "}
+          <strong className="font-semibold text-slate-800">aguarda o link</strong> que o psicólogo envia pelo painel; quando o link
+          aparecer aqui, o profissional está pronto na sala. Depois do <strong className="font-semibold text-slate-800">play</strong>{" "}
+          no painel dele, esta página mostra a sessão com o cronômetro.
         </p>
       </section>
 
       {eligibleSessions.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm text-slate-600">Não há consultas futuras no portal (demonstração).</p>
-          <Link href="/portal/consultas" className="mt-3 inline-block text-sm font-semibold text-sky-700 underline">
-            Ver consultas
-          </Link>
+          <p className="text-sm text-slate-700">
+            Nenhuma consulta <strong className="font-semibold text-slate-900">online</strong>,{" "}
+            <strong className="font-semibold text-slate-900">paga</strong> e{" "}
+            <strong className="font-semibold text-slate-900">confirmada</strong> (ou em andamento) para hoje ou datas futuras.
+          </p>
+          <p className="mt-3 text-xs leading-relaxed text-slate-500">
+            Conclua o pagamento em <strong className="font-medium text-slate-700">Minhas consultas</strong> ou no fluxo de agendamento;
+            atendimentos presenciais não entram nesta sala virtual.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <Link
+              href="/portal/consultas"
+              className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900 hover:bg-sky-100"
+            >
+              Minhas consultas
+            </Link>
+            <Link
+              href="/portal/agendar"
+              className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700"
+            >
+              Agendar consulta
+            </Link>
+          </div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {eligibleSessions.map((apt) => {
             const ref = portalRef(apt.id);
             const isThis = shared?.ref === ref;
@@ -173,236 +210,269 @@ export function PatientLiveSessionBoard() {
                 key={apt.id}
                 className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
               >
-                <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-4">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {formatAppointmentDatePt(apt.isoDate)} · {apt.time}
-                    {apt.isoDate === today ? (
-                      <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-900">
-                        Hoje
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="text-xs text-slate-600">
-                    {MOCK_PSYCHOLOGIST.name} · {apt.format} ·{" "}
-                    {apt.status === "realizada"
-                      ? "Concluída"
-                      : apt.status === "agendada"
-                        ? "Agendada"
-                        : apt.status === "confirmada"
-                          ? "Confirmada"
-                          : apt.status === "cancelada"
-                            ? "Cancelada"
-                            : apt.status}
-                  </p>
-                </div>
-
-                <div className="p-5">
-                  {!isThis || !phase ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-slate-600">
-                        Na hora do atendimento, entre na sala de espera: você aguarda o link do psicólogo, vê quando a sala está pronta e,
-                        após o play no painel dele, esta página mostra a sessão iniciada com o cronômetro.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => handleEnterWaiting(apt)}
-                        disabled={Boolean(shared && shared.phase !== "ended" && shared.ref !== ref)}
-                        className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-sky-900/10 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Entrar na sala de espera
-                      </button>
-                      {shared && shared.phase !== "ended" && shared.ref !== ref ? (
-                        <p className="text-xs text-amber-800">
-                          Outra consulta está em uso na demonstração. Finalize-a antes.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {isThis && phase === "patient_waiting" && shared ? (
-                    <div className="space-y-4">
-                      <div className="overflow-hidden rounded-2xl border-2 border-emerald-400 bg-gradient-to-br from-emerald-50 via-white to-teal-50/80 px-5 py-6 text-center shadow-sm">
-                        <div
-                          className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-900/25"
-                          aria-hidden
-                        >
-                          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                        <p className="mt-4 text-lg font-bold tracking-tight text-emerald-950">Você entrou na sala</p>
-                        <p className="mt-1 text-sm leading-relaxed text-emerald-900/90">
-                          Sala de atendimento virtual · com <strong className="font-semibold">{shared.psychologistName}</strong>
-                        </p>
-                        <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs leading-relaxed text-emerald-900/85 ring-1 ring-emerald-100">
-                          Abaixo, acompanhe o passo a passo até o início oficial da sessão (quando o profissional der play no
-                          painel dele).
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-6 text-center">
-                      <div className="mx-auto mb-3 flex h-14 w-14 animate-pulse items-center justify-center rounded-full bg-amber-200 text-2xl">
-                        ◉
-                      </div>
-                      <p className="font-semibold text-amber-950">Sala de espera</p>
-                      <p className="sr-only">Estado do fluxo: aguardando link, profissional pronto ou sessão iniciada.</p>
-                      <div
-                        className="mx-auto mt-4 grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-amber-300/70 bg-white/70 p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-amber-900/70 sm:text-[11px]"
-                        role="tablist"
-                        aria-label="Progresso do atendimento"
-                      >
-                        <span
-                          className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                            !shared.meetUrl?.trim() ? "bg-amber-200 text-amber-950 shadow-sm" : "text-amber-800/75"
-                          }`}
-                        >
-                          1 · Aguardando o link
-                        </span>
-                        <span
-                          className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                            shared.meetUrl?.trim() ? "bg-amber-200 text-amber-950 shadow-sm" : "opacity-55"
-                          }`}
-                        >
-                          2 · Profissional pronto
-                        </span>
-                        <span className="rounded-lg px-1 py-2.5 opacity-50 sm:px-2">3 · Sessão iniciada</span>
-                      </div>
-                      <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-amber-900/95">
-                        <strong className="text-amber-950">Só esta espera não liga o cronômetro.</strong>{" "}
-                        {!shared.meetUrl?.trim() ? (
-                          <>
-                            Aguarde <strong>{shared.psychologistName}</strong> enviar o link pelo painel — quando ele aparecer aqui, você
-                            sabe que o profissional está pronto na sala.
-                          </>
-                        ) : (
-                          <>
-                            <strong>{shared.psychologistName}</strong> já enviou o link: use-o para entrar na Meet/Zoom. Quando o
-                            profissional <strong className="text-amber-950">der play no painel</strong>, esta página passa para a etapa{" "}
-                            <strong className="text-amber-950">sessão iniciada</strong> com o tempo oficial.
-                          </>
-                        )}
-                      </p>
-                      {shared.meetUrl?.trim() ? (
-                        <div className="mt-5 rounded-xl border border-amber-300/80 bg-white px-4 py-4 text-left shadow-sm">
-                          <p className="text-xs font-semibold text-emerald-900">
-                            Link recebido — você pode ver que o profissional está pronto na sala (demonstração).
+                <div className="px-5 py-6 sm:px-6">
+                  <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-sky-50/50 via-white to-white shadow-inner">
+                    <div className="border-b border-sky-100/90 bg-sky-600/5 px-5 py-4 sm:px-6">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-800">Nesta sala</p>
+                      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                            {formatAppointmentDatePt(apt.isoDate)} · {apt.time}
+                            {apt.isoDate === today ? (
+                              <span className="ml-2 align-middle rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900">
+                                Hoje
+                              </span>
+                            ) : null}
                           </p>
-                          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-amber-900">Link da videochamada</p>
-                          <p className="mt-2 break-all font-mono text-xs text-slate-800">{shared.meetUrl}</p>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <a
-                              href={shared.meetUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700"
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{apt.psychologist}</p>
+                          <p className="mt-0.5 text-xs text-slate-600">
+                            {apt.psychologistCrp ? <>CRP {apt.psychologistCrp} · </> : null}
+                            {apt.format} · {statusShortLabel(apt.status)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-900">
+                            Pago · pronto para sala
+                          </span>
+                          {apt.videoCallLink?.trim() ? (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-900">
+                              Link da consulta disponível
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs leading-relaxed text-slate-600">
+                        Mesmo layout da sala do psicólogo em <strong className="font-medium text-slate-800">/psicologo/sessao</strong>:
+                        aguarde o link, use a videochamada e acompanhe o cronômetro após o play.
+                      </p>
+                    </div>
+
+                    <div className="px-5 py-6 sm:px-6">
+                      {!isThis || !phase ? (
+                        <div className="space-y-3">
+                          <p className="text-sm leading-relaxed text-slate-600">
+                            Quando for a hora, entre na sala de espera. Você acompanha os passos abaixo (como no painel do
+                            profissional), até o link aparecer e a sessão iniciar com o cronômetro.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => handleEnterWaiting(apt)}
+                            disabled={Boolean(shared && shared.phase !== "ended" && shared.ref !== ref)}
+                            className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-sky-900/10 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Entrar na sala de espera
+                          </button>
+                          {shared && shared.phase !== "ended" && shared.ref !== ref ? (
+                            <p className="text-xs text-amber-800">
+                              Outra consulta está em uso na demonstração. Finalize-a antes.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {isThis && phase === "patient_waiting" && shared ? (
+                        <div className="space-y-6">
+                          <div className="overflow-hidden rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-slate-50/80 px-5 py-6 text-center shadow-sm">
+                            <div
+                              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-600 text-white shadow-lg shadow-sky-900/20"
+                              aria-hidden
                             >
-                              Abrir na nova aba
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void navigator.clipboard.writeText(shared.meetUrl!).then(() =>
-                                  toast.success("Link copiado."),
-                                );
-                              }}
-                              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <p className="mt-4 text-lg font-bold tracking-tight text-slate-900">Você entrou na sala</p>
+                            <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                              Sala virtual · <strong className="font-semibold text-slate-800">{shared.psychologistName}</strong>
+                            </p>
+                            <p className="mt-3 rounded-lg border border-sky-100 bg-white/90 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                              Abaixo, o mesmo fluxo em etapas visto pelo psicólogo: link → presença na fila → sessão com tempo
+                              oficial.
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-6 text-center">
+                            <div className="mx-auto mb-3 flex h-14 w-14 animate-pulse items-center justify-center rounded-full bg-sky-200 text-2xl text-sky-900">
+                              ◉
+                            </div>
+                            <p className="font-semibold text-slate-900">Sala de espera</p>
+                            <p className="sr-only">Estado do fluxo: aguardando link, profissional pronto ou sessão iniciada.</p>
+                            <div
+                              className="mx-auto mt-4 grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-600 sm:text-[11px]"
+                              role="tablist"
+                              aria-label="Progresso do atendimento"
                             >
-                              Copiar
-                            </button>
+                              <span
+                                className={`rounded-lg px-1 py-2.5 sm:px-2 ${
+                                  !shared.meetUrl?.trim()
+                                    ? "bg-sky-200 text-sky-950 shadow-sm"
+                                    : "text-slate-500"
+                                }`}
+                              >
+                                1 · Aguardando o link
+                              </span>
+                              <span
+                                className={`rounded-lg px-1 py-2.5 sm:px-2 ${
+                                  shared.meetUrl?.trim() ? "bg-sky-200 text-sky-950 shadow-sm" : "opacity-55"
+                                }`}
+                              >
+                                2 · Profissional pronto
+                              </span>
+                              <span className="rounded-lg px-1 py-2.5 opacity-50 sm:px-2">3 · Sessão iniciada</span>
+                            </div>
+                            <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-slate-700">
+                              <strong className="text-slate-900">Só esta espera não liga o cronômetro.</strong>{" "}
+                              {!shared.meetUrl?.trim() ? (
+                                <>
+                                  Aguarde <strong>{shared.psychologistName}</strong> enviar o link — quando aparecer aqui, o
+                                  profissional está pronto na sala.
+                                </>
+                              ) : (
+                                <>
+                                  <strong>{shared.psychologistName}</strong> já enviou o link. Abra a Meet/Zoom; quando o
+                                  profissional <strong className="text-slate-900">der play no painel</strong>, esta página mostra o
+                                  tempo oficial da sessão.
+                                </>
+                              )}
+                            </p>
+                            {shared.meetUrl?.trim() ? (
+                              <div className="mt-5 rounded-xl border border-sky-200 bg-white px-4 py-4 text-left shadow-sm">
+                                <p className="text-xs font-semibold text-sky-900">
+                                  Link recebido — o profissional está pronto na sala (demonstração).
+                                </p>
+                                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                  Link da videochamada
+                                </p>
+                                <p className="mt-2 break-all font-mono text-xs text-slate-800">{shared.meetUrl}</p>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  <a
+                                    href={shared.meetUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700"
+                                  >
+                                    Abrir na nova aba
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void navigator.clipboard.writeText(shared.meetUrl!).then(() =>
+                                        toast.success("Link copiado."),
+                                      );
+                                    }}
+                                    className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                                  >
+                                    Copiar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="mt-4 text-xs text-slate-500">
+                                O link surge aqui quando o psicólogo salvar no painel dele (mesmo estado da sala do profissional).
+                              </p>
+                            )}
+                            <div className="mt-6 flex flex-wrap items-center justify-center gap-3 border-t border-slate-200 pt-5">
+                              <button
+                                type="button"
+                                onClick={() => handleLeaveWaitingRoom(apt)}
+                                className="rounded-full border border-slate-400 bg-white px-6 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                              >
+                                Sair da sala de espera
+                              </button>
+                            </div>
+                            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                              Atualização automática. Sair remove você da fila neste dispositivo (demo).
+                            </p>
                           </div>
                         </div>
-                      ) : (
-                        <p className="mt-4 text-xs text-amber-800/90">
-                          O link surge aqui automaticamente quando o psicólogo salvar no painel dele.
-                        </p>
-                      )}
-                      <div className="mt-6 flex flex-wrap items-center justify-center gap-3 border-t border-amber-200/80 pt-5">
-                        <button
-                          type="button"
-                          onClick={() => handleLeaveWaitingRoom(apt)}
-                          className="rounded-full border border-slate-400 bg-white px-6 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          Sair da sala de espera
-                        </button>
-                      </div>
-                      <p className="mt-3 text-[11px] leading-relaxed text-amber-900/80">
-                        Atualização automática. Sair só remove você da fila neste dispositivo (demo); o psicólogo passa a ver a sala
-                        fechada até você entrar de novo.
-                      </p>
-                    </div>
-                    </div>
-                  ) : null}
-
-                  {isThis && phase === "live" && shared?.startedAtMs ? (
-                    <div className="rounded-xl border border-emerald-200 bg-gradient-to-b from-emerald-50/80 to-white px-4 py-8 text-center">
-                      <div
-                        className="mx-auto grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-emerald-200/80 bg-white/80 p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-emerald-900/60 sm:text-[11px]"
-                        role="tablist"
-                        aria-label="Progresso do atendimento"
-                      >
-                        <span className="rounded-lg bg-emerald-100/90 px-1 py-2.5 text-emerald-900 sm:px-2">1 · Link</span>
-                        <span className="rounded-lg bg-emerald-100/90 px-1 py-2.5 text-emerald-900 sm:px-2">2 · Pronto</span>
-                        <span className="rounded-lg bg-emerald-600 px-1 py-2.5 text-white shadow-sm sm:px-2">3 · Sessão iniciada</span>
-                      </div>
-                      <p className="mx-auto mt-4 max-w-lg text-sm font-semibold leading-snug text-emerald-950">
-                        <strong className="text-emerald-950">Sessão iniciada</strong> — o mesmo cronômetro do painel de{" "}
-                        <strong>{shared.psychologistName}</strong>, após o play. Você pode seguir na Meet/Zoom nesta ou em outra aba.
-                      </p>
-                      {shared.meetUrl ? (
-                        <p className="mx-auto mt-3 max-w-lg text-xs text-slate-600">
-                          Link da chamada:{" "}
-                          <a
-                            href={shared.meetUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-semibold text-emerald-800 underline"
-                          >
-                            abrir na nova aba
-                          </a>
-                        </p>
                       ) : null}
-                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">
-                        Atendimento em andamento · tempo oficial
-                      </p>
-                      <p className="mt-4 font-mono text-5xl font-bold tabular-nums text-emerald-900 sm:text-6xl">
-                        {formatElapsed(elapsedMs)}
-                      </p>
-                      <div className="mx-auto mt-6 h-2 max-w-xs overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className="h-full rounded-full bg-emerald-500 transition-[width] duration-1000 ease-linear"
-                          style={{ width: `${progressPct}%` }}
-                        />
-                      </div>
-                      <p className="mt-4 text-xs text-slate-600">
-                        Este tempo é o mesmo que o psicólogo vê ao vivo — demonstração sincronizada no navegador.
-                      </p>
-                    </div>
-                  ) : null}
 
-                  {isThis && phase === "ended" && shared?.endedAtMs ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center">
-                      <p className="text-lg font-semibold text-slate-900">Sessão encerrada</p>
-                      <p className="mt-2 text-sm text-slate-700">
-                        O psicólogo finalizou o atendimento às{" "}
-                        {new Date(shared.endedAtMs).toLocaleTimeString("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                        .
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Duração registrada no mock: {shared.startedAtMs ? formatElapsed(shared.endedAtMs - shared.startedAtMs) : "—"}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleDismissEnded}
-                        className="mt-5 rounded-full border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-                      >
-                        Ok, entendi
-                      </button>
+                      {isThis && phase === "live" && shared?.startedAtMs ? (
+                        <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-white to-sky-50/40 shadow-inner">
+                          <div className="border-b border-sky-100 bg-sky-50/80 px-5 py-4 sm:px-6">
+                            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-900">
+                              Em andamento · sincronizado
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">{shared.psychologistName}</p>
+                            <p className="text-xs text-slate-600">
+                              {shared.time} · {shared.format} · {shared.durationMin} min
+                            </p>
+                          </div>
+                          <div className="px-4 py-8 text-center sm:px-6">
+                            <div
+                              className="mx-auto grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-sky-200/80 bg-white/90 p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-sky-900/70 sm:text-[11px]"
+                              role="tablist"
+                              aria-label="Progresso do atendimento"
+                            >
+                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">1 · Link</span>
+                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">2 · Pronto</span>
+                              <span className="rounded-lg bg-sky-600 px-1 py-2.5 text-white shadow-sm sm:px-2">
+                                3 · Sessão iniciada
+                              </span>
+                            </div>
+                            <p className="mx-auto mt-4 max-w-lg text-sm font-semibold leading-snug text-slate-900">
+                              <strong>Sessão iniciada</strong> — o mesmo cronômetro do painel do profissional. Você pode seguir na
+                              Meet/Zoom nesta ou em outra aba.
+                            </p>
+                            {shared.meetUrl ? (
+                              <p className="mx-auto mt-3 max-w-lg text-xs text-slate-600">
+                                Link da chamada:{" "}
+                                <a
+                                  href={shared.meetUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-semibold text-sky-800 underline"
+                                >
+                                  abrir na nova aba
+                                </a>
+                              </p>
+                            ) : null}
+                            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">
+                              Atendimento em andamento · tempo oficial
+                            </p>
+                            <p className="mt-4 font-mono text-5xl font-bold tabular-nums text-sky-900 sm:text-6xl">
+                              {formatElapsed(elapsedMs)}
+                            </p>
+                            <div className="mx-auto mt-6 h-2 max-w-xs overflow-hidden rounded-full bg-slate-200">
+                              <div
+                                className="h-full rounded-full bg-sky-500 transition-[width] duration-1000 ease-linear"
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
+                            <p className="mt-4 text-xs text-slate-600">
+                              Tempo sincronizado com o psicólogo neste navegador (demonstração).
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {isThis && phase === "ended" && shared?.endedAtMs ? (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                          <p className="text-lg font-semibold text-slate-900">Sessão encerrada</p>
+                          <p className="mt-2 text-sm text-slate-700">
+                            O psicólogo finalizou o atendimento às{" "}
+                            {new Date(shared.endedAtMs).toLocaleTimeString("pt-BR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                            .
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Duração registrada no mock:{" "}
+                            {shared.startedAtMs ? formatElapsed(shared.endedAtMs - shared.startedAtMs) : "—"}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleDismissEnded}
+                            className="mt-5 rounded-full bg-sky-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"
+                          >
+                            Ok, entendi
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
+                  </div>
                 </div>
               </article>
             );
@@ -415,6 +485,10 @@ export function PatientLiveSessionBoard() {
         todas as abas (ex.: só localhost:3000, não misturar com 127.0.0.1).{" "}
         <Link href="/portal/consultas" className="font-medium text-sky-700 underline">
           Consultas
+        </Link>
+        {" · "}
+        <Link href="/psicologo/sessao" className="font-medium text-sky-700 underline">
+          Sala do psicólogo
         </Link>
       </p>
     </div>

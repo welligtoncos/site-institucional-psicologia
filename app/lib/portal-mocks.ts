@@ -187,6 +187,24 @@ export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
     notes: "",
   },
   {
+    id: "apt-em-andamento-demo",
+    psychId: P.id,
+    psychologist: P.name,
+    psychologistCrp: P.crp,
+    patientName: "Mariana Costa",
+    specialty: "Ansiedade",
+    isoDate: "2026-04-25",
+    time: "16:00",
+    format: "Online",
+    price: P.price,
+    durationMin: P.durationMin,
+    payment: "Pago",
+    status: "em_andamento",
+    reminder: "Sessão em andamento (demonstração no portal).",
+    videoCallLink: "https://meet.exemplo.com/sessao-em-andamento",
+    notes: "",
+  },
+  {
     id: "apt-h1",
     psychId: P.id,
     psychologist: P.name,
@@ -222,6 +240,19 @@ export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
 
 export function isAppointmentUpcoming(a: MockAppointment): boolean {
   return a.status === "agendada" || a.status === "confirmada" || a.status === "em_andamento";
+}
+
+/**
+ * Consulta do portal apta à sala ao vivo: online, paga e confirmada ou em andamento
+ * (independe do psychId — alinha agendamento real com UUID).
+ */
+export function isPortalOnlinePaidReadyForLive(a: MockAppointment): boolean {
+  if (a.format !== "Online") return false;
+  if (a.payment !== "Pago") return false;
+  if (a.status === "cancelada" || a.status === "realizada" || a.status === "nao_compareceu" || a.status === "agendada") {
+    return false;
+  }
+  return a.status === "confirmada" || a.status === "em_andamento";
 }
 
 export function isAppointmentHistory(a: MockAppointment): boolean {
