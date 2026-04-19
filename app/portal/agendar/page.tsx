@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { PortalGate } from "@/app/components/auth/PortalGate";
 import { ScheduleConsultationBoard } from "@/app/components/portal/ScheduleConsultationBoard";
 
 export const metadata: Metadata = {
@@ -22,8 +23,10 @@ function ScheduleFallback() {
 
 export default function PortalSchedulePage() {
   return (
-    <Suspense fallback={<ScheduleFallback />}>
-      <ScheduleConsultationBoard />
-    </Suspense>
+    <PortalGate>
+      <Suspense fallback={<ScheduleFallback />}>
+        <ScheduleConsultationBoard />
+      </Suspense>
+    </PortalGate>
   );
 }

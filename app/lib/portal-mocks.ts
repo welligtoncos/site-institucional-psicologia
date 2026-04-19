@@ -94,6 +94,8 @@ export type MockAppointment = {
   id: string;
   psychId: string;
   psychologist: string;
+  /** CRP do profissional (quando conhecido no agendamento). */
+  psychologistCrp?: string;
   specialty: string;
   /** Nome do paciente (mock) — usado na área do psicólogo / faturas. */
   patientName?: string;
@@ -152,6 +154,7 @@ export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
     id: "apt-1",
     psychId: P.id,
     psychologist: P.name,
+    psychologistCrp: P.crp,
     patientName: "Mariana Costa",
     specialty: "Ansiedade",
     isoDate: "2026-04-20",
@@ -169,6 +172,7 @@ export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
     id: "apt-2",
     psychId: P.id,
     psychologist: P.name,
+    psychologistCrp: P.crp,
     patientName: "Eduardo Pires",
     specialty: "Ansiedade",
     isoDate: "2026-04-23",
@@ -186,6 +190,7 @@ export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
     id: "apt-h1",
     psychId: P.id,
     psychologist: P.name,
+    psychologistCrp: P.crp,
     patientName: "Luísa Mendes",
     specialty: "Ansiedade",
     isoDate: "2026-04-05",
@@ -201,6 +206,7 @@ export const MOCK_APPOINTMENTS_SEED: MockAppointment[] = [
     id: "apt-h2",
     psychId: P.id,
     psychologist: P.name,
+    psychologistCrp: P.crp,
     patientName: "Carlos Henrique",
     specialty: "Ansiedade",
     isoDate: "2026-03-28",

@@ -9,10 +9,13 @@ import { formatApiErrorDetail } from "@/app/lib/portal-errors";
 import {
   appendAppointment,
   createChargeForAppointment,
+  getLatestAwaitingChargeForPsychologist,
+  getPatientAppointments,
   registerGatewayPaymentSuccess,
   type MockPaymentCharge,
 } from "@/app/lib/portal-payment-mock";
-import type { MockAppointment } from "@/app/lib/portal-mocks";
+import { isAppointmentUpcoming, type MockAppointment } from "@/app/lib/portal-mocks";
+import { readPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
@@ -123,6 +126,40 @@ export function ScheduleConsultationBoard() {
   const [selectedTime, setSelectedTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastCharge, setLastCharge] = useState<MockPaymentCharge | null>(null);
+  const [patientDisplayName, setPatientDisplayName] = useState("");
+  const [calendarRev, setCalendarRev] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setCalendarRev((n) => n + 1);
+    window.addEventListener("portal-billing-changed", bump);
+    window.addEventListener("storage", bump);
+    return () => {
+      window.removeEventListener("portal-billing-changed", bump);
+      window.removeEventListener("storage", bump);
+    };
+  }, []);
+
+  useEffect(() => {
+    const snap = readPortalPatientSnapshot();
+    if (snap?.name?.trim()) {
+      setPatientDisplayName(snap.name.trim());
+      return;
+    }
+    const token = typeof window !== "undefined" ? window.localStorage.getItem(ACCESS_TOKEN_KEY) : null;
+    if (!token) return;
+    let cancelled = false;
+    void fetch("/api/portal/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (r) => {
+        const data = (await r.json().catch(() => null)) as { name?: string; email?: string } | null;
+        if (!r.ok || !data || typeof data.name !== "string" || typeof data.email !== "string") return;
+        savePortalPatientSnapshot({ name: data.name, email: data.email });
+        if (!cancelled) setPatientDisplayName(data.name.trim());
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadBookable = useCallback(async () => {
     if (!psychId || !isUuidLike(psychId)) {
@@ -183,13 +220,39 @@ export function ScheduleConsultationBoard() {
     void loadBookable();
   }, [loadBookable]);
 
+  /** Recupera simulação de pagamento pendente após recarregar a página ou voltar do portal. */
+  useEffect(() => {
+    if (!psychId || loadStatus !== "ready") return;
+    if (lastCharge !== null) return;
+    const pending = getLatestAwaitingChargeForPsychologist(psychId);
+    if (pending) setLastCharge(pending);
+  }, [psychId, loadStatus, lastCharge]);
+
+  /** Grade da API menos consultas já reservadas (mock) para este profissional. */
+  const bookableAdjusted = useMemo(() => {
+    if (!bookable) return null;
+    const appts = getPatientAppointments().filter(
+      (a) => a.psychId === psychId && isAppointmentUpcoming(a),
+    );
+    const taken = new Set(appts.map((a) => `${normalizeDayKey(a.isoDate)}|${a.time}`));
+    const days = bookable.days.map((d) => {
+      const date = normalizeDayKey(d.date);
+      return {
+        ...d,
+        date,
+        slots: d.slots.filter((t) => !taken.has(`${date}|${t}`)),
+      };
+    });
+    return { ...bookable, days };
+  }, [bookable, psychId, calendarRev]);
+
   const dateOptions = useMemo(() => {
-    if (!bookable?.days?.length) return [];
-    return bookable.days
+    if (!bookableAdjusted?.days?.length) return [];
+    return bookableAdjusted.days
       .filter((d) => d.slots.length > 0)
       .map((d) => normalizeDayKey(d.date))
       .slice(0, 7);
-  }, [bookable]);
+  }, [bookableAdjusted]);
 
   useEffect(() => {
     if (!selectedDate && dateOptions.length > 0) {
@@ -206,11 +269,11 @@ export function ScheduleConsultationBoard() {
   }, [dateOptions, selectedDate]);
 
   const slotsForDay = useMemo(() => {
-    if (!bookable || !selectedDate) return [];
+    if (!bookableAdjusted || !selectedDate) return [];
     const key = normalizeDayKey(selectedDate);
-    const day = bookable.days.find((d) => normalizeDayKey(d.date) === key);
+    const day = bookableAdjusted.days.find((d) => normalizeDayKey(d.date) === key);
     return day?.slots ?? [];
-  }, [bookable, selectedDate]);
+  }, [bookableAdjusted, selectedDate]);
 
   useEffect(() => {
     if (!selectedTime || slotsForDay.length === 0) return;
@@ -223,9 +286,9 @@ export function ScheduleConsultationBoard() {
   const priceNum = bookable ? parseFloat(bookable.valor_consulta) : 0;
 
   function dayRowForIso(iso: string): BookableDay | undefined {
-    if (!bookable) return undefined;
+    if (!bookableAdjusted) return undefined;
     const key = normalizeDayKey(iso);
-    return bookable.days.find((d) => normalizeDayKey(d.date) === key);
+    return bookableAdjusted.days.find((d) => normalizeDayKey(d.date) === key);
   }
 
   function handleConfirm() {
@@ -236,10 +299,14 @@ export function ScheduleConsultationBoard() {
     setSubmitting(true);
     window.setTimeout(() => {
       const id = `apt_${Date.now()}`;
+      const snap = readPortalPatientSnapshot();
+      const patientName = (patientDisplayName || snap?.name || "").trim() || "Paciente";
       const appointment: MockAppointment = {
         id,
         psychId,
         psychologist: bookable.nome,
+        psychologistCrp: bookable.crp,
+        patientName,
         specialty: specialtyLabel,
         isoDate: selectedDate,
         time: selectedTime,
@@ -254,7 +321,12 @@ export function ScheduleConsultationBoard() {
       const charge = createChargeForAppointment(id, Number.isFinite(priceNum) ? priceNum : 0);
       setLastCharge(charge);
       setSubmitting(false);
-      toast.success("Consulta reservada. Confira o pagamento abaixo.");
+      window.requestAnimationFrame(() => {
+        document.getElementById("portal-schedule-mock-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      toast.success(
+        "Consulta criada como agendada, vinculada a você e ao profissional. Conclua o pagamento abaixo; em Minhas consultas você acompanha status e link.",
+      );
     }, 400);
   }
 
@@ -266,7 +338,10 @@ export function ScheduleConsultationBoard() {
       return;
     }
     setLastCharge(result.charge);
-    toast.success("Pagamento confirmado.");
+    toast.success("Pagamento confirmado. Sua consulta passou para confirmada.");
+    window.requestAnimationFrame(() => {
+      document.getElementById("portal-schedule-mock-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   if (!psychId) {
@@ -311,7 +386,10 @@ export function ScheduleConsultationBoard() {
 
   const avatarClass = gradientForId(bookable.id);
   const initials = initialsFromName(bookable.nome);
-  const hasAnySlot = bookable.days.some((d) => d.slots.length > 0);
+  const hasRawSlotsFromApi = bookable.days.some((d) => d.slots.length > 0);
+  const hasFreeSlotsAfterBookings = bookableAdjusted?.days.some((d) => d.slots.length > 0) ?? false;
+  const paymentComplete = lastCharge?.gatewayStatus === "succeeded";
+  const awaitingPayment = lastCharge?.gatewayStatus === "awaiting_payment";
   const priceFormatted = parseFloat(bookable.valor_consulta).toFixed(2).replace(".", ",");
   const step1Done = Boolean(selectedDate && dateOptions.includes(normalizeDayKey(selectedDate)));
   const step2Done = Boolean(selectedTime && slotsForDay.includes(selectedTime));
@@ -322,10 +400,22 @@ export function ScheduleConsultationBoard() {
     <div className="mx-auto max-w-lg space-y-6 pb-10">
       <header className="text-center sm:text-left">
         <p className="text-xs font-semibold uppercase tracking-widest text-sky-600">Agendamento</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Escolha data e horário</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+          {paymentComplete ? "Consulta confirmada" : "Escolha data e horário"}
+        </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Mostramos apenas horários ainda livres. Horários que já passaram hoje ou que coincidem com outra consulta não
-          aparecem.
+          {paymentComplete ? (
+            <>
+              O pagamento foi registrado na demonstração. Na lista de consultas o status fica{" "}
+              <strong className="font-semibold text-slate-800">confirmada</strong> e o horário deixa de aparecer como
+              livre.
+            </>
+          ) : (
+            <>
+              Mostramos apenas horários ainda livres. Horários já reservados por você (agendada ou confirmada) somem
+              desta lista.
+            </>
+          )}
         </p>
       </header>
 
@@ -359,12 +449,35 @@ export function ScheduleConsultationBoard() {
         </div>
       </div>
 
-      {!hasAnySlot ? (
+      {!hasRawSlotsFromApi ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/95 p-5 text-center shadow-sm">
           <p className="text-sm font-medium text-amber-950">Nenhum horário livre nos próximos 7 dias</p>
           <p className="mt-2 text-xs leading-relaxed text-amber-900/85">
             Este profissional pode estar com a agenda cheia ou ainda não liberou novas datas. Você pode tentar outro
             profissional ou voltar em outro momento.
+          </p>
+          <Link
+            href="/portal/ofertas"
+            className="mt-4 inline-flex rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-200"
+          >
+            Ver outros profissionais
+          </Link>
+        </div>
+      ) : paymentComplete ? null : !hasFreeSlotsAfterBookings && awaitingPayment ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/90 p-5 shadow-sm">
+          <p className="text-sm font-medium text-sky-950">Horário reservado para você</p>
+          <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
+            Não há outros horários livres nesta janela para este profissional. Sua consulta está{" "}
+            <strong className="font-semibold text-sky-950">agendada</strong> até concluir o pagamento abaixo; depois
+            ela passa para <strong className="font-semibold text-sky-950">confirmada</strong>.
+          </p>
+        </div>
+      ) : !hasFreeSlotsAfterBookings ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/95 p-5 text-center shadow-sm">
+          <p className="text-sm font-medium text-amber-950">Nenhum horário livre no momento</p>
+          <p className="mt-2 text-xs leading-relaxed text-amber-900/85">
+            Os horários que apareciam já estão ligados a consultas suas nesta demonstração. Tente outro profissional ou
+            volte mais tarde.
           </p>
           <Link
             href="/portal/ofertas"
@@ -473,7 +586,7 @@ export function ScheduleConsultationBoard() {
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={submitting || !selectedDate || !selectedTime || !hasAnySlot}
+              disabled={submitting || !selectedDate || !selectedTime || !hasFreeSlotsAfterBookings}
               className="mt-5 w-full rounded-xl bg-sky-600 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "Reservando…" : "Agendar consulta"}
@@ -483,8 +596,11 @@ export function ScheduleConsultationBoard() {
       )}
 
       {lastCharge ? (
-        <section className="rounded-2xl border border-emerald-200/80 bg-emerald-50/60 p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-emerald-950">Pagamento</h2>
+        <section
+          id="portal-schedule-mock-payment"
+          className="scroll-mt-6 rounded-2xl border border-emerald-200/80 bg-emerald-50/60 p-5 shadow-sm"
+        >
+          <h2 className="text-base font-semibold text-emerald-950">Pagamento (simulação)</h2>
           <p className="mt-1 text-xs leading-relaxed text-emerald-900/85">
             Ambiente de demonstração: o valor abaixo é só para você testar o fluxo. Em produção, o pagamento será feito
             pelo gateway seguro.
@@ -510,13 +626,26 @@ export function ScheduleConsultationBoard() {
               Simular pagamento concluído
             </button>
           ) : (
-            <p className="mt-4 text-sm font-medium text-emerald-800">
-              Tudo certo.{" "}
-              <Link href="/portal/consultas" className="font-semibold text-emerald-900 underline decoration-emerald-400 underline-offset-2 hover:text-emerald-950">
-                Ver minhas consultas
-              </Link>
-              .
-            </p>
+            <div className="mt-4 space-y-3 text-sm font-medium text-emerald-800">
+              <p>
+                Consulta com status <strong className="text-emerald-950">confirmada</strong> e pagamento registrado.
+              </p>
+              <p>
+                <Link
+                  href="/portal/consultas"
+                  className="font-semibold text-emerald-900 underline decoration-emerald-400 underline-offset-2 hover:text-emerald-950"
+                >
+                  Ver minhas consultas
+                </Link>
+              </p>
+              <button
+                type="button"
+                onClick={() => setLastCharge(null)}
+                className="w-full rounded-xl border border-emerald-400 bg-white px-4 py-3 text-sm font-semibold text-emerald-950 shadow-sm hover:bg-emerald-50"
+              >
+                Agendar outro horário
+              </button>
+            </div>
           )}
         </section>
       ) : null}

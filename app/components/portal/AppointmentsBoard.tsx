@@ -107,6 +107,13 @@ export function AppointmentsBoard() {
   );
 
   const upcoming = useMemo(() => rows.filter(isAppointmentUpcoming), [rows]);
+  const upcomingSorted = useMemo(() => {
+    return [...upcoming].sort((a, b) => {
+      const da = a.isoDate.localeCompare(b.isoDate);
+      if (da !== 0) return da;
+      return a.time.localeCompare(b.time);
+    });
+  }, [upcoming]);
   const history = useMemo(() => rows.filter(isAppointmentHistory), [rows]);
 
   const historyVisible = useMemo(() => {
@@ -118,14 +125,7 @@ export function AppointmentsBoard() {
     });
   }, [history, historyFilter]);
 
-  const nextSlot = useMemo(() => {
-    const sorted = [...upcoming].sort((a, b) => {
-      const da = a.isoDate.localeCompare(b.isoDate);
-      if (da !== 0) return da;
-      return a.time.localeCompare(b.time);
-    });
-    return sorted[0] ?? null;
-  }, [upcoming]);
+  const nextSlot = useMemo(() => upcomingSorted[0] ?? null, [upcomingSorted]);
 
   const cancelTarget = cancelId ? rows.find((r) => r.id === cancelId) : null;
   const rescheduleTarget = rescheduleId ? rows.find((r) => r.id === rescheduleId) : null;
@@ -273,7 +273,7 @@ export function AppointmentsBoard() {
 
       {mainTab === "proximas" ? (
         <section className="space-y-4">
-          {upcoming.length === 0 ? (
+          {upcomingSorted.length === 0 ? (
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
               Você não tem consultas futuras aqui.{" "}
               <Link href="/portal/agendar" className="font-semibold text-sky-700 underline">
@@ -282,7 +282,7 @@ export function AppointmentsBoard() {
               .
             </p>
           ) : (
-            upcoming.map((a) => (
+            upcomingSorted.map((a) => (
               <AppointmentCard
                 key={a.id}
                 a={a}
@@ -473,7 +473,20 @@ function AppointmentCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">{a.psychologist}</h2>
-          <p className="text-sm text-slate-600">{a.specialty}</p>
+          <p className="text-sm text-slate-600">
+            {a.specialty}
+            {a.psychologistCrp ? (
+              <>
+                <span className="text-slate-400"> · </span>
+                CRP {a.psychologistCrp}
+              </>
+            ) : null}
+          </p>
+          {a.patientName ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Paciente: <span className="font-medium text-slate-700">{a.patientName}</span>
+            </p>
+          ) : null}
         </div>
         <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${statusStyles(a.status)}`}>
           {statusLabel(a.status)}
@@ -499,6 +512,27 @@ function AppointmentCard({
         </div>
       </dl>
 
+      {a.format === "Online" && isAppointmentUpcoming(a) ? (
+        <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/50 px-3 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">Sessão online</p>
+          {a.videoCallLink ? (
+            <a
+              href={a.videoCallLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex rounded-full border border-sky-300 bg-white px-4 py-2 text-xs font-semibold text-sky-900 shadow-sm hover:bg-sky-50"
+            >
+              Abrir link da sessão
+            </a>
+          ) : (
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+              O link da videochamada aparece aqui quando o pagamento for confirmado ou quando o profissional
+              disponibilizar (demonstração).
+            </p>
+          )}
+        </div>
+      ) : null}
+
       {a.reminder ? (
         <p className="mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">{a.reminder}</p>
       ) : null}
@@ -517,16 +551,6 @@ function AppointmentCard({
         >
           {expanded ? "Ocultar detalhes" : "Detalhes"}
         </button>
-        {a.format === "Online" && a.videoCallLink && isAppointmentUpcoming(a) ? (
-          <a
-            href={a.videoCallLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-full border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-          >
-            Abrir sessão online
-          </a>
-        ) : null}
         {canSimulatePay ? (
           <button
             type="button"

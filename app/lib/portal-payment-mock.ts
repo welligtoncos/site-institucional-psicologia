@@ -129,6 +129,28 @@ export function getPatientAppointments(): MockAppointment[] {
 }
 
 /**
+ * Cobrança mais recente ainda aguardando pagamento, para o profissional informado
+ * (útil após F5 na tela de agendar — o estado React do cartão de pagamento some, mas o mock persiste).
+ */
+export function getLatestAwaitingChargeForPsychologist(psychId: string): MockPaymentCharge | null {
+  if (!psychId.trim()) return null;
+  const appts = loadAppointmentsRaw();
+  let best: MockPaymentCharge | null = null;
+  let bestCreated = "";
+  for (const c of loadChargesRaw()) {
+    if (c.gatewayStatus !== "awaiting_payment") continue;
+    const a = appts.find((x) => x.id === c.appointmentId);
+    if (!a || a.psychId !== psychId) continue;
+    if (a.payment !== "Pendente") continue;
+    if (!best || c.createdAt > bestCreated) {
+      best = c;
+      bestCreated = c.createdAt;
+    }
+  }
+  return best;
+}
+
+/**
  * RF-010 — Simula webhook / retorno do gateway: marca cobrança paga e atualiza consulta.
  */
 export function registerGatewayPaymentSuccess(chargeId: string): {
@@ -164,11 +186,15 @@ export function registerGatewayPaymentSuccess(chargeId: string): {
     return { ok: false, error: "Consulta vinculada não encontrada." };
   }
   const apt = appts[ai]!;
+  const nextStatus: MockAppointment["status"] = apt.status === "agendada" ? "confirmada" : apt.status;
+  const attachMeetLink =
+    apt.format === "Online" && nextStatus === "confirmada" && !apt.videoCallLink?.trim();
   const nextApt: MockAppointment = {
     ...apt,
     payment: "Pago",
-    status: apt.status === "agendada" ? "confirmada" : apt.status,
+    status: nextStatus,
     reminder: apt.reminder?.includes("Aguardando pagamento") ? "Pagamento confirmado." : apt.reminder,
+    videoCallLink: attachMeetLink ? `https://meet.exemplo.com/${encodeURIComponent(apt.id)}` : apt.videoCallLink,
   };
   appts[ai] = nextApt;
   saveAppointmentsRaw(appts);

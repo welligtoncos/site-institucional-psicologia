@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
+import { savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
@@ -76,7 +77,7 @@ export function LoginForm() {
       const meRes = await fetch("/api/portal/me", {
         headers: { Authorization: `Bearer ${data.access_token}` },
       });
-      const meData = (await meRes.json()) as { role?: string };
+      const meData = (await meRes.json()) as { role?: string; name?: string; email?: string };
 
       if (meRes.ok && (meData.role === "psychologist" || meData.role === "admin")) {
         const dest = next && next.startsWith("/psicologo") ? next : "/psicologo";
@@ -85,6 +86,9 @@ export function LoginForm() {
       }
 
       if (meRes.ok && meData.role === "patient") {
+        if (typeof meData.name === "string" && typeof meData.email === "string") {
+          savePortalPatientSnapshot({ name: meData.name, email: meData.email });
+        }
         if (next && next.startsWith("/psicologo")) {
           router.push("/portal");
           return;

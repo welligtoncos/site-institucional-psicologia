@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { clearPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
+
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
 
@@ -93,6 +95,7 @@ export function PortalGate({ children }: PortalGateProps) {
         if (!mounted) return;
         setUserName(meAttempt.data.name);
         setUserEmail(meAttempt.data.email);
+        savePortalPatientSnapshot({ name: meAttempt.data.name, email: meAttempt.data.email });
         setLoading(false);
         return;
       }
@@ -134,6 +137,7 @@ export function PortalGate({ children }: PortalGateProps) {
       if (!mounted) return;
       setUserName(retriedMe.data.name);
       setUserEmail(retriedMe.data.email);
+      savePortalPatientSnapshot({ name: retriedMe.data.name, email: retriedMe.data.email });
       setLoading(false);
     }
 
@@ -151,6 +155,7 @@ export function PortalGate({ children }: PortalGateProps) {
   function handleLogout() {
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+    clearPortalPatientSnapshot();
     router.push("/login?next=/portal");
   }
 

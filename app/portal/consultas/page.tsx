@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+
+import { PortalGate } from "@/app/components/auth/PortalGate";
 import { AppointmentsBoard } from "@/app/components/portal/AppointmentsBoard";
 
 export const metadata: Metadata = {
@@ -11,5 +13,9 @@ export const metadata: Metadata = {
 };
 
 export default function PortalAppointmentsPage() {
-  return <AppointmentsBoard />;
+  return (
+    <PortalGate>
+      <AppointmentsBoard />
+    </PortalGate>
+  );
 }
