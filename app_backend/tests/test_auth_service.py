@@ -24,6 +24,7 @@ from app.services.auth_service import AuthService
 def _user(
     *,
     user_id=None,
+    name: str = "Maria",
     email: str = "maria@example.com",
     phone: str = "11999998888",
     password_plain: str = "SenhaSegura123",
@@ -39,7 +40,7 @@ def _user(
         terms_accepted_at = datetime.now(timezone.utc)
     return SimpleNamespace(
         id=uid,
-        name="Maria",
+        name=name,
         email=email,
         phone=phone,
         password_hash=hash_password(password_plain),
@@ -146,6 +147,51 @@ async def test_register_passes_stripped_phone_to_repository(mock_db: AsyncMock) 
         )
         await svc.register(req)
         assert repo.create.await_args.kwargs["phone"] == "11999998888"
+
+
+@pytest.mark.asyncio
+async def test_register_patient_allows_empty_phone(mock_db: AsyncMock) -> None:
+    """Cadastro de paciente sem telefone grava phone vazio no usuário."""
+    p_user, p_clin, repo, clin = _patch_user_and_clinical(mock_db)
+    with p_user, p_clin:
+        created = _user(role=UserRole.patient, phone="")
+        repo.get_by_email = AsyncMock(return_value=None)
+        repo.create = AsyncMock(return_value=created)
+        clin.create_paciente = AsyncMock(return_value=SimpleNamespace(id=uuid4(), usuario_id=created.id))
+
+        svc = AuthService(mock_db)
+        req = UserRegisterRequest(
+            name="Maria",
+            email="nova@example.com",
+            password="SenhaSegura123",
+            accept_terms=True,
+        )
+        out = await svc.register(req)
+
+        assert repo.create.await_args.kwargs["phone"] == ""
+        assert out.phone == ""
+
+
+@pytest.mark.asyncio
+async def test_register_patient_allows_empty_name(mock_db: AsyncMock) -> None:
+    """Cadastro sem nome grava name vazio para o usuário finalizar no perfil."""
+    p_user, p_clin, repo, clin = _patch_user_and_clinical(mock_db)
+    with p_user, p_clin:
+        created = _user(role=UserRole.patient, name="")
+        repo.get_by_email = AsyncMock(return_value=None)
+        repo.create = AsyncMock(return_value=created)
+        clin.create_paciente = AsyncMock(return_value=SimpleNamespace(id=uuid4(), usuario_id=created.id))
+
+        svc = AuthService(mock_db)
+        req = UserRegisterRequest(
+            email="semnome@example.com",
+            password="SenhaSegura123",
+            accept_terms=True,
+        )
+        out = await svc.register(req)
+
+        assert repo.create.await_args.kwargs["name"] == ""
+        assert out.name == ""
 
 
 @pytest.mark.asyncio

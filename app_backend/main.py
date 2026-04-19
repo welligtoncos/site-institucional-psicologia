@@ -74,6 +74,18 @@ async def _db_unavailable(_: Request, exc: OperationalError) -> JSONResponse:
     return JSONResponse(status_code=503, content=payload)
 
 
+@app.exception_handler(ConnectionRefusedError)
+async def _connection_refused(_: Request, exc: ConnectionRefusedError) -> JSONResponse:
+    """asyncpg às vezes propaga recusa de TCP antes do wrapper SQLAlchemy (ex.: Postgres parado)."""
+    logger.error("Conexão recusada (serviço indisponível?): %s", exc)
+    payload: dict = {
+        "detail": "Não foi possível conectar ao banco de dados. Suba o PostgreSQL (ex.: docker compose up -d db) ou ajuste DATABASE_URL (host/porta).",
+    }
+    if settings.debug:
+        payload["debug"] = str(exc)
+    return JSONResponse(status_code=503, content=payload)
+
+
 app.include_router(api_router)
 
 

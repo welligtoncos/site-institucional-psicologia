@@ -41,8 +41,39 @@ def test_register_request_strips_phone_whitespace() -> None:
     assert r.phone == "11999998888"
 
 
-def test_register_request_rejects_phone_too_short() -> None:
-    """Telefone com menos de 8 caracteres após o trim falha."""
+def test_register_request_accepts_empty_phone() -> None:
+    """Telefone pode ser omitido ou vazio no cadastro de paciente."""
+    r = UserRegisterRequest(
+        name="Maria Silva",
+        email="maria@example.com",
+        password="SenhaSegura123",
+        accept_terms=True,
+    )
+    assert r.phone == ""
+
+
+def test_register_request_accepts_empty_name() -> None:
+    """Nome pode ser vazio no cadastro; usuário completa depois no perfil."""
+    r = UserRegisterRequest(
+        email="maria@example.com",
+        password="SenhaSegura123",
+        accept_terms=True,
+    )
+    assert r.name == ""
+
+    r2 = UserRegisterRequest.model_validate(
+        {
+            "name": "   ",
+            "email": "x@example.com",
+            "password": "SenhaSegura123",
+            "accept_terms": True,
+        }
+    )
+    assert r2.name == ""
+
+
+def test_register_request_rejects_phone_too_short_when_informed() -> None:
+    """Telefone informado com menos de 8 caracteres após o trim falha."""
     with pytest.raises(ValidationError) as exc:
         UserRegisterRequest(
             name="A",
@@ -52,7 +83,7 @@ def test_register_request_rejects_phone_too_short() -> None:
             accept_terms=True,
         )
     errs = exc.value.errors()
-    assert any("phone" in str(e.get("loc", ())) for e in errs)
+    assert any(e.get("type") == "value_error" or "phone" in str(e.get("loc", ())) for e in errs)
 
 
 def test_register_request_requires_accept_terms_field() -> None:

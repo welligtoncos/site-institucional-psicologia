@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.models.user import User, UserRole
 
 
@@ -25,6 +25,16 @@ class UserRepository:
     async def get_by_email(self, email: str) -> User | None:
         result = await self._db.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
+
+    async def update_name_phone(self, user_id: UUID, *, name: str, phone: str) -> User:
+        user = await self.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("Usuário não encontrado.")
+        user.name = name.strip()
+        user.phone = phone.strip()
+        await self._db.commit()
+        await self._db.refresh(user)
+        return user
 
     async def create(
         self,

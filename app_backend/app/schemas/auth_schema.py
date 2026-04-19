@@ -9,7 +9,7 @@ from uuid import UUID
 
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class UserRoleSchema(str, Enum):
@@ -24,16 +24,16 @@ class UserRegisterRequest(BaseModel):
     """POST /auth/register — cadastro de paciente (RF-001)."""
 
     name: str = Field(
-        min_length=1,
+        default="",
         max_length=200,
-        description="Nome completo",
+        description="Nome completo; pode ser vazio no cadastro e preenchido depois no perfil.",
         examples=["Maria Silva"],
     )
     email: EmailStr = Field(description="E-mail único", examples=["maria@example.com"])
     phone: str = Field(
-        min_length=8,
+        default="",
         max_length=30,
-        description="Telefone (com DDD)",
+        description="Telefone opcional (com DDD); se informado, use pelo menos 8 caracteres.",
         examples=["11999998888"],
     )
     password: str = Field(
@@ -51,12 +51,29 @@ class UserRegisterRequest(BaseModel):
         description="Contato de emergência (RF perfil paciente); opcional no cadastro.",
     )
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v: object) -> object:
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()[:200]
+        return v
+
     @field_validator("phone", mode="before")
     @classmethod
     def _strip_phone(cls, v: object) -> object:
+        if v is None:
+            return ""
         if isinstance(v, str):
             return v.strip()
         return v
+
+    @model_validator(mode="after")
+    def _phone_len_if_informed(self) -> "UserRegisterRequest":
+        if self.phone and len(self.phone) < 8:
+            raise ValueError("Telefone deve ter pelo menos 8 caracteres se informado.")
+        return self
 
     @field_validator("contato_emergencia", mode="before")
     @classmethod

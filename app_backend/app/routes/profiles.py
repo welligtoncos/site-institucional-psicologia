@@ -49,7 +49,7 @@ async def patient_me(
     "/patient/me",
     response_model=PatientMeResponse,
     summary="Atualizar perfil de paciente",
-    description="Requer JWT `patient`. Atualmente só `contato_emergencia`.",
+    description="Requer JWT `patient`. Obrigatórios: nome, telefone e CPF; demais campos opcionais. Cria o perfil clínico na primeira vez.",
 )
 async def patient_me_patch(
     payload: PatientProfilePatchRequest,

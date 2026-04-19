@@ -42,7 +42,7 @@ async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
     status_code=status.HTTP_201_CREATED,
     summary="Cadastro de paciente",
     description=(
-        "RF-001: nome, e-mail, telefone, senha e aceite explícito de termos; papel `patient`. "
+        "RF-001: nome, e-mail, senha e aceite explícito de termos; telefone opcional; papel `patient`. "
         "Cria também a linha em `pacientes` (opcional `contato_emergencia`)."
     ),
 )

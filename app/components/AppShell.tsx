@@ -14,7 +14,8 @@ export function AppShell({ children }: AppShellProps) {
   const isSystemArea = pathname.startsWith("/portal") || pathname.startsWith("/psicologo");
 
   if (isSystemArea) {
-    return <div className="min-h-screen bg-slate-950 text-slate-100">{children}</div>;
+    /* Layouts de portal/psicólogo já definem fundo claro; não herdar texto claro (inputs ficavam ilegíveis). */
+    return <div className="min-h-screen text-slate-900">{children}</div>;
   }
 
   return (

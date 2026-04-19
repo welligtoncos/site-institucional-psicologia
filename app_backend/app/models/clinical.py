@@ -75,6 +75,16 @@ class Paciente(Base):
         unique=True,
     )
     contato_emergencia: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cpf: Mapped[str | None] = mapped_column(String(11), nullable=True)
+    data_nascimento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cep: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    logradouro: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    numero: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    complemento: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    bairro: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    cidade: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    ponto_referencia: Mapped[str | None] = mapped_column(Text, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     usuario = relationship("User")

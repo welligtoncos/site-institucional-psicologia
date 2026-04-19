@@ -14,13 +14,9 @@ type RegisterResponse = {
 
 export function RegisterForm() {
   const router = useRouter();
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [acceptTerms, setAcceptTerms] = useState(false);
-  const [contatoEmergencia, setContatoEmergencia] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -29,30 +25,26 @@ export function RegisterForm() {
     setLoading(true);
     setErrorMessage("");
 
-    if (!acceptTerms) {
-      setErrorMessage("Para continuar, marque a caixa confirmando que leu e aceita os termos.");
-      setLoading(false);
-      return;
-    }
-
     if (password !== passwordConfirm) {
       setErrorMessage("As duas senhas precisam ser iguais. Confira e tente de novo.");
       setLoading(false);
       return;
     }
 
+    const emailTrim = email.trim();
+    if (!emailTrim) {
+      setErrorMessage("Informe um e-mail válido.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const body: Record<string, unknown> = {
-        name: name.trim(),
-        email: email.trim(),
-        phone,
+        name: "",
+        email: emailTrim,
         password,
         accept_terms: true,
       };
-      const ce = contatoEmergencia.trim();
-      if (ce) {
-        body.contato_emergencia = ce;
-      }
 
       const response = await fetch("/api/portal/register/patient", {
         method: "POST",
@@ -86,26 +78,9 @@ export function RegisterForm() {
           Dados do cadastro
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Mesmo que você já seja atendido presencialmente, use aqui o e-mail que quiser para o acesso online — ele será
-          seu usuário no portal.
+          Use o e-mail que quiser para o acesso online — ele será seu usuário no portal. Você poderá informar seu nome
+          completo depois em Meu cadastro.
         </p>
-      </div>
-
-      <div className="space-y-2">
-        <label htmlFor="register-name" className="text-sm font-medium text-slate-800">
-          Nome completo
-        </label>
-        <input
-          id="register-name"
-          name="name"
-          type="text"
-          required
-          autoComplete="name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="Como prefere ser chamado(a) no cadastro"
-        />
       </div>
 
       <div className="space-y-2">
@@ -122,44 +97,6 @@ export function RegisterForm() {
           onChange={(event) => setEmail(event.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
           placeholder="nome@email.com"
-        />
-        <p className="text-xs text-slate-500">Será usado para você entrar no portal.</p>
-      </div>
-
-      <div className="space-y-2">
-        <label htmlFor="register-phone" className="text-sm font-medium text-slate-800">
-          Celular ou telefone (com DDD)
-        </label>
-        <input
-          id="register-phone"
-          name="phone"
-          type="tel"
-          required
-          minLength={8}
-          maxLength={30}
-          autoComplete="tel"
-          inputMode="tel"
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="(11) 99999-9999 ou 11999998888"
-        />
-        <p className="text-xs text-slate-500">Mínimo de 8 números, com DDD.</p>
-      </div>
-
-      <div className="space-y-2">
-        <label htmlFor="register-contato-emergencia" className="text-sm font-medium text-slate-800">
-          Contato de emergência <span className="font-normal text-slate-500">(opcional)</span>
-        </label>
-        <textarea
-          id="register-contato-emergencia"
-          name="contato_emergencia"
-          rows={2}
-          maxLength={5000}
-          value={contatoEmergencia}
-          onChange={(event) => setContatoEmergencia(event.target.value)}
-          className="w-full resize-y rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="Nome e telefone de alguém para contato em situação de urgência"
         />
       </div>
 
@@ -195,22 +132,21 @@ export function RegisterForm() {
           value={passwordConfirm}
           onChange={(event) => setPasswordConfirm(event.target.value)}
           className="w-full rounded-xl border border-slate-300 bg-slate-50/40 px-4 py-3 text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-200"
-          placeholder="Digite a mesma senha de cima"
+          placeholder="Digite a mesma senha"
         />
       </div>
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-3 text-sm leading-relaxed text-slate-700">
-        <input
-          type="checkbox"
-          checked={acceptTerms}
-          onChange={(event) => setAcceptTerms(event.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-        />
-        <span>
-          Declaro que li e aceito os <span className="font-semibold text-slate-800">termos de uso</span> e a{" "}
-          <span className="font-semibold text-slate-800">política de privacidade</span> deste portal.
-        </span>
-      </label>
+      <p className="text-xs leading-relaxed text-slate-500">
+        Ao concluir o cadastro, você declara ter lido e aceito os{" "}
+        <Link href="/contato" className="font-medium text-sky-800 underline hover:text-sky-950">
+          termos de uso
+        </Link>{" "}
+        e a{" "}
+        <Link href="/contato" className="font-medium text-sky-800 underline hover:text-sky-950">
+          política de privacidade
+        </Link>
+        .
+      </p>
 
       {errorMessage ? (
         <p

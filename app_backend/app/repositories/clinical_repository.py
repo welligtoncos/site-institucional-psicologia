@@ -1,5 +1,6 @@
 """Persistência do domínio clínico (paciente, psicólogo) — SQLAlchemy async."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -88,12 +89,35 @@ class ClinicalRepository:
         await self._db.refresh(row)
         return row
 
-    async def update_paciente_contato(self, usuario_id: UUID, contato_emergencia: str | None) -> Paciente:
+    _PACIENTE_UPDATE_FIELDS = frozenset({
+        "contato_emergencia",
+        "cpf",
+        "data_nascimento",
+        "cep",
+        "logradouro",
+        "numero",
+        "complemento",
+        "bairro",
+        "cidade",
+        "uf",
+        "ponto_referencia",
+    })
+
+    async def upsert_paciente_perfil(self, usuario_id: UUID, updates: dict[str, Any]) -> Paciente:
+        """Cria a linha em `pacientes` se não existir e aplica os campos permitidos."""
         row = await self.get_paciente_by_usuario_id(usuario_id)
         if row is None:
-            raise NotFoundError("Perfil de paciente não encontrado.")
-        row.contato_emergencia = contato_emergencia
-        await self._db.commit()
+            row = Paciente(usuario_id=usuario_id, contato_emergencia=None)
+            self._db.add(row)
+            await self._db.flush()
+        for key, value in updates.items():
+            if key in self._PACIENTE_UPDATE_FIELDS:
+                setattr(row, key, value)
+        try:
+            await self._db.commit()
+        except IntegrityError as exc:
+            await self._db.rollback()
+            raise ConflictError("CPF já cadastrado para outro paciente.") from exc
         await self._db.refresh(row)
         return row
 
