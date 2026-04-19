@@ -181,7 +181,8 @@ export function PsychologistAvailabilityBoard() {
             <h1 className="mt-2 text-2xl font-semibold text-slate-900">Horários e bloqueios</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
               Defina quando você atende na semana e registre dias ou intervalos indisponíveis. As alterações são salvas no
-              servidor (sincronizadas com a sua conta).
+              servidor (sincronizadas com a sua conta). No portal do paciente (Agendar), só aparecem horários ainda
+              livres para marcar — com base nesta configuração, bloqueios e consultas já agendadas.
             </p>
             {loadError === "generic" ? (
               <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">

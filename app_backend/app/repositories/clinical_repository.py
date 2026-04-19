@@ -10,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.clinical import BloqueioAgenda, DisponibilidadeSemanal, Paciente, Psicologo
+from app.models.clinical import (
+    BloqueioAgenda,
+    Consulta,
+    ConsultaStatus,
+    DisponibilidadeSemanal,
+    Paciente,
+    Psicologo,
+)
 from app.models.user import User, UserRole
 
 
@@ -68,6 +75,44 @@ class ClinicalRepository:
         )
         result = await self._db.execute(stmt)
         return list(result.scalars().unique().all())
+
+    async def get_psicologo_ativo_by_id(self, psicologo_id: UUID) -> Psicologo | None:
+        """Psicólogo com usuário ativo (catálogo / agendamento paciente)."""
+        stmt = (
+            select(Psicologo)
+            .join(User, Psicologo.usuario_id == User.id)
+            .where(Psicologo.id == psicologo_id)
+            .where(User.role == UserRole.psychologist)
+            .where(User.is_active.is_(True))
+            .options(selectinload(Psicologo.usuario))
+        )
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_consultas_psicologo_no_periodo(
+        self,
+        psicologo_id: UUID,
+        data_inicio: date,
+        data_fim: date,
+    ) -> list[Consulta]:
+        """Consultas que ainda ocupam o horário (só agendada, confirmada ou em andamento)."""
+        stmt = (
+            select(Consulta)
+            .where(Consulta.psicologo_id == psicologo_id)
+            .where(Consulta.data_agendada >= data_inicio)
+            .where(Consulta.data_agendada <= data_fim)
+            .where(
+                Consulta.status.in_(
+                    [
+                        ConsultaStatus.agendada,
+                        ConsultaStatus.confirmada,
+                        ConsultaStatus.em_andamento,
+                    ],
+                )
+            )
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().all())
 
     async def create_paciente(self, *, usuario_id: UUID, contato_emergencia: str | None) -> Paciente:
         row = Paciente(usuario_id=usuario_id, contato_emergencia=contato_emergencia)

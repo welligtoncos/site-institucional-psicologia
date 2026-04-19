@@ -24,6 +24,7 @@ import {
   getPatientAppointments,
   markAppointmentCompletedAfterLiveSession,
 } from "@/app/lib/portal-payment-mock";
+import { psychologistSessionRoomPath } from "@/app/lib/psychologist-session-routes";
 import {
   loadAgendaAppointments,
   markAgendaSessionCompleted,
@@ -129,13 +130,19 @@ function pickableFromShared(s: SharedLiveSessionState): PickableSession {
   };
 }
 
-export function PsychologistLiveSessionBoard() {
+type PsychologistLiveSessionBoardProps = {
+  /** Quando definido, a tela é a sala individual (rota `/psicologo/sessao/[roomRef]`). */
+  lockedRoomRef?: string | null;
+};
+
+export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: PsychologistLiveSessionBoardProps) {
+  const isRoomPage = Boolean(lockedRoomRef && lockedRoomRef.length > 0);
   const [today] = useState(() => todayIso());
   const [agenda, setAgenda] = useState<PsychologistAgendaAppointment[]>([]);
   const [portalAppts, setPortalAppts] = useState<MockAppointment[]>([]);
   const [tick, setTick] = useState(0);
   const [hydrated, setHydrated] = useState(false);
-  const [selectedRef, setSelectedRef] = useState("");
+  const [selectedRef, setSelectedRef] = useState(() => (lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : ""));
   const [meetDraft, setMeetDraft] = useState("");
   const [demoUnlock, setDemoUnlock] = useState(false);
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
@@ -178,6 +185,12 @@ export function PsychologistLiveSessionBoard() {
     };
   }, [refreshSources]);
 
+  useEffect(() => {
+    if (lockedRoomRef && lockedRoomRef.length > 0) {
+      setSelectedRef(lockedRoomRef);
+    }
+  }, [lockedRoomRef]);
+
   const pickableToday = useMemo(
     () => buildTodaySessions(today, agenda, portalAppts),
     [today, agenda, portalAppts],
@@ -193,7 +206,7 @@ export function PsychologistLiveSessionBoard() {
       s &&
       selectedRef &&
       s.ref === selectedRef &&
-      (s.phase === "patient_waiting" || s.phase === "live")
+      (s.phase === "patient_waiting" || s.phase === "live" || s.phase === "ended")
     ) {
       return pickableFromShared(s);
     }
@@ -201,11 +214,12 @@ export function PsychologistLiveSessionBoard() {
   }, [selectedRef, pickableToday, shared]);
 
   useEffect(() => {
+    if (isRoomPage) return;
     const s = getSharedLiveSession();
     if (s && (s.phase === "patient_waiting" || s.phase === "live")) {
       setSelectedRef(s.ref);
     }
-  }, [shared]);
+  }, [shared, isRoomPage]);
 
   useEffect(() => {
     const cur = getSharedLiveSession();
@@ -305,11 +319,8 @@ export function PsychologistLiveSessionBoard() {
   /** Paciente na sala + link + janela do fluxo (estado compartilhado) liberou o início. */
   const patientPathStartReady = useMemo(() => {
     if (!patientWaitingSameRef || !shared) return false;
-    if (!shared.meetUrl?.trim()) return false;
-    const u = shared.psychUnlockStartButtonAtMs;
-    if (u === undefined) return false;
-    return Date.now() >= u;
-  }, [patientWaitingSameRef, shared, tick]);
+    return Boolean(shared.meetUrl?.trim());
+  }, [patientWaitingSameRef, shared]);
 
   /** Início sem paciente na sala de espera (agenda ou modo demonstração). */
   const soloStartAllowed =
@@ -412,12 +423,6 @@ export function PsychologistLiveSessionBoard() {
     shared?.phase === "live" ? Math.max(0, plannedMs - elapsedMs) : 0;
 
   useEffect(() => {
-    if (!hydrated || shared?.phase === "live" || pickableToday.length === 0 || selectedRef) return;
-    const first = pickableToday[0];
-    if (first) setSelectedRef(first.ref);
-  }, [hydrated, shared?.phase, pickableToday, selectedRef]);
-
-  useEffect(() => {
     if (!hydrated || shared?.phase === "live" || shared?.phase === "patient_waiting") return;
     const exists = shared ? pickableToday.some((s) => s.ref === shared.ref) : true;
     if (shared && !exists && shared.phase !== "ended") {
@@ -451,15 +456,23 @@ export function PsychologistLiveSessionBoard() {
     return draft || undefined;
   }, [selectedRef, shared?.ref, shared?.meetUrl, meetDraft]);
 
-  const secondsUntilPlayUnlock = useMemo(() => {
-    if (!patientWaitingSameRef || !shared?.psychUnlockStartButtonAtMs) return 0;
-    return Math.max(0, Math.ceil((shared.psychUnlockStartButtonAtMs - Date.now()) / 1000));
-  }, [patientWaitingSameRef, shared?.psychUnlockStartButtonAtMs, tick]);
-
   const showPatientInWaitingBanner =
     Boolean(shared?.phase === "patient_waiting") && !showLiveUi && !showEndedPsych;
 
   const waitingRoomIsOpen = shared?.phase === "patient_waiting";
+
+  const roomCards = useMemo((): PickableSession[] => {
+    const refs = new Set(pickableToday.map((x) => x.ref));
+    if (shared && shared.phase === "patient_waiting" && !refs.has(shared.ref)) {
+      return [...pickableToday, pickableFromShared(shared)];
+    }
+    return pickableToday;
+  }, [pickableToday, shared]);
+
+  const selectedRoomIndex = useMemo(() => {
+    const i = roomCards.findIndex((s) => s.ref === selectedRef);
+    return i >= 0 ? i + 1 : 0;
+  }, [roomCards, selectedRef]);
 
   if (!hydrated) {
     return (
@@ -475,6 +488,27 @@ export function PsychologistLiveSessionBoard() {
         <span className="font-semibold">Demonstração:</span> use o mesmo endereço no navegador do paciente (ex.: só{" "}
         <code className="rounded bg-amber-100/80 px-1">localhost:3000</code>, sem misturar com 127.0.0.1).
       </p>
+
+      {!isRoomPage && showLiveUi && shared ? (
+        <div className="flex flex-col gap-2 rounded-2xl border border-emerald-300 bg-emerald-50/90 px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium text-emerald-950">Há uma sessão em andamento neste navegador.</p>
+          <Link
+            href={psychologistSessionRoomPath(shared.ref)}
+            className="inline-flex shrink-0 justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+          >
+            Ver sala e cronômetro
+          </Link>
+        </div>
+      ) : null}
+
+      {showLiveUi && isRoomPage && shared && lockedRoomRef && shared.ref !== lockedRoomRef ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-medium">Outra sala está com o cronômetro ativo.</p>
+          <Link href={psychologistSessionRoomPath(shared.ref)} className="mt-2 inline-block font-semibold text-emerald-800 underline">
+            Ir para {describeLiveSessionRef(shared.ref)}
+          </Link>
+        </div>
+      ) : null}
 
       {showPatientInWaitingBanner && shared ? (
         <div
@@ -502,17 +536,23 @@ export function PsychologistLiveSessionBoard() {
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {!patientWaitingSameRef ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedRef(shared.ref)}
+                <Link
+                  href={psychologistSessionRoomPath(shared.ref)}
                   className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-900 shadow-md hover:bg-emerald-50"
                 >
-                  Usar esta consulta
-                </button>
-              ) : (
+                  Abrir painel da sala
+                </Link>
+              ) : isRoomPage && lockedRoomRef === shared.ref ? (
                 <span className="rounded-full bg-white/25 px-3 py-1.5 text-xs font-semibold ring-1 ring-white/40">
-                  Consulta selecionada — use o passo 3 abaixo
+                  Você está nesta sala — envie o link e inicie abaixo
                 </span>
+              ) : (
+                <Link
+                  href={psychologistSessionRoomPath(shared.ref)}
+                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-900 shadow-md hover:bg-emerald-50"
+                >
+                  Ir para o painel desta sala
+                </Link>
               )}
             </div>
           </div>
@@ -521,6 +561,16 @@ export function PsychologistLiveSessionBoard() {
 
       {showEndedPsych && shared ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          {isRoomPage ? (
+            <div className="mb-4">
+              <Link
+                href="/psicologo/sessao"
+                className="inline-flex text-sm font-semibold text-emerald-800 hover:underline"
+              >
+                ← Voltar às salas de hoje
+              </Link>
+            </div>
+          ) : null}
           <p className="text-lg font-semibold text-slate-900">Sessão finalizada</p>
           <p className="mt-2 text-sm text-slate-600">
             Encerrada às{" "}
@@ -550,7 +600,7 @@ export function PsychologistLiveSessionBoard() {
 
       {!showLiveUi && !showEndedPsych ? (
         <>
-          {pickableToday.length === 0 && shared?.phase !== "patient_waiting" ? (
+          {!isRoomPage && pickableToday.length === 0 && shared?.phase !== "patient_waiting" ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
               <p className="text-sm text-slate-600">Não há consultas mockadas para hoje ({today}).</p>
               <p className="mt-2 text-xs text-slate-500">
@@ -561,252 +611,324 @@ export function PsychologistLiveSessionBoard() {
                 .
               </p>
             </div>
-          ) : (
+          ) : null}
+
+          {!isRoomPage && (pickableToday.length > 0 || shared?.phase === "patient_waiting") ? (
             <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <header className="border-b border-slate-100 bg-slate-50/90 px-5 py-4 sm:px-6 sm:py-5">
-                <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Sessão online</h1>
-                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-                  Entre na videochamada, envie o link para o paciente ver no portal e só então inicie o cronômetro —{" "}
-                  <strong className="font-semibold text-slate-800">quando você quiser</strong>, não ao abrir a Meet.
+              <header className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-emerald-50/30 px-5 py-5 sm:px-6">
+                <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Salas de hoje</h1>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
+                  Abra uma sala para enviar o link da videochamada, ver quando o paciente entra no portal e iniciar o cronômetro do
+                  atendimento.
                 </p>
               </header>
-
-              <div className="space-y-0 divide-y divide-slate-100 px-5 py-6 sm:px-6">
-                <div className="pb-8">
-                  <label htmlFor="sessao-picker" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Consulta
-                  </label>
-                  <select
-                    id="sessao-picker"
-                    value={selectedRef}
-                    onChange={(e) => setSelectedRef(e.target.value)}
-                    className="mt-2 w-full max-w-xl rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
-                  >
-                    {pickableToday.map((s) => (
-                      <option key={s.ref} value={s.ref}>
-                        {s.time} · {s.patientName} · {s.format} ({s.sourceLabel})
-                      </option>
-                    ))}
-                    {resolvedSession &&
-                    shared?.ref === resolvedSession.ref &&
-                    !pickableToday.some((x) => x.ref === resolvedSession.ref) ? (
-                      <option value={resolvedSession.ref}>
-                        {resolvedSession.time} · {resolvedSession.patientName} · {resolvedSession.format} (paciente na sala)
-                      </option>
-                    ) : null}
-                  </select>
-                </div>
-
-                {/* Passo 1 */}
-                <section className="py-8">
-                  <div className="flex gap-3">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white"
-                      aria-hidden
-                    >
-                      1
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-3">
-                      <div>
-                        <h2 className="text-base font-semibold text-slate-900">Entrar na sala e enviar o link</h2>
-                        <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                          Cole o convite da Meet ou Zoom. <strong className="font-medium text-slate-800">Salvar</strong> publica o
-                          link na sala de espera do paciente. Use <strong className="font-medium text-slate-800">Abrir sala</strong>{" "}
-                          para entrar na mesma chamada.
-                        </p>
-                      </div>
-                      <label htmlFor="meet-url-psych" className="sr-only">
-                        Link da videochamada
-                      </label>
-                      <input
-                        id="meet-url-psych"
-                        type="url"
-                        inputMode="url"
-                        autoComplete="off"
-                        placeholder="https://meet.google.com/..."
-                        value={meetDraft}
-                        onChange={(e) => setMeetDraft(e.target.value)}
-                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
-                      />
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleSaveMeetLink}
-                          disabled={!selectedRef}
-                          className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Salvar link (paciente vê)
-                        </button>
-                        {openMeetHref ? (
-                          <a
-                            href={openMeetHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                          >
-                            Abrir sala na nova aba
-                          </a>
-                        ) : (
-                          <span className="text-xs text-slate-500">Preencha o link para abrir a videochamada.</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Passo 2 */}
-                <section className="py-8">
-                  <div className="flex gap-3">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-800"
-                      aria-hidden
-                    >
-                      2
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-base font-semibold text-slate-900">Paciente no portal</h2>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Com o link salvo, o paciente abre o atendimento e entra na fila. Você não precisa esperar isso para abrir a
-                        sala — só para alinhar o início do tempo.
-                      </p>
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm">
-                        {waitingRoomIsOpen && shared ? (
-                          <p className="text-slate-800">
-                            <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800">
-                              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" aria-hidden />
-                              Alguém na sala de espera
+              <div className="px-5 py-6 sm:px-6">
+                <h2 className="text-base font-semibold text-slate-900">Salas disponíveis hoje</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-600">
+                  Cada card é uma sala virtual ligada a um horário de hoje. Escolha a sala do atendimento — quando o paciente entrar
+                  pelo portal, o card mostra que ele está na fila.
+                </p>
+                <div className="mt-5 grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Salas de atendimento disponíveis hoje">
+                  {roomCards.map((s, idx) => {
+                    const patientInThis = shared?.phase === "patient_waiting" && shared.ref === s.ref;
+                    return (
+                      <Link
+                        key={s.ref}
+                        href={psychologistSessionRoomPath(s.ref)}
+                        className={`flex min-h-[200px] flex-col rounded-2xl border-2 p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                          patientInThis
+                            ? "border-emerald-500 bg-emerald-50/80 shadow-md ring-2 ring-amber-400 ring-offset-2 ring-offset-white"
+                            : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-slate-50/90"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-800">Sala {idx + 1}</span>
+                          {patientInThis ? (
+                            <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                              Paciente na sala
                             </span>
-                            {" — "}
-                            <strong>{shared.patientName}</strong> ({describeLiveSessionRef(shared.ref)}).
-                            {!patientWaitingSameRef ? (
-                              <span className="block pt-2 text-xs text-slate-600">
-                                Selecione a mesma consulta no seletor acima ou o botão no aviso verde.
-                              </span>
-                            ) : null}
-                          </p>
-                        ) : (
-                          <p className="text-slate-600">
-                            Ninguém na fila neste navegador ainda. Se o paciente já estiver em outra aba, use o mesmo endereço do
-                            site.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Passo 3 */}
-                <section className="pt-8">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white"
-                      aria-hidden
-                    >
-                      3
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-4">
-                      <div>
-                        <h2 className="text-base font-semibold text-slate-900">Iniciar o atendimento quando quiser</h2>
-                        <p className="mt-1 text-sm text-slate-600">
-                          O cronômetro oficial só começa aqui. Paciente na sala + link: nesta demo o play libera após um curto intervalo
-                          de segurança.
-                        </p>
-                      </div>
-
-                      {resolvedSession && timeStatus && !patientWaitingSameRef ? (
-                        <div
-                          className={`rounded-xl border px-4 py-3 text-sm ${
-                            timeStatus.tone === "now"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                              : timeStatus.tone === "soon"
-                                ? "border-amber-200 bg-amber-50 text-amber-950"
-                                : timeStatus.tone === "late"
-                                  ? "border-slate-200 bg-slate-50 text-slate-800"
-                                  : "border-sky-200 bg-sky-50 text-sky-950"
-                          }`}
-                        >
-                          <p className="font-semibold">{timeStatus.title}</p>
-                          <p className="mt-1 text-xs leading-relaxed opacity-90">{timeStatus.detail}</p>
-                        </div>
-                      ) : null}
-
-                      {patientWaitingSameRef && shared ? (
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
-                          {!shared.meetUrl?.trim() ? (
-                            <p className="font-medium">Salve o link no passo 1 para o paciente entrar na mesma sala.</p>
-                          ) : secondsUntilPlayUnlock > 0 ? (
-                            <p className="font-medium">
-                              Play liberado em <strong className="tabular-nums">{secondsUntilPlayUnlock}s</strong> (intervalo de
-                              demonstração).
-                            </p>
                           ) : (
-                            <p className="font-medium">Pode iniciar o cronômetro quando quiser.</p>
+                            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                              Disponível
+                            </span>
                           )}
                         </div>
-                      ) : null}
-
-                      <label className="flex max-w-md cursor-pointer items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={demoUnlock}
-                          onChange={(e) => setDemoUnlock(e.target.checked)}
-                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                        />
-                        Sem paciente na fila: permitir iniciar fora do horário da agenda (demo)
-                      </label>
-
-                      <button
-                        type="button"
-                        disabled={!canStartPrep}
-                        onClick={handleStart}
-                        aria-label="Iniciar cronômetro da sessão"
-                        className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <span className="text-lg leading-none" aria-hidden>
-                          ▶
-                        </span>
-                        Iniciar cronômetro (play)
-                      </button>
-
-                      {!canStartPrep && resolvedSession ? (
-                        <p className="text-xs text-slate-500">
-                          {!patientWaitingSameRef && !canStartBySchedule && !demoUnlock
-                            ? "Marque a opção de demonstração acima, aguarde a janela de horário ou espere o paciente na sala de espera (com link salvo)."
-                            : patientWaitingSameRef && !shared?.meetUrl?.trim()
-                              ? "Salve o link no passo 1."
-                              : patientWaitingSameRef && secondsUntilPlayUnlock > 0
-                                ? "Aguarde a contagem para liberar o play."
-                                : "Verifique a consulta selecionada."}
+                        <p className="mt-5 text-3xl font-bold tabular-nums leading-none tracking-tight text-slate-900">{s.time}</p>
+                        <p className="mt-3 line-clamp-2 text-sm font-semibold leading-snug text-slate-800">{s.patientName}</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {s.format} · {s.sourceLabel}
                         </p>
-                      ) : null}
-
-                      {!canStartBySchedule && resolvedSession && !demoUnlock && !patientWaitingSameRef ? (
-                        <p className="text-xs text-slate-500">
-                          Com paciente na fila e a mesma consulta selecionada, o horário da agenda não bloqueia o início.
-                        </p>
-                      ) : null}
-
-                      {typeof window !== "undefined" &&
-                      "Notification" in window &&
-                      Notification.permission === "default" ? (
-                        <button
-                          type="button"
-                          onClick={() => void Notification.requestPermission()}
-                          className="text-xs font-semibold text-emerald-800 underline hover:text-emerald-950"
-                        >
-                          Pedir permissão para alertas do navegador
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
+                        <div className="mt-auto border-t border-slate-200/80 pt-4">
+                          <p className="text-xs font-semibold text-emerald-800">Abrir painel desta sala →</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
             </article>
-          )}
+          ) : null}
+
+          {isRoomPage && lockedRoomRef ? (
+            <>
+              <div className="mb-2">
+                <Link
+                  href="/psicologo/sessao"
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-800 hover:underline"
+                >
+                  ← Voltar às salas de hoje
+                </Link>
+              </div>
+              {!resolvedSession ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                  <p className="text-sm font-medium text-slate-800">Sala não disponível</p>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Este link não corresponde a um horário de hoje ou a uma sala ativa. Confira o endereço ou volte à lista.
+                  </p>
+                  <Link
+                    href="/psicologo/sessao"
+                    className="mt-5 inline-flex rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    Ver salas disponíveis
+                  </Link>
+                </div>
+              ) : (
+                <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="px-5 py-6 sm:px-6">
+                  <div className="overflow-hidden rounded-2xl border-2 border-emerald-200 bg-gradient-to-b from-emerald-50/50 via-white to-white shadow-inner">
+                    <div className="border-b border-emerald-100/90 bg-emerald-600/5 px-5 py-4 sm:px-6">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-800">Nesta sala</p>
+                      <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                          <p className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                            Sala {selectedRoomIndex} · {resolvedSession.time}
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{resolvedSession.patientName}</p>
+                          <p className="mt-0.5 text-xs text-slate-600">
+                            {resolvedSession.format} · {resolvedSession.sourceLabel}
+                          </p>
+                        </div>
+                        {patientWaitingSameRef ? (
+                          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-950">
+                            Paciente na fila
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                            Aguardando paciente
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-3 text-xs leading-relaxed text-slate-600">
+                        Envie o link, acompanhe o paciente no portal e inicie o cronômetro — nesta ordem, nesta sala.
+                      </p>
+                    </div>
+
+                    <div className="px-5 py-6 sm:px-6">
+                      <ol className="space-y-10">
+                        <li className="flex gap-4">
+                          <span
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white shadow-sm ring-4 ring-white"
+                            aria-hidden
+                          >
+                            1
+                          </span>
+                          <div className="min-w-0 flex-1 space-y-3">
+                            <h3 className="text-base font-semibold text-slate-900">Enviar o link da videochamada</h3>
+                            <p className="text-sm leading-relaxed text-slate-600">
+                              Cole o convite da Meet ou Zoom. <strong className="font-medium text-slate-800">Salvar</strong> publica
+                              na sala de espera do paciente. <strong className="font-medium text-slate-800">Abrir sala</strong> abre a
+                              mesma chamada para você.
+                            </p>
+                            <label htmlFor="meet-url-psych" className="sr-only">
+                              Link da videochamada
+                            </label>
+                            <input
+                              id="meet-url-psych"
+                              type="url"
+                              inputMode="url"
+                              autoComplete="off"
+                              placeholder="https://meet.google.com/..."
+                              value={meetDraft}
+                              onChange={(e) => setMeetDraft(e.target.value)}
+                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleSaveMeetLink}
+                                disabled={!selectedRef}
+                                className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Salvar link (paciente vê)
+                              </button>
+                              {openMeetHref ? (
+                                <a
+                                  href={openMeetHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                >
+                                  Abrir sala na nova aba
+                                </a>
+                              ) : (
+                                <span className="text-xs text-slate-500">Preencha o link para abrir a videochamada.</span>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+
+                        <li className="flex gap-4">
+                          <span
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-800 ring-4 ring-white"
+                            aria-hidden
+                          >
+                            2
+                          </span>
+                          <div className="min-w-0 flex-1 space-y-3">
+                            <h3 className="text-base font-semibold text-slate-900">Paciente no portal</h3>
+                            <p className="text-sm leading-relaxed text-slate-600">
+                              Com o link salvo, o paciente entra na fila neste dispositivo/navegador (demo). O status aparece aqui e
+                              nos cards da lista de salas.
+                            </p>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm">
+                              {waitingRoomIsOpen && shared ? (
+                                <p className="text-slate-800">
+                                  <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800">
+                                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" aria-hidden />
+                                    Alguém na sala de espera
+                                  </span>
+                                  {" — "}
+                                  <strong>{shared.patientName}</strong> ({describeLiveSessionRef(shared.ref)}).
+                                  {!patientWaitingSameRef ? (
+                                    <span className="block pt-2 text-xs text-slate-600">
+                                      Este painel precisa ser o da mesma consulta em que o paciente entrou (confira o aviso verde no
+                                      topo, se aparecer).
+                                    </span>
+                                  ) : null}
+                                </p>
+                              ) : (
+                                <p className="text-slate-600">
+                                  Ninguém na fila neste navegador ainda. Peça ao paciente para usar o mesmo endereço do site (ex. só
+                                  localhost:3000).
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+
+                        <li className="flex gap-4">
+                          <span
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white shadow-sm ring-4 ring-white"
+                            aria-hidden
+                          >
+                            3
+                          </span>
+                          <div className="min-w-0 flex-1 space-y-4">
+                            <h3 className="text-base font-semibold text-slate-900">Iniciar atendimento (cronômetro)</h3>
+                            <p className="text-sm leading-relaxed text-slate-600">
+                              O tempo oficial só começa aqui. Com paciente na fila e link salvos, você pode iniciar quando quiser.
+                            </p>
+
+                            {resolvedSession && timeStatus && !patientWaitingSameRef ? (
+                              <div
+                                className={`rounded-xl border px-4 py-3 text-sm ${
+                                  timeStatus.tone === "now"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                                    : timeStatus.tone === "soon"
+                                      ? "border-amber-200 bg-amber-50 text-amber-950"
+                                      : timeStatus.tone === "late"
+                                        ? "border-slate-200 bg-slate-50 text-slate-800"
+                                        : "border-sky-200 bg-sky-50 text-sky-950"
+                                }`}
+                              >
+                                <p className="font-semibold">{timeStatus.title}</p>
+                                <p className="mt-1 text-xs leading-relaxed opacity-90">{timeStatus.detail}</p>
+                              </div>
+                            ) : null}
+
+                            {patientWaitingSameRef && shared ? (
+                              <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+                                {!shared.meetUrl?.trim() ? (
+                                  <p className="font-medium">Salve o link no passo 1 para o paciente entrar na mesma sala.</p>
+                                ) : (
+                                  <p className="font-medium">Pode iniciar o cronômetro quando quiser.</p>
+                                )}
+                              </div>
+                            ) : null}
+
+                            <label className="flex max-w-md cursor-pointer items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={demoUnlock}
+                                onChange={(e) => setDemoUnlock(e.target.checked)}
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              Sem paciente na fila: permitir iniciar fora do horário da agenda (demo)
+                            </label>
+
+                            <button
+                              type="button"
+                              disabled={!canStartPrep}
+                              onClick={handleStart}
+                              aria-label="Iniciar cronômetro da sessão"
+                              className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-900/15 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <span className="text-lg leading-none" aria-hidden>
+                                ▶
+                              </span>
+                              Iniciar cronômetro (play)
+                            </button>
+
+                            {!canStartPrep && resolvedSession ? (
+                              <p className="text-xs text-slate-500">
+                                {!patientWaitingSameRef && !canStartBySchedule && !demoUnlock
+                                  ? "Marque a opção de demonstração, aguarde a janela de horário ou espere o paciente na fila com link salvo."
+                                  : patientWaitingSameRef && !shared?.meetUrl?.trim()
+                                    ? "Salve o link no passo 1."
+                                    : "Verifique a sala selecionada."}
+                              </p>
+                            ) : null}
+
+                            {!canStartBySchedule && resolvedSession && !demoUnlock && !patientWaitingSameRef ? (
+                              <p className="text-xs text-slate-500">
+                                Com paciente na fila e a mesma sala selecionada, o horário da agenda não bloqueia o início.
+                              </p>
+                            ) : null}
+
+                            {typeof window !== "undefined" &&
+                            "Notification" in window &&
+                            Notification.permission === "default" ? (
+                              <button
+                                type="button"
+                                onClick={() => void Notification.requestPermission()}
+                                className="text-xs font-semibold text-emerald-800 underline hover:text-emerald-950"
+                              >
+                                Pedir permissão para alertas do navegador
+                              </button>
+                            ) : null}
+                          </div>
+                        </li>
+                      </ol>
+
+                      <div className="mt-10 rounded-xl border border-dashed border-slate-300 bg-slate-50/90 px-4 py-4 sm:px-5">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Próximas atividades (layout)</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">Outras ações após o atendimento</p>
+                        <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                          Espaço reservado para evolução: notas da sessão, materiais para o paciente, tarefas de acompanhamento e
+                          integração com prontuário — mantendo o mesmo fluxo sala → link → portal → play.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  </div>
+                </article>
+              )}
+            </>
+          ) : null}
         </>
       ) : null}
 
-      {showLiveUi && shared ? (
+      {showLiveUi && shared && isRoomPage && lockedRoomRef && shared.ref === lockedRoomRef ? (
         <div className="overflow-hidden rounded-2xl border-2 border-emerald-200 bg-gradient-to-b from-white to-emerald-50/40 shadow-xl">
           <div className="border-b border-emerald-100 bg-emerald-50/80 px-6 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-900">Em andamento · sincronizado</p>

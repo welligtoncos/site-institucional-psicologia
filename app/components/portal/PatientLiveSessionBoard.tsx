@@ -109,9 +109,7 @@ export function PatientLiveSessionBoard() {
       updatedAtMs: Date.now(),
     };
     setSharedLiveSession(next);
-    toast.success(
-      "Você está na sala de espera. Aguarde o link no painel do psicólogo; quando a sessão for iniciada (play), o cronômetro aparece aqui.",
-    );
+    toast.success("Você entrou na sala. Na tela, confirme o cartão verde e siga os passos até o link e o início da sessão.");
   }
 
   /** Sai da sala de espera sem encerrar consulta no portal — pode entrar de novo quando quiser. */
@@ -222,11 +220,31 @@ export function PatientLiveSessionBoard() {
                   ) : null}
 
                   {isThis && phase === "patient_waiting" && shared ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-6 text-center">
+                    <div className="space-y-4">
+                      <div className="overflow-hidden rounded-2xl border-2 border-emerald-400 bg-gradient-to-br from-emerald-50 via-white to-teal-50/80 px-5 py-6 text-center shadow-sm">
+                        <div
+                          className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-900/25"
+                          aria-hidden
+                        >
+                          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <p className="mt-4 text-lg font-bold tracking-tight text-emerald-950">Você entrou na sala</p>
+                        <p className="mt-1 text-sm leading-relaxed text-emerald-900/90">
+                          Sala de atendimento virtual · com <strong className="font-semibold">{shared.psychologistName}</strong>
+                        </p>
+                        <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs leading-relaxed text-emerald-900/85 ring-1 ring-emerald-100">
+                          Abaixo, acompanhe o passo a passo até o início oficial da sessão (quando o profissional der play no
+                          painel dele).
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-6 text-center">
                       <div className="mx-auto mb-3 flex h-14 w-14 animate-pulse items-center justify-center rounded-full bg-amber-200 text-2xl">
                         ◉
                       </div>
-                      <p className="font-semibold text-amber-950">Você está na sala de espera</p>
+                      <p className="font-semibold text-amber-950">Sala de espera</p>
                       <p className="sr-only">Estado do fluxo: aguardando link, profissional pronto ou sessão iniciada.</p>
                       <div
                         className="mx-auto mt-4 grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-amber-300/70 bg-white/70 p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-amber-900/70 sm:text-[11px]"
@@ -311,6 +329,7 @@ export function PatientLiveSessionBoard() {
                         Atualização automática. Sair só remove você da fila neste dispositivo (demo); o psicólogo passa a ver a sala
                         fechada até você entrar de novo.
                       </p>
+                    </div>
                     </div>
                   ) : null}
 

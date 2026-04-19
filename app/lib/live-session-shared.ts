@@ -5,8 +5,8 @@
 
 export const LIVE_SESSION_STORAGE_KEY = "clinica_live_session_shared_v1";
 
-/** Espera mínima (ms) após paciente na sala + link visível antes do psicólogo poder iniciar o cronômetro. */
-export const PSYCH_START_MIN_WAIT_MS = 60_000;
+/** Reservado para simulações futuras; o play libera assim que houver link e paciente na fila. */
+export const PSYCH_START_MIN_WAIT_MS = 0;
 
 export type LiveSessionPhase = "patient_waiting" | "live" | "ended";
 
