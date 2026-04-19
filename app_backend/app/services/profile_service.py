@@ -64,6 +64,8 @@ class ProfileService:
         ps = await self._clinical.update_psicologo_perfil(
             user.id,
             bio=data.bio,
+            foto_url=data.foto_url,
+            especialidades=data.especialidades,
             valor_sessao_padrao=data.valor_sessao_padrao,
             duracao_minutos_padrao=data.duracao_minutos_padrao,
         )

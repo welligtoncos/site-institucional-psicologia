@@ -107,6 +107,8 @@ class Psicologo(Base):
     )
     crp: Mapped[str] = mapped_column(String(32), nullable=False)
     bio: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    foto_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    especialidades: Mapped[str | None] = mapped_column(Text, nullable=True)
     valor_sessao_padrao: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     duracao_minutos_padrao: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=50)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

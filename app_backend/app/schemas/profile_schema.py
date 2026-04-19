@@ -36,6 +36,8 @@ class PsicologoProfileResponse(BaseModel):
     usuario_id: UUID
     crp: str
     bio: str
+    foto_url: str | None
+    especialidades: str | None
     valor_sessao_padrao: Decimal
     duracao_minutos_padrao: int
     criado_em: datetime
@@ -162,11 +164,21 @@ class PatientProfilePatchRequest(BaseModel):
 
 class PsychologistProfilePatchRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=8000)
+    foto_url: str | None = Field(default=None, max_length=2000)
+    especialidades: str | None = Field(default=None, max_length=4000)
     valor_sessao_padrao: Decimal | None = Field(default=None, ge=0)
     duracao_minutos_padrao: int | None = Field(default=None, ge=15, le=240)
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> "PsychologistProfilePatchRequest":
-        if self.bio is None and self.valor_sessao_padrao is None and self.duracao_minutos_padrao is None:
-            raise ValueError("Informe ao menos um campo para atualizar (bio, valor_sessao_padrao ou duracao_minutos_padrao).")
+        if (
+            self.bio is None
+            and self.foto_url is None
+            and self.especialidades is None
+            and self.valor_sessao_padrao is None
+            and self.duracao_minutos_padrao is None
+        ):
+            raise ValueError(
+                "Informe ao menos um campo para atualizar (bio, foto_url, especialidades, valor_sessao_padrao ou duracao_minutos_padrao)."
+            )
         return self

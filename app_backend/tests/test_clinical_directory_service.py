@@ -70,6 +70,8 @@ async def test_list_psychologists_maps_repository_rows() -> None:
         usuario_id=psych_user.id,
         crp="06/123456-SP",
         bio="TCC",
+        foto_url=None,
+        especialidades=None,
         valor_sessao_padrao=Decimal("190.00"),
         duracao_minutos_padrao=50,
         criado_em=datetime.now(timezone.utc),

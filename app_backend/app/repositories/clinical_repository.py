@@ -53,6 +53,21 @@ class ClinicalRepository:
         result = await self._db.execute(stmt)
         return list(result.scalars().unique().all())
 
+    async def list_psicologos_ativos_catalog(self, *, skip: int = 0, limit: int = 100) -> list[Psicologo]:
+        """Psicólogos com usuário ativo (para catálogo do portal do paciente)."""
+        stmt = (
+            select(Psicologo)
+            .join(User, Psicologo.usuario_id == User.id)
+            .where(User.role == UserRole.psychologist)
+            .where(User.is_active.is_(True))
+            .options(selectinload(Psicologo.usuario))
+            .order_by(User.name.asc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().unique().all())
+
     async def create_paciente(self, *, usuario_id: UUID, contato_emergencia: str | None) -> Paciente:
         row = Paciente(usuario_id=usuario_id, contato_emergencia=contato_emergencia)
         self._db.add(row)
@@ -126,6 +141,8 @@ class ClinicalRepository:
         usuario_id: UUID,
         *,
         bio: str | None = None,
+        foto_url: str | None = None,
+        especialidades: str | None = None,
         valor_sessao_padrao=None,
         duracao_minutos_padrao: int | None = None,
     ) -> Psicologo:
@@ -134,6 +151,10 @@ class ClinicalRepository:
             raise NotFoundError("Perfil de psicólogo não encontrado.")
         if bio is not None:
             row.bio = bio
+        if foto_url is not None:
+            row.foto_url = foto_url if foto_url.strip() else None
+        if especialidades is not None:
+            row.especialidades = especialidades if especialidades.strip() else None
         if valor_sessao_padrao is not None:
             row.valor_sessao_padrao = valor_sessao_padrao
         if duracao_minutos_padrao is not None:
