@@ -246,7 +246,7 @@ class DisponibilidadeSemanal(Base):
     __table_args__ = (
         CheckConstraint("dia_semana >= 0 AND dia_semana <= 6", name="ck_disponibilidade_dia_semana"),
         CheckConstraint("hora_fim > hora_inicio", name="ck_disponibilidade_janela"),
-        Index("uq_disponibilidade_psicologo_dia", "psicologo_id", "dia_semana", unique=True),
+        Index("ix_disponibilidade_psicologo_dia", "psicologo_id", "dia_semana"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

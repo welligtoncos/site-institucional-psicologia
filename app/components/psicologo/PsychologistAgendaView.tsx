@@ -12,24 +12,22 @@ import {
   persistAgendaAppointments,
   todayIso,
   type PsychologistAgendaAppointment,
-  type PsychologistAvailabilityMock,
   type TimeBlock,
 } from "@/app/lib/psicologo-mocks";
-
-const AVAIL_STORAGE = "psychologist_availability_mock_v1";
+import {
+  apiToMock,
+  fetchPsychologistAvailability,
+  type ApiPsychologistAvailability,
+} from "@/app/lib/psychologist-availability-api";
 
 type ViewMode = "dia" | "semana" | "mes";
 
-function loadBlocks(): TimeBlock[] {
-  if (typeof window === "undefined") return PSYCHOLOGIST_AVAILABILITY_SEED.blocks;
-  try {
-    const raw = localStorage.getItem(AVAIL_STORAGE);
-    if (!raw) return PSYCHOLOGIST_AVAILABILITY_SEED.blocks;
-    const p = JSON.parse(raw) as PsychologistAvailabilityMock;
-    return Array.isArray(p.blocks) ? p.blocks : PSYCHOLOGIST_AVAILABILITY_SEED.blocks;
-  } catch {
-    return PSYCHOLOGIST_AVAILABILITY_SEED.blocks;
+async function loadBlocksFromApi(): Promise<TimeBlock[]> {
+  const result = await fetchPsychologistAvailability();
+  if (result.ok && "weekly" in result.data) {
+    return apiToMock(result.data as ApiPsychologistAvailability).blocks;
   }
+  return PSYCHOLOGIST_AVAILABILITY_SEED.blocks;
 }
 
 function sortAppointments(list: PsychologistAgendaAppointment[]): PsychologistAgendaAppointment[] {
@@ -71,7 +69,7 @@ function monthLabel(d: Date): string {
 }
 
 export function PsychologistAgendaView() {
-  const [blocks, setBlocks] = useState<TimeBlock[]>(PSYCHOLOGIST_AVAILABILITY_SEED.blocks);
+  const [blocks, setBlocks] = useState<TimeBlock[]>([]);
   const [appointments, setAppointments] = useState<PsychologistAgendaAppointment[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<ViewMode>("dia");
@@ -87,19 +85,21 @@ export function PsychologistAgendaView() {
   }, []);
 
   useEffect(() => {
-    function refreshBlocks() {
-      setBlocks(loadBlocks());
+    async function refreshBlocks() {
+      const next = await loadBlocksFromApi();
+      setBlocks(next);
     }
-    setBlocks(loadBlocks());
+    const onAvailabilityChanged = () => {
+      void refreshBlocks();
+    };
+    void refreshBlocks();
     refreshAgenda();
     setHydrated(true);
-    window.addEventListener("storage", refreshBlocks);
-    window.addEventListener("psychologist-availability-changed", refreshBlocks);
+    window.addEventListener("psychologist-availability-changed", onAvailabilityChanged);
     window.addEventListener("storage", refreshAgenda);
     window.addEventListener("psychologist-agenda-changed", refreshAgenda);
     return () => {
-      window.removeEventListener("storage", refreshBlocks);
-      window.removeEventListener("psychologist-availability-changed", refreshBlocks);
+      window.removeEventListener("psychologist-availability-changed", onAvailabilityChanged);
       window.removeEventListener("storage", refreshAgenda);
       window.removeEventListener("psychologist-agenda-changed", refreshAgenda);
     };

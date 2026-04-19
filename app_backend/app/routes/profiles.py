@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
+from app.schemas.availability_schema import (
+    PsychologistAvailabilityPutRequest,
+    PsychologistAvailabilityResponse,
+)
 from app.schemas.profile_schema import (
     PatientMeResponse,
     PatientProfilePatchRequest,
@@ -15,6 +19,7 @@ from app.schemas.profile_schema import (
     PsychologistProfilePatchRequest,
 )
 from app.services.profile_service import ProfileService
+from app.services.psychologist_availability_service import PsychologistAvailabilityService
 
 router = APIRouter(
     prefix="/profiles",
@@ -30,6 +35,12 @@ router = APIRouter(
 
 async def get_profile_service(db: AsyncSession = Depends(get_db)) -> ProfileService:
     return ProfileService(db)
+
+
+async def get_psychologist_availability_service(
+    db: AsyncSession = Depends(get_db),
+) -> PsychologistAvailabilityService:
+    return PsychologistAvailabilityService(db)
 
 
 @router.get(
@@ -85,3 +96,31 @@ async def psychologist_me_patch(
     svc: ProfileService = Depends(get_profile_service),
 ) -> PsychologistMeResponse:
     return await svc.patch_psychologist_me(current_user, payload)
+
+
+@router.get(
+    "/psychologist/me/availability",
+    response_model=PsychologistAvailabilityResponse,
+    summary="Disponibilidade semanal e bloqueios",
+    description="Requer JWT `psychologist`. Lê intervalos em `disponibilidade_semanal` e bloqueios em `bloqueios_agenda`.",
+)
+async def psychologist_availability_get(
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAvailabilityService = Depends(get_psychologist_availability_service),
+) -> PsychologistAvailabilityResponse:
+    return await svc.get_availability(current_user)
+
+
+@router.put(
+    "/psychologist/me/availability",
+    response_model=PsychologistAvailabilityResponse,
+    summary="Substituir disponibilidade e bloqueios",
+    description="Requer JWT `psychologist`. Substitui todos os intervalos semanais e todos os bloqueios do profissional.",
+    status_code=status.HTTP_200_OK,
+)
+async def psychologist_availability_put(
+    payload: PsychologistAvailabilityPutRequest,
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAvailabilityService = Depends(get_psychologist_availability_service),
+) -> PsychologistAvailabilityResponse:
+    return await svc.put_availability(current_user, payload)

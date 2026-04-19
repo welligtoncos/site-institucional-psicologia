@@ -1,15 +1,16 @@
 """Persistência do domínio clínico (paciente, psicólogo) — SQLAlchemy async."""
 
+from datetime import date, time
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.clinical import Paciente, Psicologo
+from app.models.clinical import BloqueioAgenda, DisponibilidadeSemanal, Paciente, Psicologo
 from app.models.user import User, UserRole
 
 
@@ -169,3 +170,62 @@ class ClinicalRepository:
             raise ConflictError("CRP já cadastrado para outro profissional.") from exc
         await self._db.refresh(row)
         return row
+
+    async def list_disponibilidade_semanal(self, psicologo_id: UUID) -> list[DisponibilidadeSemanal]:
+        stmt = (
+            select(DisponibilidadeSemanal)
+            .where(DisponibilidadeSemanal.psicologo_id == psicologo_id)
+            .order_by(DisponibilidadeSemanal.dia_semana, DisponibilidadeSemanal.hora_inicio)
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def replace_disponibilidade_semanal(
+        self,
+        psicologo_id: UUID,
+        *,
+        slots: list[tuple[int, bool, time, time]],
+    ) -> None:
+        await self._db.execute(
+            delete(DisponibilidadeSemanal).where(DisponibilidadeSemanal.psicologo_id == psicologo_id)
+        )
+        for dia_semana, ativo, hora_inicio, hora_fim in slots:
+            self._db.add(
+                DisponibilidadeSemanal(
+                    psicologo_id=psicologo_id,
+                    dia_semana=dia_semana,
+                    ativo=ativo,
+                    hora_inicio=hora_inicio,
+                    hora_fim=hora_fim,
+                )
+            )
+        await self._db.commit()
+
+    async def list_bloqueios_agenda(self, psicologo_id: UUID) -> list[BloqueioAgenda]:
+        stmt = (
+            select(BloqueioAgenda)
+            .where(BloqueioAgenda.psicologo_id == psicologo_id)
+            .order_by(BloqueioAgenda.data_bloqueio, BloqueioAgenda.hora_inicio)
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def replace_bloqueios_agenda(
+        self,
+        psicologo_id: UUID,
+        *,
+        rows: list[tuple[date, bool, time | None, time | None, str]],
+    ) -> None:
+        await self._db.execute(delete(BloqueioAgenda).where(BloqueioAgenda.psicologo_id == psicologo_id))
+        for data_bloqueio, dia_inteiro, hora_inicio, hora_fim, motivo in rows:
+            self._db.add(
+                BloqueioAgenda(
+                    psicologo_id=psicologo_id,
+                    data_bloqueio=data_bloqueio,
+                    dia_inteiro=dia_inteiro,
+                    hora_inicio=hora_inicio,
+                    hora_fim=hora_fim,
+                    motivo=motivo,
+                )
+            )
+        await self._db.commit()

@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
-  PSYCHOLOGIST_AVAILABILITY_SEED,
   WEEKDAY_LONG,
   WEEKDAY_ORDER,
   type DaySlot,
@@ -12,25 +11,23 @@ import {
   type TimeBlock,
   type Weekday,
 } from "@/app/lib/psicologo-mocks";
+import {
+  apiToMock,
+  fetchPsychologistAvailability,
+  mockToApiPayload,
+  putPsychologistAvailability,
+  type ApiPsychologistAvailability,
+} from "@/app/lib/psychologist-availability-api";
 
-const STORAGE_KEY = "psychologist_availability_mock_v1";
-
-function load(): PsychologistAvailabilityMock {
-  if (typeof window === "undefined") return PSYCHOLOGIST_AVAILABILITY_SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return PSYCHOLOGIST_AVAILABILITY_SEED;
-    const p = JSON.parse(raw) as PsychologistAvailabilityMock;
-    if (!Array.isArray(p.weekly) || !Array.isArray(p.blocks)) return PSYCHOLOGIST_AVAILABILITY_SEED;
-    return p;
-  } catch {
-    return PSYCHOLOGIST_AVAILABILITY_SEED;
-  }
-}
+const EMPTY: PsychologistAvailabilityMock = { weekly: [], blocks: [] };
 
 export function PsychologistAvailabilityBoard() {
-  const [data, setData] = useState<PsychologistAvailabilityMock>(PSYCHOLOGIST_AVAILABILITY_SEED);
+  const [data, setData] = useState<PsychologistAvailabilityMock>(EMPTY);
   const [hydrated, setHydrated] = useState(false);
+  const [loadError, setLoadError] = useState<"forbidden" | "generic" | null>(null);
+  /** Evita disparar PUT antes do primeiro GET completar. */
+  const initialLoadDoneRef = useRef(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   const [blockDate, setBlockDate] = useState("");
   const [blockAllDay, setBlockAllDay] = useState(true);
@@ -38,32 +35,91 @@ export function PsychologistAvailabilityBoard() {
   const [blockEnd, setBlockEnd] = useState("13:00");
   const [blockNote, setBlockNote] = useState("");
 
-  useEffect(() => {
-    setData(load());
-    setHydrated(true);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const queueSave = useCallback((snapshot: PsychologistAvailabilityMock) => {
+    if (!initialLoadDoneRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      void (async () => {
+        setSaveStatus("saving");
+        const result = await putPsychologistAvailability(mockToApiPayload(snapshot));
+        if (result.ok && "weekly" in result.data) {
+          setData(apiToMock(result.data as ApiPsychologistAvailability));
+          setSaveStatus("saved");
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("psychologist-availability-changed"));
+          }
+          return;
+        }
+        setSaveStatus("idle");
+        const detail =
+          "detail" in result.data && typeof result.data.detail === "string"
+            ? result.data.detail
+            : "Não foi possível salvar a disponibilidade.";
+        toast.error(detail);
+      })();
+    }, 1200);
   }, []);
 
-  function persist(next: PsychologistAvailabilityMock) {
-    setData(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("psychologist-availability-changed"));
-    }
-  }
+  useEffect(() => {
+    if (saveStatus !== "saved") return;
+    const t = window.setTimeout(() => setSaveStatus("idle"), 2200);
+    return () => window.clearTimeout(t);
+  }, [saveStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await fetchPsychologistAvailability();
+      if (cancelled) return;
+      if (result.ok && "weekly" in result.data) {
+        setData(apiToMock(result.data as ApiPsychologistAvailability));
+        setLoadError(null);
+        initialLoadDoneRef.current = true;
+      } else if (result.status === 403) {
+        setLoadError("forbidden");
+      } else {
+        setLoadError("generic");
+        initialLoadDoneRef.current = true;
+        const detail =
+          "detail" in result.data && typeof result.data.detail === "string"
+            ? result.data.detail
+            : "Não foi possível carregar a disponibilidade.";
+        toast.error(detail);
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateWeekly(index: number, patch: Partial<DaySlot>) {
-    const weekly = data.weekly.map((row, i) => (i === index ? { ...row, ...patch } : row));
-    persist({ ...data, weekly });
+    setData((prev) => {
+      const weekly = prev.weekly.map((row, i) => (i === index ? { ...row, ...patch } : row));
+      const next = { ...prev, weekly };
+      queueSave(next);
+      return next;
+    });
   }
 
   function removeWeekly(index: number) {
-    persist({ ...data, weekly: data.weekly.filter((_, i) => i !== index) });
+    setData((prev) => {
+      const next = { ...prev, weekly: prev.weekly.filter((_, i) => i !== index) };
+      queueSave(next);
+      return next;
+    });
   }
 
   function addWeeklySlot(day: Weekday) {
-    persist({
-      ...data,
-      weekly: [...data.weekly, { weekday: day, enabled: true, start: "09:00", end: "18:00" }],
+    setData((prev) => {
+      const next = {
+        ...prev,
+        weekly: [...prev.weekly, { weekday: day, enabled: true, start: "09:00", end: "18:00" }],
+      };
+      queueSave(next);
+      return next;
     });
   }
 
@@ -79,13 +135,21 @@ export function PsychologistAvailabilityBoard() {
       b.startTime = blockStart;
       b.endTime = blockEnd;
     }
-    persist({ ...data, blocks: [...data.blocks, b] });
+    setData((prev) => {
+      const next = { ...prev, blocks: [...prev.blocks, b] };
+      queueSave(next);
+      return next;
+    });
     setBlockNote("");
     toast.success("Bloqueio adicionado.");
   }
 
   function removeBlock(id: string) {
-    persist({ ...data, blocks: data.blocks.filter((b) => b.id !== id) });
+    setData((prev) => {
+      const next = { ...prev, blocks: prev.blocks.filter((b) => b.id !== id) };
+      queueSave(next);
+      return next;
+    });
   }
 
   if (!hydrated) {
@@ -96,15 +160,39 @@ export function PsychologistAvailabilityBoard() {
     );
   }
 
+  if (loadError === "forbidden") {
+    return (
+      <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 shadow-sm">
+        <p className="font-medium">Disponível apenas para contas cadastradas como psicólogo.</p>
+        <p className="text-amber-900/90">
+          Usuários administrativos podem gerenciar outros recursos no painel; a disponibilidade semanal fica vinculada ao
+          perfil profissional.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Disponibilidade</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">Horários e bloqueios</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Defina quando você atende na semana e registre dias ou intervalos indisponíveis. Os dados são salvos só neste
-          navegador (demonstração).
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Disponibilidade</p>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900">Horários e bloqueios</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600">
+              Defina quando você atende na semana e registre dias ou intervalos indisponíveis. As alterações são salvas no
+              servidor (sincronizadas com a sua conta).
+            </p>
+            {loadError === "generic" ? (
+              <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+                Não foi possível carregar os dados salvos. Verifique se a API está no ar e tente atualizar a página.
+              </p>
+            ) : null}
+          </div>
+          <p className="text-xs font-medium text-slate-500" aria-live="polite">
+            {saveStatus === "saving" ? "Salvando…" : saveStatus === "saved" ? "Salvo." : null}
+          </p>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -133,7 +221,10 @@ export function PsychologistAvailabilityBoard() {
                 ) : (
                   <ul className="mt-3 space-y-2">
                     {indices.map(({ row, i }) => (
-                      <li key={`${day}-${i}`} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <li
+                        key={`w-${i}`}
+                        className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
                         <label className="flex items-center gap-2">
                           <input
                             type="checkbox"

@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS disponibilidade_semanal (
   CONSTRAINT ck_disponibilidade_janela CHECK (hora_fim > hora_inicio)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_disponibilidade_psicologo_dia
+CREATE INDEX IF NOT EXISTS ix_disponibilidade_psicologo_dia
   ON disponibilidade_semanal (psicologo_id, dia_semana);
 
 -- ---------------------------------------------------------------------------
