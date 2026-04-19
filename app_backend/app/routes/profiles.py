@@ -76,7 +76,7 @@ async def psychologist_me(
     "/psychologist/me",
     response_model=PsychologistMeResponse,
     summary="Atualizar perfil de psicólogo",
-    description="Requer JWT `psychologist`. Campos opcionais: bio, valor_sessao_padrao, duracao_minutos_padrao.",
+    description="Requer JWT `psychologist`. Campos opcionais: name, phone, crp, bio, foto_url, especialidades (CSV), valor_sessao_padrao, duracao_minutos_padrao.",
     status_code=status.HTTP_200_OK,
 )
 async def psychologist_me_patch(

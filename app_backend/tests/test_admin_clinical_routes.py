@@ -73,6 +73,7 @@ class _SvcStub:
                         "duracao_minutos_padrao": 50,
                         "criado_em": datetime.now(timezone.utc).isoformat(),
                     },
+                    "professional_profile_complete": False,
                 }
             ],
             "skip": skip,

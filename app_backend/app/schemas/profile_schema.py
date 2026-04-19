@@ -51,6 +51,9 @@ class PatientMeResponse(BaseModel):
 class PsychologistMeResponse(BaseModel):
     user: UserResponse
     psicologo: PsicologoProfileResponse
+    professional_profile_complete: bool = Field(
+        description="True quando nome, CRP, biografia, valor (>0), foto e ao menos uma especialidade estão preenchidos.",
+    )
 
 
 class PatientListResponse(BaseModel):
@@ -163,22 +166,47 @@ class PatientProfilePatchRequest(BaseModel):
 
 
 class PsychologistProfilePatchRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=30)
+    crp: str | None = Field(default=None, min_length=3, max_length=32)
     bio: str | None = Field(default=None, max_length=8000)
-    foto_url: str | None = Field(default=None, max_length=2000)
+    foto_url: str | None = Field(default=None, max_length=600_000)
     especialidades: str | None = Field(default=None, max_length=4000)
     valor_sessao_padrao: Decimal | None = Field(default=None, ge=0)
     duracao_minutos_padrao: int | None = Field(default=None, ge=15, le=240)
 
+    @field_validator("name", "phone", mode="before")
+    @classmethod
+    def _strip_optional_contact(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator("crp", mode="before")
+    @classmethod
+    def _strip_crp(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return str(v)
+
     @model_validator(mode="after")
     def _at_least_one_field(self) -> "PsychologistProfilePatchRequest":
         if (
-            self.bio is None
+            self.name is None
+            and self.phone is None
+            and self.crp is None
+            and self.bio is None
             and self.foto_url is None
             and self.especialidades is None
             and self.valor_sessao_padrao is None
             and self.duracao_minutos_padrao is None
         ):
             raise ValueError(
-                "Informe ao menos um campo para atualizar (bio, foto_url, especialidades, valor_sessao_padrao ou duracao_minutos_padrao)."
+                "Informe ao menos um campo para atualizar (name, phone, crp, bio, foto_url, especialidades, valor_sessao_padrao ou duracao_minutos_padrao)."
             )
         return self

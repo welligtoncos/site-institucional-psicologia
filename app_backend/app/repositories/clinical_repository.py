@@ -140,6 +140,7 @@ class ClinicalRepository:
         self,
         usuario_id: UUID,
         *,
+        crp: str | None = None,
         bio: str | None = None,
         foto_url: str | None = None,
         especialidades: str | None = None,
@@ -149,6 +150,8 @@ class ClinicalRepository:
         row = await self.get_psicologo_by_usuario_id(usuario_id)
         if row is None:
             raise NotFoundError("Perfil de psicólogo não encontrado.")
+        if crp is not None:
+            row.crp = crp.strip()
         if bio is not None:
             row.bio = bio
         if foto_url is not None:
@@ -159,6 +162,10 @@ class ClinicalRepository:
             row.valor_sessao_padrao = valor_sessao_padrao
         if duracao_minutos_padrao is not None:
             row.duracao_minutos_padrao = duracao_minutos_padrao
-        await self._db.commit()
+        try:
+            await self._db.commit()
+        except IntegrityError as exc:
+            await self._db.rollback()
+            raise ConflictError("CRP já cadastrado para outro profissional.") from exc
         await self._db.refresh(row)
         return row

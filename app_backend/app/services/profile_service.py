@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.psychologist_profile import is_professional_profile_complete
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
@@ -54,6 +55,7 @@ class ProfileService:
         return PsychologistMeResponse(
             user=UserResponse.model_validate(user),
             psicologo=PsicologoProfileResponse.model_validate(ps),
+            professional_profile_complete=is_professional_profile_complete(user, ps),
         )
 
     async def patch_psychologist_me(
@@ -61,8 +63,14 @@ class ProfileService:
     ) -> PsychologistMeResponse:
         if user.role != UserRole.psychologist:
             raise ForbiddenError("Este recurso é exclusivo para usuários com perfil de psicólogo.")
+        user_out = user
+        if data.name is not None or data.phone is not None:
+            name = data.name if data.name is not None else user.name
+            phone = data.phone if data.phone is not None else user.phone
+            user_out = await self._users.update_name_phone(user.id, name=name, phone=phone)
         ps = await self._clinical.update_psicologo_perfil(
             user.id,
+            crp=data.crp,
             bio=data.bio,
             foto_url=data.foto_url,
             especialidades=data.especialidades,
@@ -70,6 +78,7 @@ class ProfileService:
             duracao_minutos_padrao=data.duracao_minutos_padrao,
         )
         return PsychologistMeResponse(
-            user=UserResponse.model_validate(user),
+            user=UserResponse.model_validate(user_out),
             psicologo=PsicologoProfileResponse.model_validate(ps),
+            professional_profile_complete=is_professional_profile_complete(user_out, ps),
         )

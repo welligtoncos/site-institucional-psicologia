@@ -76,7 +76,7 @@ export function OffersBoard() {
       | { detail?: unknown };
 
     if (!response.ok) {
-      setError(formatApiErrorDetail(data));
+      setError(formatApiErrorDetail(data, "Não foi possível carregar os profissionais."));
       setItems([]);
       setLoading(false);
       return;

@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.psychologist_profile import is_professional_profile_complete
 from app.repositories.clinical_repository import ClinicalRepository
 from app.schemas.auth_schema import UserResponse
 from app.schemas.profile_schema import (
@@ -35,6 +36,7 @@ class ClinicalDirectoryService:
             PsychologistMeResponse(
                 user=UserResponse.model_validate(p.usuario),
                 psicologo=PsicologoProfileResponse.model_validate(p),
+                professional_profile_complete=is_professional_profile_complete(p.usuario, p),
             )
             for p in rows
         ]
