@@ -57,6 +57,44 @@ No frontend, o acesso esta disponivel em:
 - `http://localhost:3000/login`
 - `http://localhost:3000/portal`
 
+## Docker (aplicacao completa)
+
+Agora o repositório possui um `docker-compose.yml` na raiz para subir o stack completo:
+
+- Frontend Next.js (`frontend`)
+- API FastAPI (`api`)
+- PostgreSQL (`db`)
+- RabbitMQ + painel (`rabbitmq`)
+- MongoDB + Mongo Express (`mongo`, `mongo_express`)
+- Consumer de auditoria (`audit_consumer`)
+
+### 1) Subir tudo
+
+```bash
+docker compose up --build
+```
+
+### 2) URLs principais
+
+- App (Next): [http://localhost:3000](http://localhost:3000)
+- API (FastAPI): [http://localhost:8000](http://localhost:8000)
+- Docs da API: [http://localhost:8000/docs](http://localhost:8000/docs)
+- RabbitMQ Management: [http://localhost:15672](http://localhost:15672)
+- Mongo Express: [http://localhost:8081](http://localhost:8081)
+
+### 3) Variáveis úteis (opcionais)
+
+Você pode sobrescrever no arquivo `.env` da raiz (ou variáveis de ambiente do shell):
+
+- `FRONTEND_PORT` (padrão `3000`)
+- `API_HOST_PORT` (padrão `8000`)
+- `POSTGRES_PORT` (padrão `5433`)
+- `RABBITMQ_PORT` (padrão `5672`)
+- `RABBITMQ_MANAGEMENT_PORT` (padrão `15672`)
+- `MONGO_PORT` (padrão `27017`)
+- `MONGO_EXPRESS_PORT` (padrão `8081`)
+- `SECRET_KEY` (recomendado definir em ambiente não local)
+
 ## Estrutura da funcionalidade de agendamento
 
 ```text
