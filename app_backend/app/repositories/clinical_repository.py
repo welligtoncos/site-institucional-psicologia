@@ -1,6 +1,6 @@
 """Persistência do domínio clínico (paciente, psicólogo) — SQLAlchemy async."""
 
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Any
 from uuid import UUID
 
@@ -12,7 +12,11 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.clinical import (
     BloqueioAgenda,
+    Cobranca,
+    CobrancaStatusGateway,
     Consulta,
+    ConsultaModalidade,
+    ConsultaSituacaoPagamento,
     ConsultaStatus,
     DisponibilidadeSemanal,
     Paciente,
@@ -113,6 +117,127 @@ class ClinicalRepository:
         )
         result = await self._db.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_consultas_psicologo_desde(
+        self,
+        psicologo_id: UUID,
+        data_inicio: date,
+    ) -> list[Consulta]:
+        """Consultas do psicólogo a partir da data informada, com paciente carregado."""
+        stmt = (
+            select(Consulta)
+            .where(Consulta.psicologo_id == psicologo_id)
+            .where(Consulta.data_agendada >= data_inicio)
+            .options(selectinload(Consulta.paciente).selectinload(Paciente.usuario))
+            .order_by(Consulta.data_agendada.asc(), Consulta.hora_inicio.asc())
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def create_consulta_com_cobranca(
+        self,
+        *,
+        paciente_id: UUID,
+        psicologo_id: UUID,
+        data_agendada: date,
+        hora_inicio: time,
+        duracao_minutos: int,
+        modalidade: ConsultaModalidade | str,
+        valor_acordado,
+        especialidade_atendida: str,
+        id_intent_gateway: str,
+        provedor_gateway: str = "stripe_compatible_mock",
+    ) -> tuple[Consulta, Cobranca]:
+        consulta = Consulta(
+            paciente_id=paciente_id,
+            psicologo_id=psicologo_id,
+            data_agendada=data_agendada,
+            hora_inicio=hora_inicio,
+            duracao_minutos=duracao_minutos,
+            modalidade=modalidade,
+            status=ConsultaStatus.agendada,
+            situacao_pagamento=ConsultaSituacaoPagamento.pendente,
+            valor_acordado=valor_acordado,
+            especialidade_atendida=especialidade_atendida,
+            observacoes="",
+        )
+        self._db.add(consulta)
+        await self._db.flush()
+        cobranca = Cobranca(
+            consulta_id=consulta.id,
+            valor_centavos=int(round(float(valor_acordado) * 100)),
+            moeda="BRL",
+            provedor_gateway=provedor_gateway,
+            id_intent_gateway=id_intent_gateway,
+            status_gateway=CobrancaStatusGateway.awaiting_payment,
+        )
+        self._db.add(cobranca)
+        try:
+            await self._db.commit()
+        except IntegrityError as exc:
+            await self._db.rollback()
+            raise ConflictError("Já existe consulta ativa para este profissional neste horário.") from exc
+        await self._db.refresh(consulta)
+        await self._db.refresh(cobranca)
+        return consulta, cobranca
+
+    async def get_consulta_com_cobranca_do_paciente(
+        self,
+        consulta_id: UUID,
+        usuario_id: UUID,
+    ) -> Consulta | None:
+        stmt = (
+            select(Consulta)
+            .join(Paciente, Consulta.paciente_id == Paciente.id)
+            .where(Consulta.id == consulta_id)
+            .where(Paciente.usuario_id == usuario_id)
+            .options(
+                selectinload(Consulta.paciente).selectinload(Paciente.usuario),
+                selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+                selectinload(Consulta.cobranca),
+            )
+        )
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def mark_payment_success_for_consulta(
+        self,
+        consulta_id: UUID,
+        *,
+        default_video_link: str | None = None,
+    ) -> tuple[Consulta, Cobranca]:
+        stmt = (
+            select(Consulta)
+            .where(Consulta.id == consulta_id)
+            .options(selectinload(Consulta.cobranca))
+        )
+        result = await self._db.execute(stmt)
+        consulta = result.scalar_one_or_none()
+        if consulta is None or consulta.cobranca is None:
+            raise NotFoundError("Consulta/cobrança não encontrada.")
+
+        cobranca = consulta.cobranca
+        if cobranca.status_gateway == CobrancaStatusGateway.succeeded:
+            raise ConflictError("Pagamento já registrado.")
+        if cobranca.status_gateway == CobrancaStatusGateway.failed:
+            raise ConflictError("Cobrança em estado de falha.")
+
+        cobranca.status_gateway = CobrancaStatusGateway.succeeded
+        cobranca.pago_em = datetime.utcnow()
+        consulta.situacao_pagamento = ConsultaSituacaoPagamento.pago
+        if consulta.status == ConsultaStatus.agendada:
+            consulta.status = ConsultaStatus.confirmada
+        if (
+            consulta.modalidade == ConsultaModalidade.online
+            and not consulta.link_videochamada_opcional
+            and default_video_link
+        ):
+            consulta.link_videochamada_opcional = default_video_link
+
+        await self._db.commit()
+        await self._db.refresh(consulta)
+        await self._db.refresh(cobranca)
+        return consulta, cobranca
 
     async def create_paciente(self, *, usuario_id: UUID, contato_emergencia: str | None) -> Paciente:
         row = Paciente(usuario_id=usuario_id, contato_emergencia=contato_emergencia)
@@ -251,6 +376,16 @@ class ClinicalRepository:
             select(BloqueioAgenda)
             .where(BloqueioAgenda.psicologo_id == psicologo_id)
             .order_by(BloqueioAgenda.data_bloqueio, BloqueioAgenda.hora_inicio)
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_bloqueios_agenda_desde(self, psicologo_id: UUID, data_inicio: date) -> list[BloqueioAgenda]:
+        stmt = (
+            select(BloqueioAgenda)
+            .where(BloqueioAgenda.psicologo_id == psicologo_id)
+            .where(BloqueioAgenda.data_bloqueio >= data_inicio)
+            .order_by(BloqueioAgenda.data_bloqueio.asc(), BloqueioAgenda.hora_inicio.asc())
         )
         result = await self._db.execute(stmt)
         return list(result.scalars().all())

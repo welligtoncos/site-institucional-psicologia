@@ -7,14 +7,10 @@ import { toast } from "sonner";
 
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
 import {
-  appendAppointment,
-  createChargeForAppointment,
-  getLatestAwaitingChargeForPsychologist,
-  getPatientAppointments,
-  registerGatewayPaymentSuccess,
-  type MockPaymentCharge,
-} from "@/app/lib/portal-payment-mock";
-import { isAppointmentUpcoming, type MockAppointment } from "@/app/lib/portal-mocks";
+  createPatientAppointment,
+  simulatePatientAppointmentPayment,
+  type ApiPatientChargeSummary,
+} from "@/app/lib/portal-appointments-api";
 import { readPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
@@ -125,19 +121,9 @@ export function ScheduleConsultationBoard() {
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [lastCharge, setLastCharge] = useState<MockPaymentCharge | null>(null);
+  const [lastCharge, setLastCharge] = useState<ApiPatientChargeSummary | null>(null);
+  const [lastAppointmentId, setLastAppointmentId] = useState<string | null>(null);
   const [patientDisplayName, setPatientDisplayName] = useState("");
-  const [calendarRev, setCalendarRev] = useState(0);
-
-  useEffect(() => {
-    const bump = () => setCalendarRev((n) => n + 1);
-    window.addEventListener("portal-billing-changed", bump);
-    window.addEventListener("storage", bump);
-    return () => {
-      window.removeEventListener("portal-billing-changed", bump);
-      window.removeEventListener("storage", bump);
-    };
-  }, []);
 
   useEffect(() => {
     const snap = readPortalPatientSnapshot();
@@ -183,10 +169,13 @@ export function ScheduleConsultationBoard() {
       return;
     }
 
-    const response = await fetch(`/api/portal/psychologists/${encodeURIComponent(psychId)}/bookable-slots?days=7`, {
+    const response = await fetch(
+      `/api/portal/bookable-slots?psychologist_id=${encodeURIComponent(psychId)}&days=7`,
+      {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
-    });
+      },
+    );
     const data = (await response.json().catch(() => null)) as BookablePayload | { detail?: unknown };
 
     if (!response.ok) {
@@ -220,39 +209,13 @@ export function ScheduleConsultationBoard() {
     void loadBookable();
   }, [loadBookable]);
 
-  /** Recupera simulação de pagamento pendente após recarregar a página ou voltar do portal. */
-  useEffect(() => {
-    if (!psychId || loadStatus !== "ready") return;
-    if (lastCharge !== null) return;
-    const pending = getLatestAwaitingChargeForPsychologist(psychId);
-    if (pending) setLastCharge(pending);
-  }, [psychId, loadStatus, lastCharge]);
-
-  /** Grade da API menos consultas já reservadas (mock) para este profissional. */
-  const bookableAdjusted = useMemo(() => {
-    if (!bookable) return null;
-    const appts = getPatientAppointments().filter(
-      (a) => a.psychId === psychId && isAppointmentUpcoming(a),
-    );
-    const taken = new Set(appts.map((a) => `${normalizeDayKey(a.isoDate)}|${a.time}`));
-    const days = bookable.days.map((d) => {
-      const date = normalizeDayKey(d.date);
-      return {
-        ...d,
-        date,
-        slots: d.slots.filter((t) => !taken.has(`${date}|${t}`)),
-      };
-    });
-    return { ...bookable, days };
-  }, [bookable, psychId, calendarRev]);
-
   const dateOptions = useMemo(() => {
-    if (!bookableAdjusted?.days?.length) return [];
-    return bookableAdjusted.days
+    if (!bookable?.days?.length) return [];
+    return bookable.days
       .filter((d) => d.slots.length > 0)
       .map((d) => normalizeDayKey(d.date))
       .slice(0, 7);
-  }, [bookableAdjusted]);
+  }, [bookable]);
 
   useEffect(() => {
     if (!selectedDate && dateOptions.length > 0) {
@@ -269,11 +232,11 @@ export function ScheduleConsultationBoard() {
   }, [dateOptions, selectedDate]);
 
   const slotsForDay = useMemo(() => {
-    if (!bookableAdjusted || !selectedDate) return [];
+    if (!bookable || !selectedDate) return [];
     const key = normalizeDayKey(selectedDate);
-    const day = bookableAdjusted.days.find((d) => normalizeDayKey(d.date) === key);
+    const day = bookable.days.find((d) => normalizeDayKey(d.date) === key);
     return day?.slots ?? [];
-  }, [bookableAdjusted, selectedDate]);
+  }, [bookable, selectedDate]);
 
   useEffect(() => {
     if (!selectedTime || slotsForDay.length === 0) return;
@@ -283,62 +246,58 @@ export function ScheduleConsultationBoard() {
   }, [selectedTime, slotsForDay]);
 
   const specialtyLabel = bookable?.especialidades?.[0] ?? "Consulta";
-  const priceNum = bookable ? parseFloat(bookable.valor_consulta) : 0;
 
   function dayRowForIso(iso: string): BookableDay | undefined {
-    if (!bookableAdjusted) return undefined;
+    if (!bookable) return undefined;
     const key = normalizeDayKey(iso);
-    return bookableAdjusted.days.find((d) => normalizeDayKey(d.date) === key);
+    return bookable.days.find((d) => normalizeDayKey(d.date) === key);
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (!psychId || !bookable || !selectedDate || !selectedTime) {
       toast.error("Selecione um dia e um horário para continuar.");
       return;
     }
     setSubmitting(true);
-    window.setTimeout(() => {
-      const id = `apt_${Date.now()}`;
+    try {
       const snap = readPortalPatientSnapshot();
-      const patientName = (patientDisplayName || snap?.name || "").trim() || "Paciente";
-      const appointment: MockAppointment = {
-        id,
-        psychId,
-        psychologist: bookable.nome,
-        psychologistCrp: bookable.crp,
-        patientName,
-        specialty: specialtyLabel,
-        isoDate: selectedDate,
+      const patientName = (patientDisplayName || snap?.name || "").trim();
+      if (!patientName) {
+        toast.error("Não foi possível identificar o paciente na sessão. Faça login novamente.");
+        return;
+      }
+      const result = await createPatientAppointment({
+        psychologist_id: psychId,
+        iso_date: selectedDate,
         time: selectedTime,
         format: "Online",
-        price: Number.isFinite(priceNum) ? priceNum : 0,
-        durationMin: bookable.duracao_minutos,
-        payment: "Pendente",
-        status: "agendada",
-        reminder: "Cobrança gerada. Conclua o pagamento para confirmar.",
-      };
-      appendAppointment(appointment);
-      const charge = createChargeForAppointment(id, Number.isFinite(priceNum) ? priceNum : 0);
-      setLastCharge(charge);
-      setSubmitting(false);
+      });
+      if (!result.ok) {
+        toast.error(result.detail);
+        return;
+      }
+      setLastCharge(result.data.charge);
+      setLastAppointmentId(result.data.appointment.id);
+      await loadBookable();
       window.requestAnimationFrame(() => {
         document.getElementById("portal-schedule-mock-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
-      toast.success(
-        "Consulta criada como agendada, vinculada a você e ao profissional. Conclua o pagamento abaixo; em Minhas consultas você acompanha status e link.",
-      );
-    }, 400);
+      toast.success("Consulta criada no backend com status agendada. Conclua o pagamento para confirmar.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  function handleSimulateGateway() {
-    if (!lastCharge) return;
-    const result = registerGatewayPaymentSuccess(lastCharge.id);
+  async function handleSimulateGateway() {
+    if (!lastAppointmentId) return;
+    const result = await simulatePatientAppointmentPayment(lastAppointmentId);
     if (!result.ok) {
-      toast.error(result.error);
+      toast.error(result.detail);
       return;
     }
-    setLastCharge(result.charge);
-    toast.success("Pagamento confirmado. Sua consulta passou para confirmada.");
+    setLastCharge(result.data.charge);
+    await loadBookable();
+    toast.success("Pagamento confirmado no backend. Consulta agora está confirmada.");
     window.requestAnimationFrame(() => {
       document.getElementById("portal-schedule-mock-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -387,9 +346,9 @@ export function ScheduleConsultationBoard() {
   const avatarClass = gradientForId(bookable.id);
   const initials = initialsFromName(bookable.nome);
   const hasRawSlotsFromApi = bookable.days.some((d) => d.slots.length > 0);
-  const hasFreeSlotsAfterBookings = bookableAdjusted?.days.some((d) => d.slots.length > 0) ?? false;
-  const paymentComplete = lastCharge?.gatewayStatus === "succeeded";
-  const awaitingPayment = lastCharge?.gatewayStatus === "awaiting_payment";
+  const hasFreeSlotsAfterBookings = hasRawSlotsFromApi;
+  const paymentComplete = lastCharge?.gateway_status === "succeeded";
+  const awaitingPayment = lastCharge?.gateway_status === "awaiting_payment";
   const priceFormatted = parseFloat(bookable.valor_consulta).toFixed(2).replace(".", ",");
   const step1Done = Boolean(selectedDate && dateOptions.includes(normalizeDayKey(selectedDate)));
   const step2Done = Boolean(selectedTime && slotsForDay.includes(selectedTime));
@@ -608,16 +567,16 @@ export function ScheduleConsultationBoard() {
           <dl className="mt-4 space-y-2 rounded-xl bg-white/80 p-4 text-sm text-emerald-950 ring-1 ring-emerald-100">
             <div className="flex justify-between gap-4">
               <dt className="text-emerald-800/90">Valor</dt>
-              <dd className="font-semibold">R$ {(lastCharge.amountCents / 100).toFixed(2).replace(".", ",")}</dd>
+              <dd className="font-semibold">R$ {(lastCharge.amount_cents / 100).toFixed(2).replace(".", ",")}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-emerald-800/90">Situação</dt>
               <dd className="font-medium">
-                {lastCharge.gatewayStatus === "awaiting_payment" ? "Aguardando pagamento" : "Pago"}
+                {lastCharge.gateway_status === "awaiting_payment" ? "Aguardando pagamento" : "Pago"}
               </dd>
             </div>
           </dl>
-          {lastCharge.gatewayStatus === "awaiting_payment" ? (
+          {lastCharge.gateway_status === "awaiting_payment" ? (
             <button
               type="button"
               onClick={handleSimulateGateway}

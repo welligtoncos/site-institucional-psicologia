@@ -150,7 +150,12 @@ class Consulta(Base):
     hora_inicio: Mapped[time] = mapped_column(Time, nullable=False)
     duracao_minutos: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=50)
     modalidade: Mapped[ConsultaModalidade] = mapped_column(
-        Enum(ConsultaModalidade, name="consulta_modalidade", native_enum=True),
+        Enum(
+            ConsultaModalidade,
+            name="consulta_modalidade",
+            native_enum=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
     )
     status: Mapped[ConsultaStatus] = mapped_column(
@@ -159,7 +164,12 @@ class Consulta(Base):
         default=ConsultaStatus.agendada,
     )
     situacao_pagamento: Mapped[ConsultaSituacaoPagamento] = mapped_column(
-        Enum(ConsultaSituacaoPagamento, name="consulta_situacao_pagamento", native_enum=True),
+        Enum(
+            ConsultaSituacaoPagamento,
+            name="consulta_situacao_pagamento",
+            native_enum=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
         default=ConsultaSituacaoPagamento.pendente,
     )

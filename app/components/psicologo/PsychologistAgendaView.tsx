@@ -2,33 +2,20 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import {
-  PSYCHOLOGIST_AVAILABILITY_SEED,
   formatIsoDateLong,
   formatIsoDatePt,
-  loadAgendaAppointments,
-  persistAgendaAppointments,
   todayIso,
   type PsychologistAgendaAppointment,
   type TimeBlock,
 } from "@/app/lib/psicologo-mocks";
 import {
-  apiToMock,
-  fetchPsychologistAvailability,
-  type ApiPsychologistAvailability,
-} from "@/app/lib/psychologist-availability-api";
+  apiAgendaToMock,
+  fetchPsychologistAgenda,
+} from "@/app/lib/psychologist-agenda-api";
 
 type ViewMode = "dia" | "semana" | "mes";
-
-async function loadBlocksFromApi(): Promise<TimeBlock[]> {
-  const result = await fetchPsychologistAvailability();
-  if (result.ok && "weekly" in result.data) {
-    return apiToMock(result.data as ApiPsychologistAvailability).blocks;
-  }
-  return PSYCHOLOGIST_AVAILABILITY_SEED.blocks;
-}
 
 function sortAppointments(list: PsychologistAgendaAppointment[]): PsychologistAgendaAppointment[] {
   return [...list].sort((a, b) => {
@@ -71,6 +58,7 @@ function monthLabel(d: Date): string {
 export function PsychologistAgendaView() {
   const [blocks, setBlocks] = useState<TimeBlock[]>([]);
   const [appointments, setAppointments] = useState<PsychologistAgendaAppointment[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<ViewMode>("dia");
   const [dayCursor, setDayCursor] = useState(() => todayIso());
@@ -80,71 +68,38 @@ export function PsychologistAgendaView() {
     return new Date(t.getFullYear(), t.getMonth(), 1);
   });
 
-  const refreshAgenda = useCallback(() => {
-    setAppointments(loadAgendaAppointments());
+  const refreshAgenda = useCallback(async () => {
+    const fromDateIso = todayIso();
+    const result = await fetchPsychologistAgenda(fromDateIso);
+    if (result.ok && "appointments" in result.data && "blocks" in result.data) {
+      const mapped = apiAgendaToMock(result.data);
+      setAppointments(sortAppointments(mapped.appointments));
+      setBlocks(mapped.blocks);
+      setLoadError("");
+      return;
+    }
+    setAppointments([]);
+    setBlocks([]);
+    setLoadError(
+      "Não foi possível carregar a agenda pela API. Verifique sua sessão e se o backend já possui consultas persistidas.",
+    );
   }, []);
 
   useEffect(() => {
-    async function refreshBlocks() {
-      const next = await loadBlocksFromApi();
-      setBlocks(next);
-    }
     const onAvailabilityChanged = () => {
-      void refreshBlocks();
+      void refreshAgenda();
     };
-    void refreshBlocks();
-    refreshAgenda();
+    void refreshAgenda();
     setHydrated(true);
     window.addEventListener("psychologist-availability-changed", onAvailabilityChanged);
-    window.addEventListener("storage", refreshAgenda);
-    window.addEventListener("psychologist-agenda-changed", refreshAgenda);
+    window.addEventListener("storage", onAvailabilityChanged);
+    window.addEventListener("psychologist-agenda-changed", onAvailabilityChanged);
     return () => {
       window.removeEventListener("psychologist-availability-changed", onAvailabilityChanged);
-      window.removeEventListener("storage", refreshAgenda);
-      window.removeEventListener("psychologist-agenda-changed", refreshAgenda);
+      window.removeEventListener("storage", onAvailabilityChanged);
+      window.removeEventListener("psychologist-agenda-changed", onAvailabilityChanged);
     };
   }, [refreshAgenda]);
-
-  function updateAppointment(id: string, patch: Partial<PsychologistAgendaAppointment>) {
-    const next = appointments.map((a) => (a.id === id ? { ...a, ...patch } : a));
-    setAppointments(next);
-    persistAgendaAppointments(next);
-  }
-
-  function handleConfirmar(a: PsychologistAgendaAppointment) {
-    if (a.status === "confirmada") {
-      toast.info("Sessão já está confirmada.");
-      return;
-    }
-    updateAppointment(a.id, { status: "confirmada" });
-    toast.success("Sessão confirmada.");
-  }
-
-  function handleCancelar(a: PsychologistAgendaAppointment) {
-    if (a.status === "cancelada") return;
-    if (!window.confirm(`Cancelar sessão de ${a.patientName} em ${formatIsoDatePt(a.isoDate)}?`)) return;
-    updateAppointment(a.id, { status: "cancelada" });
-    toast.success("Sessão cancelada (demonstração).");
-  }
-
-  function handleRemarcar(a: PsychologistAgendaAppointment) {
-    const nextDate = window.prompt("Nova data (AAAA-MM-DD):", a.isoDate);
-    if (!nextDate || !/^\d{4}-\d{2}-\d{2}$/.test(nextDate.trim())) {
-      toast.error("Data inválida.");
-      return;
-    }
-    const nextTime = window.prompt("Novo horário (HH:MM):", a.time);
-    if (!nextTime || !/^\d{2}:\d{2}$/.test(nextTime.trim())) {
-      toast.error("Horário inválido. Use HH:MM.");
-      return;
-    }
-    updateAppointment(a.id, {
-      isoDate: nextDate.trim(),
-      time: nextTime.trim(),
-      status: a.status === "cancelada" ? "pendente" : a.status,
-    });
-    toast.success("Sessão remarcada (demonstração).");
-  }
 
   const t = todayIso();
   const blockedFuture = useMemo(() => {
@@ -237,6 +192,11 @@ export function PsychologistAgendaView() {
                   Pendente
                 </span>
               )}
+              {a.pagamentoPendente && (
+                <span className="ml-2 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-900">
+                  Pagamento pendente
+                </span>
+              )}
               {done && (
                 <span className="ml-2 rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
                   Realizada
@@ -249,33 +209,11 @@ export function PsychologistAgendaView() {
               )}
             </p>
           </div>
-          {!compact && !cancelled && !done && (
-            <div className="flex flex-wrap gap-1">
-              {pending && (
-                <button
-                  type="button"
-                  onClick={() => handleConfirmar(a)}
-                  className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
-                >
-                  Confirmar
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => handleRemarcar(a)}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-50"
-              >
-                Remarcar
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCancelar(a)}
-                className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
+          {!compact ? (
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+              Visualização pela API
+            </span>
+          ) : null}
         </div>
       </li>
     );
@@ -295,7 +233,7 @@ export function PsychologistAgendaView() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Agenda</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-900">Consultas e bloqueios</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Visualize por dia, semana ou mês. Confirme, remarque ou cancele sessões (mock). Para{" "}
+          Visualize por dia, semana ou mês com dados da API. Para{" "}
           <strong className="font-semibold text-slate-800">bloquear horários</strong> e{" "}
           <strong className="font-semibold text-slate-800">configurar disponibilidade</strong>, use{" "}
           <Link href="/psicologo/disponibilidade" className="font-semibold text-emerald-800 underline">
@@ -312,6 +250,9 @@ export function PsychologistAgendaView() {
           </Link>
         </div>
       </section>
+      {loadError ? (
+        <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{loadError}</section>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
         {(["dia", "semana", "mes"] as const).map((m) => (

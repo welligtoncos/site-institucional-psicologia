@@ -2,12 +2,16 @@
 Perfis clínicos autenticados (JWT) — separado dos endpoints públicos de cadastro em `/auth`.
 """
 
-from fastapi import APIRouter, Depends, status
+from datetime import date
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
+from app.schemas.agenda_schema import PsychologistAgendaResponse
 from app.schemas.availability_schema import (
     PsychologistAvailabilityPutRequest,
     PsychologistAvailabilityResponse,
@@ -18,6 +22,13 @@ from app.schemas.profile_schema import (
     PsychologistMeResponse,
     PsychologistProfilePatchRequest,
 )
+from app.schemas.patient_appointment_schema import (
+    PatientAppointmentCreateRequest,
+    PatientAppointmentCreateResponse,
+    PatientAppointmentPaymentResponse,
+)
+from app.services.patient_appointment_service import PatientAppointmentService
+from app.services.psychologist_agenda_service import PsychologistAgendaService
 from app.services.profile_service import ProfileService
 from app.services.psychologist_availability_service import PsychologistAvailabilityService
 
@@ -41,6 +52,18 @@ async def get_psychologist_availability_service(
     db: AsyncSession = Depends(get_db),
 ) -> PsychologistAvailabilityService:
     return PsychologistAvailabilityService(db)
+
+
+async def get_psychologist_agenda_service(
+    db: AsyncSession = Depends(get_db),
+) -> PsychologistAgendaService:
+    return PsychologistAgendaService(db)
+
+
+async def get_patient_appointment_service(
+    db: AsyncSession = Depends(get_db),
+) -> PatientAppointmentService:
+    return PatientAppointmentService(db)
 
 
 @router.get(
@@ -124,3 +147,46 @@ async def psychologist_availability_put(
     svc: PsychologistAvailabilityService = Depends(get_psychologist_availability_service),
 ) -> PsychologistAvailabilityResponse:
     return await svc.put_availability(current_user, payload)
+
+
+@router.get(
+    "/psychologist/me/agenda",
+    response_model=PsychologistAgendaResponse,
+    summary="Agenda do psicólogo",
+    description="Requer JWT `psychologist`. Lista consultas desde a data informada e bloqueios futuros.",
+)
+async def psychologist_agenda_get(
+    from_date: date | None = Query(default=None, description="Data inicial (YYYY-MM-DD). Padrão: hoje."),
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAgendaService = Depends(get_psychologist_agenda_service),
+) -> PsychologistAgendaResponse:
+    return await svc.get_agenda(current_user, from_date=from_date or date.today())
+
+
+@router.post(
+    "/patient/me/appointments",
+    response_model=PatientAppointmentCreateResponse,
+    summary="Criar consulta do paciente",
+    description="Requer JWT `patient`. Cria consulta + cobrança mock persistidas no backend.",
+    status_code=status.HTTP_201_CREATED,
+)
+async def patient_appointment_create(
+    payload: PatientAppointmentCreateRequest,
+    current_user: User = Depends(get_current_user),
+    svc: PatientAppointmentService = Depends(get_patient_appointment_service),
+) -> PatientAppointmentCreateResponse:
+    return await svc.create_appointment(current_user, payload)
+
+
+@router.post(
+    "/patient/me/appointments/{appointment_id}/simulate-payment",
+    response_model=PatientAppointmentPaymentResponse,
+    summary="Simular pagamento concluído",
+    description="Requer JWT `patient`. Marca cobrança como paga e confirma a consulta.",
+)
+async def patient_appointment_simulate_payment(
+    appointment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    svc: PatientAppointmentService = Depends(get_patient_appointment_service),
+) -> PatientAppointmentPaymentResponse:
+    return await svc.simulate_payment_success(current_user, appointment_id)
