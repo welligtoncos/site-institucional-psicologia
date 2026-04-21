@@ -1,19 +1,29 @@
-"""Fluxo de agendamento pelo paciente com cobrança mock persistida no backend."""
+"""Fluxo de agendamento e atendimento online pelo paciente."""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import logging
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.messaging.business_event_publisher import BusinessEventPublisher
-from app.models.clinical import Consulta, ConsultaModalidade, ConsultaSituacaoPagamento
+from app.models.clinical import (
+    Consulta,
+    ConsultaModalidade,
+    ConsultaSituacaoPagamento,
+    ConsultaStatus,
+    SessaoAoVivoFase,
+)
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
 from app.schemas.patient_appointment_schema import (
+    AppointmentJoinRoomResponse,
+    AppointmentLeaveRoomResponse,
     PatientAppointmentCreateRequest,
     PatientAppointmentCreateResponse,
+    PatientAppointmentListResponse,
     PatientAppointmentPaymentResponse,
     PatientAppointmentSummary,
     PatientChargeSummary,
@@ -21,6 +31,7 @@ from app.schemas.patient_appointment_schema import (
 
 
 logger = logging.getLogger(__name__)
+CLINIC_TZ = ZoneInfo("America/Sao_Paulo")
 
 
 class PatientAppointmentService:
@@ -39,9 +50,19 @@ class PatientAppointmentService:
             pac = await self._clinical.create_paciente(usuario_id=user.id, contato_emergencia=None)
         return pac.id
 
+    def _is_psychologist_online(self, c: Consulta) -> bool:
+        sessao = getattr(c, "sessao_ao_vivo", None)
+        if sessao is None:
+            return False
+        return sessao.fase == SessaoAoVivoFase.live and sessao.encerrada_em is None
+
     def _appointment_summary(self, c: Consulta) -> PatientAppointmentSummary:
         ps_name = c.psicologo.usuario.name.strip() if c.psicologo and c.psicologo.usuario else "Profissional"
         patient_name = c.paciente.usuario.name.strip() if c.paciente and c.paciente.usuario else "Paciente"
+        sessao = getattr(c, "sessao_ao_vivo", None)
+        video_link = c.link_videochamada_opcional
+        if sessao is not None and getattr(sessao, "url_meet", None):
+            video_link = sessao.url_meet
         return PatientAppointmentSummary(
             id=c.id,
             psychologist_id=c.psicologo_id,
@@ -56,7 +77,14 @@ class PatientAppointmentService:
             duration_min=c.duracao_minutos,
             payment="Pago" if c.situacao_pagamento == ConsultaSituacaoPagamento.pago else "Pendente",
             status=c.status.value,
-            video_call_link=c.link_videochamada_opcional,
+            video_call_link=video_link,
+            psychologist_online=self._is_psychologist_online(c),
+            session_phase=sessao.fase.value if sessao and getattr(sessao, "fase", None) else None,
+            session_started_at=(
+                sessao.cronometro_iniciado_em.isoformat()
+                if sessao and getattr(sessao, "cronometro_iniciado_em", None)
+                else None
+            ),
         )
 
     def _charge_summary(self, c: Consulta) -> PatientChargeSummary:
@@ -74,6 +102,12 @@ class PatientAppointmentService:
             created_at=chg.criado_em.isoformat(),
             paid_at=chg.pago_em.isoformat() if chg.pago_em else None,
         )
+
+    def _join_window(self, c: Consulta) -> tuple[datetime, datetime]:
+        starts_at = datetime.combine(c.data_agendada, c.hora_inicio, tzinfo=CLINIC_TZ)
+        start = starts_at - timedelta(minutes=10)
+        end = starts_at + timedelta(minutes=c.duracao_minutos + 15)
+        return start, end
 
     async def create_appointment(
         self,
@@ -129,6 +163,28 @@ class PatientAppointmentService:
         )
         return response
 
+    async def leave_room(self, user: User, appointment_id: UUID) -> AppointmentLeaveRoomResponse:
+        self._ensure_patient(user)
+        c = await self._clinical.get_consulta_com_cobranca_do_paciente(appointment_id, user.id)
+        if c is None:
+            raise NotFoundError("Consulta não encontrada para este paciente.")
+        sessao = getattr(c, "sessao_ao_vivo", None)
+        if sessao is None or sessao.encerrada_em is not None or sessao.fase != SessaoAoVivoFase.patient_waiting:
+            raise ConflictError("Paciente não está na sala de espera para esta consulta.")
+        await self._clinical.mark_sessao_ended(c, ended_at=datetime.now(CLINIC_TZ))
+        saved = await self._clinical.save_consulta(c)
+        response = AppointmentLeaveRoomResponse(
+            appointment=self._appointment_summary(saved),
+            left_now=True,
+        )
+        self._publish_business_event(
+            event_type="appointment.room.left.patient",
+            actor=str(user.id),
+            resource_id=str(saved.id),
+            data={"status": response.appointment.status},
+        )
+        return response
+
     async def simulate_payment_success(self, user: User, appointment_id: UUID) -> PatientAppointmentPaymentResponse:
         self._ensure_patient(user)
         c = await self._clinical.get_consulta_com_cobranca_do_paciente(appointment_id, user.id)
@@ -165,6 +221,56 @@ class PatientAppointmentService:
                 "status": response.appointment.status,
                 "payment": response.appointment.payment,
                 "video_call_link": response.appointment.video_call_link,
+            },
+        )
+        return response
+
+    async def list_my_appointments(
+        self,
+        user: User,
+        *,
+        from_date: date,
+    ) -> PatientAppointmentListResponse:
+        self._ensure_patient(user)
+        rows = await self._clinical.list_consultas_com_cobranca_do_paciente_desde(user.id, from_date)
+        return PatientAppointmentListResponse(
+            appointments=[self._appointment_summary(c) for c in rows],
+        )
+
+    async def join_room(self, user: User, appointment_id: UUID) -> AppointmentJoinRoomResponse:
+        self._ensure_patient(user)
+        c = await self._clinical.get_consulta_com_cobranca_do_paciente(appointment_id, user.id)
+        if c is None:
+            raise NotFoundError("Consulta não encontrada para este paciente.")
+        if c.status not in (ConsultaStatus.confirmada, ConsultaStatus.em_andamento):
+            raise ConflictError("Somente consultas confirmadas permitem entrada na sala.")
+
+        now = datetime.now(CLINIC_TZ)
+        join_from, join_until = self._join_window(c)
+        if now < join_from or now > join_until:
+            raise ForbiddenError("A sala só pode ser acessada no horário permitido da consulta.")
+
+        started_now = False
+        if not c.link_videochamada_opcional:
+            c.link_videochamada_opcional = f"https://meet.exemplo.com/{c.id}"
+        await self._clinical.upsert_sessao_patient_waiting(
+            c,
+            joined_at=now,
+            meet_url=c.link_videochamada_opcional,
+        )
+        saved = await self._clinical.save_consulta(c)
+        response = AppointmentJoinRoomResponse(
+            appointment=self._appointment_summary(saved),
+            join_url=saved.link_videochamada_opcional or "",
+            started_now=started_now,
+        )
+        self._publish_business_event(
+            event_type="appointment.room.joined.patient",
+            actor=str(user.id),
+            resource_id=str(saved.id),
+            data={
+                "status": response.appointment.status,
+                "started_now": started_now,
             },
         )
         return response

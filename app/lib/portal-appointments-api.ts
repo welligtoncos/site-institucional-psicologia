@@ -15,6 +15,9 @@ export type ApiPatientAppointmentSummary = {
   payment: "Pago" | "Pendente";
   status: "agendada" | "confirmada" | "em_andamento" | "realizada" | "cancelada" | "nao_compareceu";
   video_call_link?: string | null;
+  psychologist_online?: boolean;
+  session_phase?: "patient_waiting" | "live" | "ended" | null;
+  session_started_at?: string | null;
 };
 
 export type ApiPatientChargeSummary = {
@@ -32,6 +35,21 @@ export type ApiPatientChargeSummary = {
 export type ApiPatientAppointmentCreateResponse = {
   appointment: ApiPatientAppointmentSummary;
   charge: ApiPatientChargeSummary;
+};
+
+export type ApiPatientAppointmentListResponse = {
+  appointments: ApiPatientAppointmentSummary[];
+};
+
+export type ApiAppointmentJoinRoomResponse = {
+  appointment: ApiPatientAppointmentSummary;
+  join_url: string;
+  started_now: boolean;
+};
+
+export type ApiAppointmentLeaveRoomResponse = {
+  appointment: ApiPatientAppointmentSummary;
+  left_now: boolean;
 };
 
 function readToken(): string | null {
@@ -84,4 +102,81 @@ export async function simulatePatientAppointmentPayment(
     return { ok: false, detail: detail || "Não foi possível registrar o pagamento." };
   }
   return { ok: true, data: data as ApiPatientAppointmentCreateResponse };
+}
+
+export async function listPatientAppointments(
+  fromDate?: string,
+): Promise<{ ok: true; data: ApiPatientAppointmentListResponse } | { ok: false; detail: string }> {
+  const token = readToken();
+  if (!token) return { ok: false, detail: "Sua sessão expirou. Faça login novamente." };
+
+  const qs = fromDate?.trim() ? `?from_date=${encodeURIComponent(fromDate.trim())}` : "";
+  const response = await fetch(`/api/portal/patient/appointments${qs}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as ApiPatientAppointmentListResponse | { detail?: unknown } | null;
+  if (!response.ok || !data || typeof data !== "object" || !("appointments" in data) || !Array.isArray(data.appointments)) {
+    const detail = typeof data === "object" && data && "detail" in data ? String(data.detail ?? "") : "";
+    return { ok: false, detail: detail || "Não foi possível listar as consultas." };
+  }
+  return { ok: true, data: data as ApiPatientAppointmentListResponse };
+}
+
+export async function joinPatientAppointmentRoom(
+  appointmentId: string,
+): Promise<{ ok: true; data: ApiAppointmentJoinRoomResponse } | { ok: false; detail: string }> {
+  const token = readToken();
+  if (!token) return { ok: false, detail: "Sua sessão expirou. Faça login novamente." };
+
+  const response = await fetch(`/api/portal/patient/appointments/${encodeURIComponent(appointmentId)}/join-room`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as ApiAppointmentJoinRoomResponse | { detail?: unknown } | null;
+  if (
+    !response.ok ||
+    !data ||
+    typeof data !== "object" ||
+    !("appointment" in data) ||
+    !("join_url" in data) ||
+    typeof data.join_url !== "string"
+  ) {
+    const detail = typeof data === "object" && data && "detail" in data ? String(data.detail ?? "") : "";
+    return { ok: false, detail: detail || "Não foi possível entrar na sala." };
+  }
+  return { ok: true, data: data as ApiAppointmentJoinRoomResponse };
+}
+
+export async function leavePatientAppointmentRoom(
+  appointmentId: string,
+): Promise<{ ok: true; data: ApiAppointmentLeaveRoomResponse } | { ok: false; detail: string }> {
+  const token = readToken();
+  if (!token) return { ok: false, detail: "Sua sessão expirou. Faça login novamente." };
+
+  const response = await fetch(`/api/portal/patient/appointments/${encodeURIComponent(appointmentId)}/leave-room`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as ApiAppointmentLeaveRoomResponse | { detail?: unknown } | null;
+  if (
+    !response.ok ||
+    !data ||
+    typeof data !== "object" ||
+    !("appointment" in data) ||
+    !("left_now" in data)
+  ) {
+    const detail = typeof data === "object" && data && "detail" in data ? String(data.detail ?? "") : "";
+    return { ok: false, detail: detail || "Não foi possível sair da sala." };
+  }
+  return { ok: true, data: data as ApiAppointmentLeaveRoomResponse };
 }

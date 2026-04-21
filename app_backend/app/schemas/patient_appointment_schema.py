@@ -1,4 +1,4 @@
-"""Agendamento do paciente (criação de consulta e simulação de pagamento)."""
+"""Agendamento do paciente e operações de atendimento online."""
 
 from datetime import date
 from decimal import Decimal
@@ -45,6 +45,9 @@ class PatientAppointmentSummary(BaseModel):
     payment: str
     status: str
     video_call_link: str | None = None
+    psychologist_online: bool = False
+    session_phase: str | None = None
+    session_started_at: str | None = None
 
 
 class PatientChargeSummary(BaseModel):
@@ -69,3 +72,18 @@ class PatientAppointmentCreateResponse(BaseModel):
 class PatientAppointmentPaymentResponse(BaseModel):
     appointment: PatientAppointmentSummary
     charge: PatientChargeSummary
+
+
+class PatientAppointmentListResponse(BaseModel):
+    appointments: list[PatientAppointmentSummary]
+
+
+class AppointmentJoinRoomResponse(BaseModel):
+    appointment: PatientAppointmentSummary
+    join_url: str
+    started_now: bool = False
+
+
+class AppointmentLeaveRoomResponse(BaseModel):
+    appointment: PatientAppointmentSummary
+    left_now: bool = True

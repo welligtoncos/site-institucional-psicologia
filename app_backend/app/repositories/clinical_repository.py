@@ -21,6 +21,8 @@ from app.models.clinical import (
     DisponibilidadeSemanal,
     Paciente,
     Psicologo,
+    SessaoAoVivo,
+    SessaoAoVivoFase,
 )
 from app.models.user import User, UserRole
 
@@ -129,6 +131,7 @@ class ClinicalRepository:
             .where(Consulta.psicologo_id == psicologo_id)
             .where(Consulta.data_agendada >= data_inicio)
             .options(selectinload(Consulta.paciente).selectinload(Paciente.usuario))
+            .options(selectinload(Consulta.sessao_ao_vivo))
             .order_by(Consulta.data_agendada.asc(), Consulta.hora_inicio.asc())
         )
         result = await self._db.execute(stmt)
@@ -195,10 +198,114 @@ class ClinicalRepository:
                 selectinload(Consulta.paciente).selectinload(Paciente.usuario),
                 selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
                 selectinload(Consulta.cobranca),
+                selectinload(Consulta.sessao_ao_vivo),
             )
         )
         result = await self._db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_consultas_com_cobranca_do_paciente_desde(
+        self,
+        usuario_id: UUID,
+        data_inicio: date,
+    ) -> list[Consulta]:
+        stmt = (
+            select(Consulta)
+            .join(Paciente, Consulta.paciente_id == Paciente.id)
+            .where(Paciente.usuario_id == usuario_id)
+            .where(Consulta.data_agendada >= data_inicio)
+            .options(
+                selectinload(Consulta.paciente).selectinload(Paciente.usuario),
+                selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+                selectinload(Consulta.cobranca),
+                selectinload(Consulta.sessao_ao_vivo),
+            )
+            .order_by(Consulta.data_agendada.asc(), Consulta.hora_inicio.asc())
+        )
+        result = await self._db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def get_consulta_com_cobranca_do_psicologo(
+        self,
+        consulta_id: UUID,
+        usuario_id: UUID,
+    ) -> Consulta | None:
+        stmt = (
+            select(Consulta)
+            .join(Psicologo, Consulta.psicologo_id == Psicologo.id)
+            .where(Consulta.id == consulta_id)
+            .where(Psicologo.usuario_id == usuario_id)
+            .options(
+                selectinload(Consulta.paciente).selectinload(Paciente.usuario),
+                selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+                selectinload(Consulta.cobranca),
+                selectinload(Consulta.sessao_ao_vivo),
+            )
+        )
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def save_consulta(self, consulta: Consulta) -> Consulta:
+        await self._db.commit()
+        await self._db.refresh(consulta)
+        return consulta
+
+    async def upsert_sessao_patient_waiting(
+        self,
+        consulta: Consulta,
+        *,
+        joined_at: datetime,
+        meet_url: str | None = None,
+    ) -> SessaoAoVivo:
+        sessao = consulta.sessao_ao_vivo
+        if sessao is None:
+            sessao = SessaoAoVivo(
+                consulta_id=consulta.id,
+                fase=SessaoAoVivoFase.patient_waiting,
+            )
+            self._db.add(sessao)
+        sessao.fase = SessaoAoVivoFase.patient_waiting
+        sessao.paciente_entrou_em = joined_at
+        sessao.desbloqueio_play_em = joined_at
+        sessao.encerrada_em = None
+        if meet_url:
+            sessao.url_meet = meet_url
+        await self._db.commit()
+        await self._db.refresh(sessao)
+        return sessao
+
+    async def upsert_sessao_live(
+        self,
+        consulta: Consulta,
+        *,
+        started_at: datetime,
+        meet_url: str | None = None,
+    ) -> SessaoAoVivo:
+        sessao = consulta.sessao_ao_vivo
+        if sessao is None:
+            sessao = SessaoAoVivo(
+                consulta_id=consulta.id,
+                fase=SessaoAoVivoFase.live,
+            )
+            self._db.add(sessao)
+        sessao.fase = SessaoAoVivoFase.live
+        sessao.cronometro_iniciado_em = started_at
+        sessao.encerrada_em = None
+        if meet_url:
+            sessao.url_meet = meet_url
+        await self._db.commit()
+        await self._db.refresh(sessao)
+        return sessao
+
+    async def mark_sessao_ended(self, consulta: Consulta, *, ended_at: datetime) -> SessaoAoVivo | None:
+        sessao = consulta.sessao_ao_vivo
+        if sessao is None:
+            return None
+        sessao.fase = SessaoAoVivoFase.ended
+        sessao.encerrada_em = ended_at
+        await self._db.commit()
+        await self._db.refresh(sessao)
+        return sessao
 
     async def mark_payment_success_for_consulta(
         self,

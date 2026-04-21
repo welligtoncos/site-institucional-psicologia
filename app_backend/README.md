@@ -113,6 +113,23 @@ Para logs da auditoria de negócio:
 docker compose logs -f business_audit_consumer
 ```
 
+## Atendimento online (APIs)
+
+Novos endpoints para fluxo de sessão e histórico:
+
+- `GET /profiles/patient/me/appointments` — listar consultas do paciente desde uma data.
+- `POST /profiles/patient/me/appointments/{appointment_id}/join-room` — paciente entra na sala.
+- `POST /profiles/psychologist/me/appointments/{appointment_id}/join-room` — psicólogo entra na sala.
+- `PATCH /profiles/psychologist/me/appointments/{appointment_id}/notes` — salvar observações internas.
+- `POST /profiles/psychologist/me/appointments/{appointment_id}/finish` — finalizar consulta.
+
+Regras principais:
+
+- entrada na sala só para consulta confirmada/em andamento;
+- janela de acesso: 10 minutos antes até duração + 15 minutos;
+- finalização marca status `realizada`;
+- eventos de auditoria publicados no RabbitMQ (`appointment.room.joined.*`, `appointment.notes.updated`, `appointment.finished`).
+
 ## Alembic (migrations)
 
 Gerar nova revisão a partir dos modelos (quando alterar `app/models/`):

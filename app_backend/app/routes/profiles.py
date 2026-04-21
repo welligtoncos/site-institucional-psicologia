@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.agenda_schema import PsychologistAgendaResponse
+from app.schemas.agenda_schema import (
+    PsychologistAppointmentMeetingLinkPatchRequest,
+    PsychologistAppointmentNotesPatchRequest,
+    PsychologistAppointmentOnlineResponse,
+    PsychologistAgendaResponse,
+)
 from app.schemas.availability_schema import (
     PsychologistAvailabilityPutRequest,
     PsychologistAvailabilityResponse,
@@ -23,8 +28,11 @@ from app.schemas.profile_schema import (
     PsychologistProfilePatchRequest,
 )
 from app.schemas.patient_appointment_schema import (
+    AppointmentJoinRoomResponse,
+    AppointmentLeaveRoomResponse,
     PatientAppointmentCreateRequest,
     PatientAppointmentCreateResponse,
+    PatientAppointmentListResponse,
     PatientAppointmentPaymentResponse,
 )
 from app.services.patient_appointment_service import PatientAppointmentService
@@ -190,3 +198,103 @@ async def patient_appointment_simulate_payment(
     svc: PatientAppointmentService = Depends(get_patient_appointment_service),
 ) -> PatientAppointmentPaymentResponse:
     return await svc.simulate_payment_success(current_user, appointment_id)
+
+
+@router.get(
+    "/patient/me/appointments",
+    response_model=PatientAppointmentListResponse,
+    summary="Minhas consultas",
+    description="Requer JWT `patient`. Lista consultas do paciente a partir de uma data.",
+)
+async def patient_appointments_list(
+    from_date: date | None = Query(default=None, description="Data inicial (YYYY-MM-DD). Padrão: hoje."),
+    current_user: User = Depends(get_current_user),
+    svc: PatientAppointmentService = Depends(get_patient_appointment_service),
+) -> PatientAppointmentListResponse:
+    return await svc.list_my_appointments(current_user, from_date=from_date or date.today())
+
+
+@router.post(
+    "/patient/me/appointments/{appointment_id}/join-room",
+    response_model=AppointmentJoinRoomResponse,
+    summary="Entrar na sala (paciente)",
+    description="Requer JWT `patient`. Permite entrada apenas para consulta confirmada no horário permitido.",
+)
+async def patient_appointment_join_room(
+    appointment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    svc: PatientAppointmentService = Depends(get_patient_appointment_service),
+) -> AppointmentJoinRoomResponse:
+    return await svc.join_room(current_user, appointment_id)
+
+
+@router.post(
+    "/patient/me/appointments/{appointment_id}/leave-room",
+    response_model=AppointmentLeaveRoomResponse,
+    summary="Sair da sala de espera (paciente)",
+    description="Requer JWT `patient`. Remove presença do paciente na sala de espera.",
+)
+async def patient_appointment_leave_room(
+    appointment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    svc: PatientAppointmentService = Depends(get_patient_appointment_service),
+) -> AppointmentLeaveRoomResponse:
+    return await svc.leave_room(current_user, appointment_id)
+
+
+@router.post(
+    "/psychologist/me/appointments/{appointment_id}/join-room",
+    response_model=PsychologistAppointmentOnlineResponse,
+    summary="Entrar na sala (psicólogo)",
+    description="Requer JWT `psychologist`. Permite entrada apenas para consulta confirmada no horário permitido.",
+)
+async def psychologist_appointment_join_room(
+    appointment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAgendaService = Depends(get_psychologist_agenda_service),
+) -> PsychologistAppointmentOnlineResponse:
+    return await svc.join_room(current_user, appointment_id)
+
+
+@router.patch(
+    "/psychologist/me/appointments/{appointment_id}/notes",
+    response_model=PsychologistAppointmentOnlineResponse,
+    summary="Registrar observações da sessão",
+    description="Requer JWT `psychologist`. Atualiza observações internas da consulta.",
+)
+async def psychologist_appointment_patch_notes(
+    appointment_id: UUID,
+    payload: PsychologistAppointmentNotesPatchRequest,
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAgendaService = Depends(get_psychologist_agenda_service),
+) -> PsychologistAppointmentOnlineResponse:
+    return await svc.patch_notes(current_user, appointment_id, payload)
+
+
+@router.patch(
+    "/psychologist/me/appointments/{appointment_id}/meeting-link",
+    response_model=PsychologistAppointmentOnlineResponse,
+    summary="Salvar link da videochamada",
+    description="Requer JWT `psychologist`. Publica/atualiza o link da sala para paciente e psicólogo.",
+)
+async def psychologist_appointment_patch_meeting_link(
+    appointment_id: UUID,
+    payload: PsychologistAppointmentMeetingLinkPatchRequest,
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAgendaService = Depends(get_psychologist_agenda_service),
+) -> PsychologistAppointmentOnlineResponse:
+    return await svc.patch_meeting_link(current_user, appointment_id, payload)
+
+
+@router.post(
+    "/psychologist/me/appointments/{appointment_id}/finish",
+    response_model=PsychologistAppointmentOnlineResponse,
+    summary="Finalizar consulta",
+    description="Requer JWT `psychologist`. Encerra atendimento e marca consulta como realizada.",
+)
+async def psychologist_appointment_finish(
+    appointment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    svc: PsychologistAgendaService = Depends(get_psychologist_agenda_service),
+) -> PsychologistAppointmentOnlineResponse:
+    return await svc.finish_appointment(current_user, appointment_id)

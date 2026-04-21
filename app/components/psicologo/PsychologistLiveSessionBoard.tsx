@@ -5,33 +5,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
-  MOCK_PSYCHOLOGIST,
   formatAppointmentDatePt,
-  isPortalOnlinePaidReadyForLive,
-  type MockAppointment,
 } from "@/app/lib/portal-mocks";
 import {
-  clearPendingMeetUrl,
   clearSharedLiveSession,
-  getPendingMeetUrl,
   getSharedLiveSession,
-  patchSharedLiveSessionMeetUrl,
-  setPendingMeetUrl,
   setSharedLiveSession,
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
-import {
-  getPatientAppointments,
-  markAppointmentCompletedAfterLiveSession,
-} from "@/app/lib/portal-payment-mock";
 import { psychologistSessionRoomPath } from "@/app/lib/psychologist-session-routes";
 import {
-  loadAgendaAppointments,
-  markAgendaSessionCompleted,
-  todayIso,
-  type PsychologistAgendaAppointment,
-} from "@/app/lib/psicologo-mocks";
+  apiAgendaToMock,
+  fetchPsychologistAgenda,
+  finishPsychologistAppointment,
+  joinPsychologistRoom,
+  patchPsychologistAppointmentMeetingLink,
+} from "@/app/lib/psychologist-agenda-api";
+import { todayIso, type PsychologistAgendaAppointment } from "@/app/lib/psicologo-mocks";
 
 /** Pode iniciar até 15 min antes do horário marcado */
 const EARLY_START_MS = 15 * 60 * 1000;
@@ -44,6 +35,7 @@ type PickableSession = {
   durationMin: number;
   format: string;
   sourceLabel: string;
+  patientOnline?: boolean;
 };
 
 function atLocalDateTime(isoDate: string, hhmm: string): Date {
@@ -63,40 +55,28 @@ function formatElapsed(ms: number): string {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
-function buildTodaySessions(
-  today: string,
-  agenda: PsychologistAgendaAppointment[],
-  portal: MockAppointment[],
-): PickableSession[] {
+function buildUpcomingSessions(today: string, agenda: PsychologistAgendaAppointment[]): PickableSession[] {
   const rows: PickableSession[] = [];
 
   for (const a of agenda) {
-    if (a.isoDate !== today || a.status === "cancelada") continue;
+    if (a.isoDate < today) continue;
+    if (a.format !== "Online") continue;
+    if (a.status === "cancelada" || a.status === "realizada") continue;
     rows.push({
-      ref: `agenda:${a.id}`,
+      ref: `appointment:${a.id}`,
       patientName: a.patientName?.trim() || `Paciente (agenda ${a.id})`,
       isoDate: a.isoDate,
       time: a.time,
-      durationMin: MOCK_PSYCHOLOGIST.durationMin,
+      durationMin: a.durationMin ?? 50,
       format: a.format,
       sourceLabel: "Agenda",
-    });
-  }
-
-  for (const p of portal) {
-    if (p.isoDate !== today || !isPortalOnlinePaidReadyForLive(p)) continue;
-    rows.push({
-      ref: `portal:${p.id}`,
-      patientName: p.patientName?.trim() || `Paciente (consulta ${p.id})`,
-      isoDate: p.isoDate,
-      time: p.time,
-      durationMin: p.durationMin,
-      format: p.format,
-      sourceLabel: "Portal paciente",
+      patientOnline: Boolean(a.patientOnline),
     });
   }
 
   return rows.sort((x, y) => {
+    const d = x.isoDate.localeCompare(y.isoDate);
+    if (d !== 0) return d;
     const c = x.time.localeCompare(y.time);
     if (c !== 0) return c;
     return x.patientName.localeCompare(y.patientName, "pt-BR");
@@ -109,6 +89,9 @@ function findPickable(ref: string, list: PickableSession[]): PickableSession | u
 
 /** Origem da consulta + id — desambigua quando o nome é genérico ou repetido. */
 function describeLiveSessionRef(ref: string): string {
+  if (ref.startsWith("appointment:")) {
+    return `Consulta · ${ref.slice("appointment:".length)}`;
+  }
   if (ref.startsWith("portal:")) {
     return `Portal paciente · ${ref.slice("portal:".length)}`;
   }
@@ -116,6 +99,13 @@ function describeLiveSessionRef(ref: string): string {
     return `Agenda · ${ref.slice("agenda:".length)}`;
   }
   return ref;
+}
+
+function extractAppointmentId(ref: string): string | null {
+  if (ref.startsWith("appointment:")) return ref.slice("appointment:".length);
+  if (ref.startsWith("agenda:")) return ref.slice("agenda:".length);
+  if (ref.startsWith("portal:")) return ref.slice("portal:".length);
+  return null;
 }
 
 function pickableFromShared(s: SharedLiveSessionState): PickableSession {
@@ -126,7 +116,8 @@ function pickableFromShared(s: SharedLiveSessionState): PickableSession {
     time: s.time,
     durationMin: s.durationMin,
     format: s.format,
-    sourceLabel: s.ref.startsWith("portal:") ? "Portal paciente" : "Agenda",
+    sourceLabel: "Agenda",
+    patientOnline: s.phase === "patient_waiting",
   };
 }
 
@@ -139,7 +130,6 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const isRoomPage = Boolean(lockedRoomRef && lockedRoomRef.length > 0);
   const [today] = useState(() => todayIso());
   const [agenda, setAgenda] = useState<PsychologistAgendaAppointment[]>([]);
-  const [portalAppts, setPortalAppts] = useState<MockAppointment[]>([]);
   const [tick, setTick] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const [selectedRef, setSelectedRef] = useState(() => (lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : ""));
@@ -147,27 +137,77 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const [demoUnlock, setDemoUnlock] = useState(false);
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
   const lastWaitingNotifyKey = useRef<string>("");
+  const prevPatientOnline = useRef<Record<string, boolean>>({});
 
-  const refreshSources = useCallback(() => {
-    setAgenda(loadAgendaAppointments());
-    setPortalAppts(getPatientAppointments());
+  const refreshSources = useCallback(async () => {
+    const agendaResponse = await fetchPsychologistAgenda(today);
+    if (agendaResponse.ok && "appointments" in agendaResponse.data) {
+      const mapped = apiAgendaToMock(agendaResponse.data).appointments;
+      setAgenda(mapped);
+      const liveFromApi = mapped.find(
+        (item) => item.status === "em_andamento" && item.sessionStartedAt,
+      );
+      if (liveFromApi) {
+        const current = getSharedLiveSession();
+        const next: SharedLiveSessionState = {
+          version: 1,
+          ref: `appointment:${liveFromApi.id}`,
+          phase: "live",
+          patientName: liveFromApi.patientName,
+          psychologistName: current?.psychologistName || "Psicólogo",
+          isoDate: liveFromApi.isoDate,
+          time: liveFromApi.time,
+          durationMin: liveFromApi.durationMin ?? 50,
+          format: liveFromApi.format,
+          meetUrl: liveFromApi.videoCallLink ?? current?.meetUrl,
+          patientJoinedAtMs: current?.patientJoinedAtMs,
+          startedAtMs: Date.parse(liveFromApi.sessionStartedAt!),
+          updatedAtMs: Date.now(),
+        };
+        setSharedLiveSession(next);
+      }
+      const nowMap = Object.fromEntries(mapped.map((item) => [item.id, Boolean(item.patientOnline)]));
+      for (const item of mapped) {
+        const key = item.id;
+        const wasOnline = prevPatientOnline.current[key] ?? false;
+        const isOnline = Boolean(item.patientOnline);
+        if (!wasOnline && isOnline) {
+          toast.success(`Paciente online na sala: ${item.patientName}`);
+        } else if (wasOnline && !isOnline) {
+          toast.message(`Paciente saiu da sala: ${item.patientName}`);
+        }
+      }
+      prevPatientOnline.current = nowMap;
+    } else {
+      setAgenda([]);
+      const detail = "detail" in agendaResponse.data ? agendaResponse.data.detail : "";
+      if (detail) toast.error(String(detail));
+    }
     setShared(getSharedLiveSession());
-  }, []);
+  }, [today]);
 
   useEffect(() => {
-    refreshSources();
+    void refreshSources();
     setHydrated(true);
-    const unsub = subscribeSharedLiveSession(refreshSources);
+    const unsub = subscribeSharedLiveSession(() => {
+      setShared(getSharedLiveSession());
+    });
     const id = window.setInterval(() => setTick((t) => t + 1), 1000);
-    window.addEventListener("psychologist-agenda-changed", refreshSources);
-    window.addEventListener("portal-billing-changed", refreshSources);
-    window.addEventListener("storage", refreshSources);
+    const pollId = window.setInterval(() => {
+      void refreshSources();
+    }, 3000);
+    const onAgendaChanged = () => {
+      void refreshSources();
+    };
+    window.addEventListener("psychologist-agenda-changed", onAgendaChanged);
+    window.addEventListener("portal-billing-changed", onAgendaChanged);
+    window.addEventListener("storage", onAgendaChanged);
 
     function onWindowFocus() {
-      refreshSources();
+      void refreshSources();
     }
     function onVisibilityChange() {
-      if (document.visibilityState === "visible") refreshSources();
+      if (document.visibilityState === "visible") void refreshSources();
     }
     window.addEventListener("focus", onWindowFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -176,9 +216,10 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     return () => {
       unsub();
       window.clearInterval(id);
-      window.removeEventListener("psychologist-agenda-changed", refreshSources);
-      window.removeEventListener("portal-billing-changed", refreshSources);
-      window.removeEventListener("storage", refreshSources);
+      window.clearInterval(pollId);
+      window.removeEventListener("psychologist-agenda-changed", onAgendaChanged);
+      window.removeEventListener("portal-billing-changed", onAgendaChanged);
+      window.removeEventListener("storage", onAgendaChanged);
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pageshow", onWindowFocus);
@@ -192,8 +233,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   }, [lockedRoomRef]);
 
   const pickableToday = useMemo(
-    () => buildTodaySessions(today, agenda, portalAppts),
-    [today, agenda, portalAppts],
+    () => buildUpcomingSessions(today, agenda),
+    [today, agenda],
   );
 
   const resolvedSession = useMemo((): PickableSession | null => {
@@ -224,11 +265,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   useEffect(() => {
     const cur = getSharedLiveSession();
     if (cur?.ref === selectedRef) {
-      setMeetDraft(cur.meetUrl ?? getPendingMeetUrl(selectedRef) ?? "");
+      setMeetDraft(cur.meetUrl ?? "");
       return;
     }
-    setMeetDraft(getPendingMeetUrl(selectedRef) ?? "");
-  }, [selectedRef]);
+    const fromAgenda = agenda.find((item) => `appointment:${item.id}` === selectedRef)?.videoCallLink;
+    setMeetDraft(fromAgenda ?? "");
+  }, [selectedRef, agenda]);
 
   useEffect(() => {
     const cur = getSharedLiveSession();
@@ -337,43 +379,76 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     sel: PickableSession,
   ): string | undefined {
     if (cur?.ref === sel.ref) {
-      const u = cur.meetUrl ?? getPendingMeetUrl(sel.ref);
-      return u?.trim() || undefined;
+      return cur.meetUrl?.trim() || undefined;
     }
-    return getPendingMeetUrl(sel.ref)?.trim() || undefined;
+    const agendaMeet = agenda.find((item) => `appointment:${item.id}` === sel.ref)?.videoCallLink;
+    return agendaMeet?.trim() || undefined;
   }
 
-  function handleSaveMeetLink() {
-    if (!selectedRef) return;
+  async function handleSaveMeetLink() {
+    if (!selectedRef || !resolvedSession) return;
     const trimmed = meetDraft.trim();
-    setPendingMeetUrl(selectedRef, trimmed);
-    patchSharedLiveSessionMeetUrl(selectedRef, trimmed);
-    toast.success(
-      trimmed ? "Link salvo — o paciente vê na sala de espera." : "Link removido.",
-    );
+    if (!trimmed) {
+      toast.error("Informe um link válido para salvar.");
+      return;
+    }
+    const appointmentId = extractAppointmentId(resolvedSession.ref);
+    if (!appointmentId) {
+      toast.error("Não foi possível identificar a consulta para salvar o link.");
+      return;
+    }
+    const out = await patchPsychologistAppointmentMeetingLink(appointmentId, trimmed);
+    if (!out.ok) {
+      toast.error(out.detail);
+      return;
+    }
+    const cur = getSharedLiveSession();
+    if (cur?.ref === resolvedSession.ref) {
+      setSharedLiveSession({
+        ...cur,
+        meetUrl: trimmed,
+        updatedAtMs: Date.now(),
+      });
+    }
+    await refreshSources();
+    toast.success("Link salvo — publicado para o paciente na sala de espera.");
   }
 
-  function handleStart() {
+  async function handleStart() {
     if (!resolvedSession) return;
+    const appointmentId = extractAppointmentId(resolvedSession.ref);
+    if (!appointmentId) {
+      toast.error("Não foi possível identificar a consulta para iniciar a sala.");
+      return;
+    }
+    const join = await joinPsychologistRoom(appointmentId);
+    if (!join.ok) {
+      toast.error(join.detail);
+      return;
+    }
+    const joinUrl = join.data.join_url?.trim() || undefined;
     const cur = getSharedLiveSession();
-    const startedAtMs = Date.now();
+    const startedAtMs = join.data.appointment.session_started_at
+      ? Date.parse(join.data.appointment.session_started_at)
+      : Date.now();
     const meetUrl = resolveMeetUrlForSession(cur, resolvedSession);
     const next: SharedLiveSessionState = {
       version: 1,
       ref: resolvedSession.ref,
       phase: "live",
       patientName: resolvedSession.patientName,
-      psychologistName: cur?.psychologistName?.trim() || MOCK_PSYCHOLOGIST.name,
+      psychologistName: cur?.psychologistName?.trim() || "Psicólogo",
       isoDate: resolvedSession.isoDate,
       time: resolvedSession.time,
       durationMin: resolvedSession.durationMin,
       format: resolvedSession.format,
-      meetUrl,
+      meetUrl: joinUrl || meetUrl,
       patientJoinedAtMs: cur?.ref === resolvedSession.ref ? cur.patientJoinedAtMs : undefined,
       startedAtMs,
       updatedAtMs: Date.now(),
     };
     setSharedLiveSession(next);
+    await refreshSources();
     toast.success(
       patientWaitingSameRef
         ? `Sessão com ${resolvedSession.patientName} iniciada — o paciente vê o cronômetro ao vivo.`
@@ -381,19 +456,17 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     );
   }
 
-  function handleEnd() {
+  async function handleEnd() {
     const cur = getSharedLiveSession();
     if (!cur || cur.phase !== "live") return;
-
-    if (cur.ref.startsWith("portal:")) {
-      const id = cur.ref.slice("portal:".length);
-      markAppointmentCompletedAfterLiveSession(id);
-    } else if (cur.ref.startsWith("agenda:")) {
-      const id = cur.ref.slice("agenda:".length);
-      markAgendaSessionCompleted(id);
+    const appointmentId = extractAppointmentId(cur.ref);
+    if (appointmentId) {
+      const finish = await finishPsychologistAppointment(appointmentId);
+      if (!finish.ok) {
+        toast.error(finish.detail);
+        return;
+      }
     }
-
-    clearPendingMeetUrl(cur.ref);
 
     setSharedLiveSession({
       ...cur,
@@ -401,13 +474,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       endedAtMs: Date.now(),
       updatedAtMs: Date.now(),
     });
+    await refreshSources();
     toast.message("Sessão encerrada. Consulta marcada como concluída e o paciente vê o encerramento.");
   }
 
   function handleClearEnded() {
-    const ref = shared?.ref;
     clearSharedLiveSession();
-    if (ref) clearPendingMeetUrl(ref);
     setShared(null);
   }
 
@@ -428,7 +500,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     if (shared && !exists && shared.phase !== "ended") {
       clearSharedLiveSession();
       setShared(null);
-      toast.message("Estado da sessão limpo — consulta não está mais na lista de hoje.");
+      toast.message("Estado da sessão limpo — consulta não está mais na lista de próximas consultas.");
     }
   }, [hydrated, shared, pickableToday]);
 
@@ -445,16 +517,16 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     return min === 1 ? "há 1 min" : `há ${min} min`;
   }, [shared?.patientJoinedAtMs, shared?.updatedAtMs, tick]);
 
-  /** URL para abrir a Meet/Zoom (salva, pendente ou rascunho). */
+  /** URL para abrir a Meet/Zoom (API ou rascunho local). */
   const openMeetHref = useMemo(() => {
     if (!selectedRef) return undefined;
     const fromShared = shared?.ref === selectedRef ? shared.meetUrl?.trim() : "";
     if (fromShared) return fromShared;
-    const pending = getPendingMeetUrl(selectedRef)?.trim();
-    if (pending) return pending;
+    const fromAgenda = agenda.find((item) => `appointment:${item.id}` === selectedRef)?.videoCallLink?.trim();
+    if (fromAgenda) return fromAgenda;
     const draft = meetDraft.trim();
     return draft || undefined;
-  }, [selectedRef, shared?.ref, shared?.meetUrl, meetDraft]);
+  }, [selectedRef, shared?.ref, shared?.meetUrl, meetDraft, agenda]);
 
   const showPatientInWaitingBanner =
     Boolean(shared?.phase === "patient_waiting") && !showLiveUi && !showEndedPsych;
@@ -577,7 +649,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                 href="/psicologo/sessao"
                 className="inline-flex text-sm font-semibold text-sky-800 hover:underline"
               >
-                ← Voltar às salas de hoje
+                ← Voltar às próximas consultas
               </Link>
             </div>
           ) : null}
@@ -612,7 +684,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
         <>
           {!isRoomPage && pickableToday.length === 0 && shared?.phase !== "patient_waiting" ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-              <p className="text-sm text-slate-600">Não há consultas mockadas para hoje ({today}).</p>
+              <p className="text-sm text-slate-600">Não há consultas online futuras disponíveis a partir de {today}.</p>
               <p className="mt-2 text-xs text-slate-500">
                 Consulte a{" "}
                 <Link href="/psicologo/agenda" className="font-semibold text-sky-800 underline">
@@ -626,18 +698,18 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           {!isRoomPage && (pickableToday.length > 0 || shared?.phase === "patient_waiting") ? (
             <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <header className="border-b border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Salas de hoje</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Próximas consultas</p>
                 <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Escolha uma sala</h2>
                 <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-                  Cada card é um horário de hoje — mesmo padrão de cards de{" "}
+                  Cada card representa um horário futuro vindo da API — mesmo padrão de cards de{" "}
                   <strong className="font-semibold text-slate-800">/portal/atendimento</strong>. Quando o paciente entrar no portal, o
                   card destaca a fila.
                 </p>
               </header>
               <div className="px-5 py-6 sm:px-6">
-                <div className="mt-1 grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Salas de atendimento disponíveis hoje">
+                <div className="mt-1 grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Salas de atendimento disponíveis">
                   {roomCards.map((s, idx) => {
-                    const patientInThis = shared?.phase === "patient_waiting" && shared.ref === s.ref;
+                    const patientInThis = Boolean(s.patientOnline);
                     return (
                       <Link
                         key={s.ref}
@@ -651,8 +723,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-800">Sala {idx + 1}</span>
                           {patientInThis ? (
-                            <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
-                              Paciente na sala
+                            <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+                              Paciente entrou na sala
                             </span>
                           ) : (
                             <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
@@ -665,6 +737,11 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                         <p className="mt-2 text-xs text-slate-500">
                           {s.format} · {s.sourceLabel}
                         </p>
+                        {patientInThis ? (
+                          <p className="mt-2 text-xs font-medium text-emerald-700">
+                            Paciente online no portal aguardando atendimento.
+                          </p>
+                        ) : null}
                         <div className="mt-auto border-t border-slate-200/80 pt-4">
                           <p className="text-xs font-semibold text-sky-800">Abrir painel desta sala →</p>
                         </div>
@@ -683,14 +760,14 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                   href="/psicologo/sessao"
                   className="inline-flex items-center gap-1 text-sm font-semibold text-sky-800 hover:underline"
                 >
-                  ← Voltar às salas de hoje
+                  ← Voltar às próximas consultas
                 </Link>
               </div>
               {!resolvedSession ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                   <p className="text-sm font-medium text-slate-800">Sala não disponível</p>
                   <p className="mt-2 text-xs text-slate-600">
-                    Este link não corresponde a um horário de hoje ou a uma sala ativa. Confira o endereço ou volte à lista.
+                    Este link não corresponde a uma consulta futura ou a uma sala ativa. Confira o endereço ou volte à lista.
                   </p>
                   <Link
                     href="/psicologo/sessao"

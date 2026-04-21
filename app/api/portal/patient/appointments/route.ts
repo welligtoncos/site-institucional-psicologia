@@ -32,3 +32,23 @@ export async function POST(request: Request) {
   const data = await response.json().catch(() => ({ detail: "Resposta inválida do backend." }));
   return NextResponse.json(data, { status: response.status });
 }
+
+export async function GET(request: Request) {
+  const auth = forwardAuth(request);
+  if ("error" in auth) return auth.error;
+
+  const url = new URL(request.url);
+  const fromDate = url.searchParams.get("from_date");
+  const qs = fromDate ? `?from_date=${encodeURIComponent(fromDate)}` : "";
+
+  const response = await fetch(`${getBackendApiUrl()}/profiles/patient/me/appointments${qs}`, {
+    method: "GET",
+    headers: {
+      Authorization: auth.authHeader,
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json().catch(() => ({ detail: "Resposta inválida do backend." }));
+  return NextResponse.json(data, { status: response.status });
+}

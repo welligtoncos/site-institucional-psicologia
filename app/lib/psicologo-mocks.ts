@@ -77,7 +77,7 @@ export const PSYCHOLOGIST_AVAILABILITY_SEED: PsychologistAvailabilityMock = {
   ],
 };
 
-export type AgendaSessionStatus = "confirmada" | "pendente" | "cancelada" | "realizada";
+export type AgendaSessionStatus = "confirmada" | "pendente" | "cancelada" | "realizada" | "em_andamento";
 
 export type PsychologistAgendaAppointment = {
   id: string;
@@ -89,6 +89,16 @@ export type PsychologistAgendaAppointment = {
   status: AgendaSessionStatus;
   /** Para alertas de pagamento no painel */
   pagamentoPendente?: boolean;
+  /** Presença do paciente na sala de atendimento online. */
+  patientOnline?: boolean;
+  /** Duração oficial da consulta retornada pela API. */
+  durationMin?: number;
+  /** Link de videochamada salvo para a consulta. */
+  videoCallLink?: string;
+  /** Fase atual da sessão ao vivo (quando existir). */
+  sessionPhase?: "patient_waiting" | "live" | "ended";
+  /** Momento em que o cronômetro foi iniciado no backend. */
+  sessionStartedAt?: string;
 };
 
 export const PSYCHOLOGIST_AGENDA_STORAGE_KEY = "psychologist_agenda_mock_v1";

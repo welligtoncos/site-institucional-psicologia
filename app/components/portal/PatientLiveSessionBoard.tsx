@@ -1,23 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
   formatAppointmentDatePt,
-  isPortalOnlinePaidReadyForLive,
-  type MockAppointment,
-  type MockAppointmentStatus,
 } from "@/app/lib/portal-mocks";
-import { getPatientAppointments } from "@/app/lib/portal-payment-mock";
+import {
+  joinPatientAppointmentRoom,
+  leavePatientAppointmentRoom,
+  listPatientAppointments,
+  type ApiPatientAppointmentSummary,
+} from "@/app/lib/portal-appointments-api";
 import {
   clearSharedLiveSession,
-  getPendingMeetUrl,
   getSharedLiveSession,
   setSharedLiveSession,
   subscribeSharedLiveSession,
-  clearPendingMeetUrl,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
 import { todayIso } from "@/app/lib/psicologo-mocks";
@@ -35,7 +35,7 @@ function portalRef(id: string): string {
   return `portal:${id}`;
 }
 
-function statusShortLabel(s: MockAppointmentStatus): string {
+function statusShortLabel(s: LiveAppointment["status"]): string {
   if (s === "realizada") return "Concluída";
   if (s === "agendada") return "Agendada";
   if (s === "confirmada") return "Confirmada";
@@ -45,32 +45,155 @@ function statusShortLabel(s: MockAppointmentStatus): string {
   return s;
 }
 
-function isEligibleForLiveSession(a: MockAppointment, todayIsoDate: string): boolean {
+type LiveAppointment = {
+  id: string;
+  psychologist: string;
+  psychologistCrp?: string;
+  patientName?: string;
+  specialty: string;
+  isoDate: string;
+  time: string;
+  format: "Online" | "Presencial";
+  price: number;
+  durationMin: number;
+  payment: "Pago" | "Pendente";
+  status: "agendada" | "confirmada" | "em_andamento" | "realizada" | "cancelada" | "nao_compareceu";
+  videoCallLink?: string;
+  psychologistOnline: boolean;
+  sessionPhase?: "patient_waiting" | "live" | "ended";
+  sessionStartedAt?: string;
+};
+
+function mapApiAppointment(a: ApiPatientAppointmentSummary): LiveAppointment {
+  return {
+    id: a.id,
+    psychologist: a.psychologist_name,
+    psychologistCrp: a.psychologist_crp,
+    patientName: a.patient_name,
+    specialty: a.specialty,
+    isoDate: a.iso_date,
+    time: a.time,
+    format: a.format,
+    price: Number(a.price),
+    durationMin: a.duration_min,
+    payment: a.payment,
+    status: a.status,
+    videoCallLink: a.video_call_link ?? undefined,
+    psychologistOnline: Boolean(a.psychologist_online),
+    sessionPhase: a.session_phase ?? undefined,
+    sessionStartedAt: a.session_started_at ?? undefined,
+  };
+}
+
+function isEligibleForLiveSession(a: LiveAppointment, todayIsoDate: string): boolean {
   if (a.isoDate < todayIsoDate) return false;
-  return isPortalOnlinePaidReadyForLive(a);
+  if (a.format !== "Online") return false;
+  if (a.payment !== "Pago") return false;
+  return a.status === "confirmada" || a.status === "em_andamento";
 }
 
 export function PatientLiveSessionBoard() {
   const [today] = useState(() => todayIso());
-  const [appointments, setAppointments] = useState<MockAppointment[]>([]);
+  const [appointments, setAppointments] = useState<LiveAppointment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
   const [tick, setTick] = useState(0);
+  const prevPsychOnline = useRef<Record<string, boolean>>({});
+  const prevMeetReady = useRef<Record<string, boolean>>({});
+  const sharedRef = useRef<SharedLiveSessionState | null>(null);
 
-  const refresh = useCallback(() => {
-    setAppointments(getPatientAppointments());
+  const refresh = useCallback(async () => {
+    const result = await listPatientAppointments(today);
+    if (result.ok) {
+      const mapped = result.data.appointments.map(mapApiAppointment);
+      setAppointments(mapped);
+      const currentShared = getSharedLiveSession();
+      if (currentShared?.ref.startsWith("portal:")) {
+        const activeId = currentShared.ref.slice("portal:".length);
+        const activeAppointment = mapped.find((item) => item.id === activeId);
+        if (activeAppointment) {
+          if (
+            activeAppointment.status === "em_andamento" &&
+            currentShared.phase !== "live"
+          ) {
+            setSharedLiveSession({
+              ...currentShared,
+              phase: "live",
+              meetUrl: activeAppointment.videoCallLink ?? currentShared.meetUrl,
+              startedAtMs: activeAppointment.sessionStartedAt
+                ? Date.parse(activeAppointment.sessionStartedAt)
+                : Date.now(),
+              updatedAtMs: Date.now(),
+            });
+          } else if (
+            activeAppointment.status === "realizada" &&
+            currentShared.phase !== "ended"
+          ) {
+            setSharedLiveSession({
+              ...currentShared,
+              phase: "ended",
+              endedAtMs: Date.now(),
+              updatedAtMs: Date.now(),
+            });
+          } else if (
+            activeAppointment.videoCallLink &&
+            activeAppointment.videoCallLink !== currentShared.meetUrl
+          ) {
+            setSharedLiveSession({
+              ...currentShared,
+              meetUrl: activeAppointment.videoCallLink,
+              updatedAtMs: Date.now(),
+            });
+          }
+        }
+      }
+      const currentMap = Object.fromEntries(mapped.map((item) => [item.id, item.psychologistOnline]));
+      const currentMeetMap = Object.fromEntries(mapped.map((item) => [item.id, Boolean(item.videoCallLink?.trim())]));
+      const liveShared = sharedRef.current;
+      if (liveShared?.phase === "patient_waiting" && liveShared.ref.startsWith("portal:")) {
+        const currentId = liveShared.ref.slice("portal:".length);
+        const wasOnline = prevPsychOnline.current[currentId] ?? false;
+        const nowOnline = currentMap[currentId] ?? false;
+        const wasMeetReady = prevMeetReady.current[currentId] ?? false;
+        const nowMeetReady = currentMeetMap[currentId] ?? false;
+        if (!wasOnline && nowOnline) {
+          toast.success("Seu psicólogo entrou na sala. Você já pode iniciar o atendimento.");
+        } else if (!wasMeetReady && nowMeetReady) {
+          toast.success("Seu psicólogo está pronto. Link da sala disponível para entrar.");
+        }
+      }
+      prevPsychOnline.current = currentMap;
+      prevMeetReady.current = currentMeetMap;
+    } else {
+      setAppointments([]);
+      toast.error(result.detail);
+    }
+    setLoading(false);
     setShared(getSharedLiveSession());
-  }, []);
+  }, [today]);
 
   useEffect(() => {
-    refresh();
-    const unsub = subscribeSharedLiveSession(refresh);
+    sharedRef.current = shared;
+  }, [shared]);
+
+  useEffect(() => {
+    void refresh();
+    const unsub = subscribeSharedLiveSession(() => {
+      setShared(getSharedLiveSession());
+    });
     const id = window.setInterval(() => setTick((x) => x + 1), 1000);
-    window.addEventListener("portal-billing-changed", refresh);
+    const pollId = window.setInterval(() => {
+      void refresh();
+    }, 1000);
+    const onBillingChanged = () => {
+      void refresh();
+    };
+    window.addEventListener("portal-billing-changed", onBillingChanged);
     function onWindowFocus() {
-      refresh();
+      void refresh();
     }
     function onVisibilityChange() {
-      if (document.visibilityState === "visible") refresh();
+      if (document.visibilityState === "visible") void refresh();
     }
     window.addEventListener("focus", onWindowFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -78,7 +201,8 @@ export function PatientLiveSessionBoard() {
     return () => {
       unsub();
       window.clearInterval(id);
-      window.removeEventListener("portal-billing-changed", refresh);
+      window.clearInterval(pollId);
+      window.removeEventListener("portal-billing-changed", onBillingChanged);
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pageshow", onWindowFocus);
@@ -96,7 +220,7 @@ export function PatientLiveSessionBoard() {
       });
   }, [appointments, today]);
 
-  function handleEnterWaiting(apt: MockAppointment) {
+  async function handleEnterWaiting(apt: LiveAppointment) {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
     if (cur && cur.phase !== "ended" && cur.ref !== ref) {
@@ -107,44 +231,57 @@ export function PatientLiveSessionBoard() {
       toast.message("Você já está na sala de espera.");
       return;
     }
-    const pendingMeet = getPendingMeetUrl(ref);
-    const meetFromAppointment = apt.videoCallLink?.trim();
-    const meetUrl = pendingMeet || meetFromAppointment || undefined;
+    const join = await joinPatientAppointmentRoom(apt.id);
+    if (!join.ok) {
+      toast.error(join.detail);
+      return;
+    }
+    const joinedAppointment = mapApiAppointment(join.data.appointment);
+    setAppointments((prev) => prev.map((item) => (item.id === joinedAppointment.id ? joinedAppointment : item)));
+    const meetUrl = join.data.join_url?.trim() || joinedAppointment.videoCallLink?.trim() || undefined;
     const next: SharedLiveSessionState = {
       version: 1,
       ref,
-      phase: "patient_waiting",
-      patientName: apt.patientName?.trim() || `Paciente (consulta ${apt.id})`,
-      psychologistName: apt.psychologist,
-      isoDate: apt.isoDate,
-      time: apt.time,
-      durationMin: apt.durationMin,
-      format: apt.format,
+      phase: joinedAppointment.status === "em_andamento" ? "live" : "patient_waiting",
+      patientName: joinedAppointment.patientName?.trim() || `Paciente (consulta ${joinedAppointment.id})`,
+      psychologistName: joinedAppointment.psychologist,
+      isoDate: joinedAppointment.isoDate,
+      time: joinedAppointment.time,
+      durationMin: joinedAppointment.durationMin,
+      format: joinedAppointment.format,
       meetUrl,
       patientJoinedAtMs: Date.now(),
+      startedAtMs:
+        joinedAppointment.sessionStartedAt && joinedAppointment.status === "em_andamento"
+          ? Date.parse(joinedAppointment.sessionStartedAt)
+          : undefined,
       updatedAtMs: Date.now(),
     };
     setSharedLiveSession(next);
-    toast.success("Você entrou na sala. Na tela, confirme o cartão verde e siga os passos até o link e o início da sessão.");
+    toast.success("Você entrou na sala com dados reais da consulta.");
   }
 
   /** Sai da sala de espera sem encerrar consulta no portal — pode entrar de novo quando quiser. */
-  function handleLeaveWaitingRoom(apt: MockAppointment) {
+  async function handleLeaveWaitingRoom(apt: LiveAppointment) {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
     if (!cur || cur.ref !== ref || cur.phase !== "patient_waiting") {
       toast.message("Não há sala de espera ativa para sair.");
       return;
     }
+    const leave = await leavePatientAppointmentRoom(apt.id);
+    if (!leave.ok) {
+      toast.error(leave.detail);
+      return;
+    }
     clearSharedLiveSession();
     setShared(null);
+    await refresh();
     toast.success("Você saiu da sala de espera. Pode voltar a qualquer momento clicando em Entrar novamente.");
   }
 
   function handleDismissEnded() {
-    const ref = shared?.ref;
     clearSharedLiveSession();
-    if (ref) clearPendingMeetUrl(ref);
     setShared(null);
   }
 
@@ -172,7 +309,11 @@ export function PatientLiveSessionBoard() {
         </p>
       </section>
 
-      {eligibleSessions.length === 0 ? (
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-sm text-slate-700">Carregando consultas reais do portal...</p>
+        </div>
+      ) : eligibleSessions.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="text-sm text-slate-700">
             Nenhuma consulta <strong className="font-semibold text-slate-900">online</strong>,{" "}
@@ -272,6 +413,21 @@ export function PatientLiveSessionBoard() {
 
                       {isThis && phase === "patient_waiting" && shared ? (
                         <div className="space-y-6">
+                          {(() => {
+                            const stepPsychologistEntered =
+                              apt.psychologistOnline ||
+                              apt.status === "em_andamento" ||
+                              Boolean(apt.sessionStartedAt) ||
+                              Boolean(apt.videoCallLink?.trim()) ||
+                              shared.phase === "live";
+                            const currentMeetUrl =
+                              shared.meetUrl?.trim() || apt.videoCallLink?.trim() || "";
+                            const stepProfessionalReady = stepPsychologistEntered && Boolean(currentMeetUrl);
+                            const stepSessionStarted =
+                              shared.phase === "live" ||
+                              (apt.status === "em_andamento" && Boolean(apt.sessionStartedAt));
+                            return (
+                              <>
                           <div className="overflow-hidden rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-slate-50/80 px-5 py-6 text-center shadow-sm">
                             <div
                               className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-600 text-white shadow-lg shadow-sky-900/20"
@@ -304,49 +460,62 @@ export function PatientLiveSessionBoard() {
                             >
                               <span
                                 className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                                  !shared.meetUrl?.trim()
+                                  stepPsychologistEntered
                                     ? "bg-sky-200 text-sky-950 shadow-sm"
-                                    : "text-slate-500"
+                                    : "text-slate-500 opacity-60"
                                 }`}
                               >
-                                1 · Aguardando o link
+                                1 · Psicólogo entrou na sala
                               </span>
                               <span
                                 className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                                  shared.meetUrl?.trim() ? "bg-sky-200 text-sky-950 shadow-sm" : "opacity-55"
+                                  stepProfessionalReady
+                                    ? "bg-sky-200 text-sky-950 shadow-sm"
+                                    : "opacity-55"
                                 }`}
                               >
-                                2 · Profissional pronto
+                                2 · Profissional pronto: entre na sala
                               </span>
-                              <span className="rounded-lg px-1 py-2.5 opacity-50 sm:px-2">3 · Sessão iniciada</span>
+                              <span
+                                className={`rounded-lg px-1 py-2.5 sm:px-2 ${
+                                  stepSessionStarted ? "bg-sky-600 text-white shadow-sm" : "opacity-50"
+                                }`}
+                              >
+                                3 · Psicólogo inicia (cronômetro)
+                              </span>
                             </div>
                             <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-slate-700">
                               <strong className="text-slate-900">Só esta espera não liga o cronômetro.</strong>{" "}
-                              {!shared.meetUrl?.trim() ? (
+                              {!stepPsychologistEntered ? (
                                 <>
-                                  Aguarde <strong>{shared.psychologistName}</strong> enviar o link — quando aparecer aqui, o
-                                  profissional está pronto na sala.
+                                  Aguardando <strong>{shared.psychologistName}</strong> entrar na sala.
+                                </>
+                              ) : !stepProfessionalReady ? (
+                                <>
+                                  O psicólogo já entrou. Aguarde ele publicar o link da chamada para você entrar na sala.
                                 </>
                               ) : (
                                 <>
-                                  <strong>{shared.psychologistName}</strong> já enviou o link. Abra a Meet/Zoom; quando o
+                                  <strong>{shared.psychologistName}</strong> está pronto. Entre agora na Meet/Zoom; quando o
                                   profissional <strong className="text-slate-900">der play no painel</strong>, esta página mostra o
                                   tempo oficial da sessão.
                                 </>
                               )}
                             </p>
-                            {shared.meetUrl?.trim() ? (
+                            {stepProfessionalReady ? (
                               <div className="mt-5 rounded-xl border border-sky-200 bg-white px-4 py-4 text-left shadow-sm">
                                 <p className="text-xs font-semibold text-sky-900">
-                                  Link recebido — o profissional está pronto na sala (demonstração).
+                                  Profissional pronto — entre na sala com o link abaixo.
                                 </p>
                                 <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
                                   Link da videochamada
                                 </p>
-                                <p className="mt-2 break-all font-mono text-xs text-slate-800">{shared.meetUrl}</p>
+                                <p className="mt-2 break-all font-mono text-xs text-slate-800">
+                                  {shared.meetUrl?.trim() || apt.videoCallLink}
+                                </p>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                   <a
-                                    href={shared.meetUrl}
+                                    href={shared.meetUrl?.trim() || apt.videoCallLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700"
@@ -356,9 +525,11 @@ export function PatientLiveSessionBoard() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      void navigator.clipboard.writeText(shared.meetUrl!).then(() =>
+                                      void navigator.clipboard
+                                        .writeText(shared.meetUrl?.trim() || apt.videoCallLink || "")
+                                        .then(() =>
                                         toast.success("Link copiado."),
-                                      );
+                                        );
                                     }}
                                     className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
                                   >
@@ -384,6 +555,9 @@ export function PatientLiveSessionBoard() {
                               Atualização automática. Sair remove você da fila neste dispositivo (demo).
                             </p>
                           </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       ) : null}
 
@@ -404,10 +578,14 @@ export function PatientLiveSessionBoard() {
                               role="tablist"
                               aria-label="Progresso do atendimento"
                             >
-                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">1 · Link</span>
-                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">2 · Pronto</span>
+                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">
+                                1 · Psicólogo entrou na sala
+                              </span>
+                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">
+                                2 · Profissional pronto: entre na sala
+                              </span>
                               <span className="rounded-lg bg-sky-600 px-1 py-2.5 text-white shadow-sm sm:px-2">
-                                3 · Sessão iniciada
+                                3 · Psicólogo inicia (cronômetro)
                               </span>
                             </div>
                             <p className="mx-auto mt-4 max-w-lg text-sm font-semibold leading-snug text-slate-900">
