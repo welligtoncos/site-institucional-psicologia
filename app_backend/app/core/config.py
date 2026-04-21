@@ -69,6 +69,10 @@ class Settings(BaseSettings):
         default="product_events",
         validation_alias="MONGO_AUDIT_COLLECTION",
     )
+    mongo_business_audit_collection: str = Field(
+        default="business_events",
+        validation_alias="MONGO_BUSINESS_AUDIT_COLLECTION",
+    )
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

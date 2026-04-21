@@ -1,11 +1,13 @@
 """Fluxo de agendamento pelo paciente com cobrança mock persistida no backend."""
 
 from datetime import datetime
+import logging
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ForbiddenError, NotFoundError
+from app.messaging.business_event_publisher import BusinessEventPublisher
 from app.models.clinical import Consulta, ConsultaModalidade, ConsultaSituacaoPagamento
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
@@ -18,9 +20,13 @@ from app.schemas.patient_appointment_schema import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class PatientAppointmentService:
     def __init__(self, db: AsyncSession) -> None:
         self._clinical = ClinicalRepository(db)
+        self._audit = BusinessEventPublisher()
 
     def _ensure_patient(self, user: User) -> None:
         if user.role != UserRole.patient:
@@ -103,10 +109,25 @@ class PatientAppointmentService:
         loaded = await self._clinical.get_consulta_com_cobranca_do_paciente(consulta.id, user.id)
         if loaded is None:
             raise NotFoundError("Consulta criada, mas não foi possível carregá-la.")
-        return PatientAppointmentCreateResponse(
+        response = PatientAppointmentCreateResponse(
             appointment=self._appointment_summary(loaded),
             charge=self._charge_summary(loaded),
         )
+        self._publish_business_event(
+            event_type="appointment.created",
+            actor=str(user.id),
+            resource_id=str(response.appointment.id),
+            data={
+                "psychologist_id": str(response.appointment.psychologist_id),
+                "iso_date": response.appointment.iso_date,
+                "time": response.appointment.time,
+                "status": response.appointment.status,
+                "payment": response.appointment.payment,
+                "charge_id": str(response.charge.id),
+                "gateway_status": response.charge.gateway_status,
+            },
+        )
+        return response
 
     async def simulate_payment_success(self, user: User, appointment_id: UUID) -> PatientAppointmentPaymentResponse:
         self._ensure_patient(user)
@@ -121,7 +142,49 @@ class PatientAppointmentService:
         loaded = await self._clinical.get_consulta_com_cobranca_do_paciente(updated.id, user.id)
         if loaded is None:
             raise NotFoundError("Consulta paga, mas não foi possível carregá-la.")
-        return PatientAppointmentPaymentResponse(
+        response = PatientAppointmentPaymentResponse(
             appointment=self._appointment_summary(loaded),
             charge=self._charge_summary(loaded),
         )
+        self._publish_business_event(
+            event_type="appointment.payment.simulated_success",
+            actor=str(user.id),
+            resource_id=str(response.appointment.id),
+            data={
+                "status": response.appointment.status,
+                "payment": response.appointment.payment,
+                "charge_id": str(response.charge.id),
+                "gateway_status": response.charge.gateway_status,
+            },
+        )
+        self._publish_business_event(
+            event_type="appointment.confirmed",
+            actor=str(user.id),
+            resource_id=str(response.appointment.id),
+            data={
+                "status": response.appointment.status,
+                "payment": response.appointment.payment,
+                "video_call_link": response.appointment.video_call_link,
+            },
+        )
+        return response
+
+    def _publish_business_event(
+        self,
+        *,
+        event_type: str,
+        actor: str,
+        resource_id: str,
+        data: dict,
+    ) -> None:
+        try:
+            self._audit.publish(
+                event_type=event_type,
+                actor=actor,
+                resource_type="appointment",
+                resource_id=resource_id,
+                data=data,
+            )
+        except Exception:
+            # Não interrompe o fluxo de negócio se a auditoria assíncrona falhar.
+            logger.exception("Evento de auditoria não publicado: %s", event_type)

@@ -1,11 +1,13 @@
 """Leitura e substituição da disponibilidade semanal e bloqueios (perfil psicólogo)."""
 
 from datetime import date, datetime, time
+import logging
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ForbiddenError, NotFoundError
+from app.messaging.business_event_publisher import BusinessEventPublisher
 from app.models.clinical import BloqueioAgenda, DisponibilidadeSemanal
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
@@ -17,6 +19,9 @@ from app.schemas.availability_schema import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def _fmt_hhmm(t: time) -> str:
     return t.strftime("%H:%M")
 
@@ -24,6 +29,7 @@ def _fmt_hhmm(t: time) -> str:
 class PsychologistAvailabilityService:
     def __init__(self, db: AsyncSession) -> None:
         self._clinical = ClinicalRepository(db)
+        self._audit = BusinessEventPublisher()
 
     def _ensure_psychologist(self, user: User):
         if user.role != UserRole.psychologist:
@@ -74,6 +80,25 @@ class PsychologistAvailabilityService:
             blocks=self._blocks_to_response(blocks),
         )
 
+    def _publish_business_event(
+        self,
+        *,
+        event_type: str,
+        actor: str,
+        resource_id: str,
+        data: dict,
+    ) -> None:
+        try:
+            self._audit.publish(
+                event_type=event_type,
+                actor=actor,
+                resource_type="availability",
+                resource_id=resource_id,
+                data=data,
+            )
+        except Exception:
+            logger.exception("Evento de auditoria não publicado: %s", event_type)
+
     async def put_availability(self, user: User, payload: PsychologistAvailabilityPutRequest) -> PsychologistAvailabilityResponse:
         pid = await self._get_psicologo_id(user)
 
@@ -98,7 +123,19 @@ class PsychologistAvailabilityService:
 
         weekly = await self._clinical.list_disponibilidade_semanal(pid)
         blocks = await self._clinical.list_bloqueios_agenda(pid)
-        return PsychologistAvailabilityResponse(
+        response = PsychologistAvailabilityResponse(
             weekly=self._weekly_to_response(weekly),
             blocks=self._blocks_to_response(blocks),
         )
+        self._publish_business_event(
+            event_type="availability.updated",
+            actor=str(user.id),
+            resource_id=str(pid),
+            data={
+                "weekly_count": len(response.weekly),
+                "blocks_count": len(response.blocks),
+                "weekly": [slot.model_dump(mode="json") for slot in response.weekly],
+                "blocks": [block.model_dump(mode="json") for block in response.blocks],
+            },
+        )
+        return response

@@ -98,12 +98,19 @@ O Nginx do serviço `frontend` encaminha `/api/*` para `http://api:8000/` na red
 
 - Producer: CRUD de produtos publica `product.created`, `product.updated`, `product.deleted` na exchange `products.events`.
 - Consumer: serviço `audit_consumer` consome `product.*` e grava auditoria assíncrona no MongoDB (`auditdb.product_events`).
+- Consumer: serviço `business_audit_consumer` consome eventos de negócio (`user.account.created.*`, `availability.*`, `appointment.*`) e grava em `auditdb.business_events`.
 - Falhas básicas: retry por header `x-retries` (até 3), depois DLQ `audit.log.dlq`.
 
 Para ver logs do consumer:
 
 ```bash
 docker compose logs -f audit_consumer
+```
+
+Para logs da auditoria de negócio:
+
+```bash
+docker compose logs -f business_audit_consumer
 ```
 
 ## Alembic (migrations)

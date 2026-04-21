@@ -40,6 +40,7 @@ services:
       MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
       MONGO_AUDIT_DB: ${MONGO_AUDIT_DB:-auditdb}
       MONGO_AUDIT_COLLECTION: ${MONGO_AUDIT_COLLECTION:-product_events}
+      MONGO_BUSINESS_AUDIT_COLLECTION: ${MONGO_BUSINESS_AUDIT_COLLECTION:-business_events}
     depends_on:
       db:
         condition: service_healthy
@@ -66,6 +67,7 @@ services:
       MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
       MONGO_AUDIT_DB: ${MONGO_AUDIT_DB:-auditdb}
       MONGO_AUDIT_COLLECTION: ${MONGO_AUDIT_COLLECTION:-product_events}
+      MONGO_BUSINESS_AUDIT_COLLECTION: ${MONGO_BUSINESS_AUDIT_COLLECTION:-business_events}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -79,6 +81,30 @@ services:
     restart: unless-stopped
     command: >
       sh -c "python -m app.consumers.product_audit_consumer"
+
+  business_audit_consumer:
+    build: .
+    env_file:
+      - .env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-app}:${RABBITMQ_DEFAULT_PASS:-app}@rabbitmq:5672/%2f
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
+      MONGO_AUDIT_DB: ${MONGO_AUDIT_DB:-auditdb}
+      MONGO_AUDIT_COLLECTION: ${MONGO_AUDIT_COLLECTION:-product_events}
+      MONGO_BUSINESS_AUDIT_COLLECTION: ${MONGO_BUSINESS_AUDIT_COLLECTION:-business_events}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - .:/app
+    working_dir: /app
+    restart: unless-stopped
+    command: >
+      sh -c "python -m app.consumers.business_audit_consumer"
 
   rabbitmq:
     image: rabbitmq:3-management

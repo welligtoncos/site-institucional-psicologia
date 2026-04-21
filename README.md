@@ -67,6 +67,7 @@ Agora o repositório possui um `docker-compose.yml` na raiz para subir o stack c
 - RabbitMQ + painel (`rabbitmq`)
 - MongoDB + Mongo Express (`mongo`, `mongo_express`)
 - Consumer de auditoria (`audit_consumer`)
+- Consumer de auditoria de negócio (`business_audit_consumer`)
 
 ### 1) Subir tudo
 

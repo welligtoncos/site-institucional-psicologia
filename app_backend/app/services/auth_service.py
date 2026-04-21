@@ -5,6 +5,7 @@ Cadastro de paciente cria `users` + `pacientes`; psicólogo cria `users` + `psic
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import logging
 from uuid import UUID
 
 from jose import JWTError
@@ -20,6 +21,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.messaging.business_event_publisher import BusinessEventPublisher
 from app.models.user import UserRole
 from app.repositories.clinical_repository import ClinicalRepository
 from app.repositories.user_repository import UserRepository
@@ -32,11 +34,15 @@ from app.schemas.auth_schema import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class AuthService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
         self._users = UserRepository(db)
         self._clinical = ClinicalRepository(db)
+        self._audit = BusinessEventPublisher()
 
     async def register(self, data: UserRegisterRequest) -> UserResponse:
         """Cadastro de paciente (RF-001): `users` + perfil `pacientes`."""
@@ -65,6 +71,13 @@ class AuthService:
         except ConflictError:
             await self._users.delete_by_id(user.id)
             raise
+        self._publish_business_event(
+            event_type="user.account.created.patient",
+            actor=str(user.id),
+            resource_type="user",
+            resource_id=str(user.id),
+            data={"role": user.role.value, "email": user.email},
+        )
         return UserResponse.model_validate(user)
 
     async def register_psychologist(self, data: PsychologistRegisterRequest) -> UserResponse:
@@ -96,7 +109,35 @@ class AuthService:
         except ConflictError:
             await self._users.delete_by_id(user.id)
             raise
+        self._publish_business_event(
+            event_type="user.account.created.psychologist",
+            actor=str(user.id),
+            resource_type="user",
+            resource_id=str(user.id),
+            data={"role": user.role.value, "email": user.email, "crp": data.crp},
+        )
         return UserResponse.model_validate(user)
+
+    def _publish_business_event(
+        self,
+        *,
+        event_type: str,
+        actor: str,
+        resource_type: str,
+        resource_id: str | None = None,
+        data: dict | None = None,
+    ) -> None:
+        try:
+            self._audit.publish(
+                event_type=event_type,
+                actor=actor,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                data=data or {},
+            )
+        except Exception:
+            # A auditoria é assíncrona e não deve interromper o fluxo principal.
+            logger.exception("Evento de auditoria não publicado: %s", event_type)
 
     async def login(self, data: UserLoginRequest) -> TokenResponse:
         """Credenciais válidas e conta ativa → access + refresh JWT."""
