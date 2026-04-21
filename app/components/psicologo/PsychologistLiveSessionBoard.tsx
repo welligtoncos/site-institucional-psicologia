@@ -8,8 +8,10 @@ import {
   formatAppointmentDatePt,
 } from "@/app/lib/portal-mocks";
 import {
+  clearPsychologistRoomEntered,
   clearSharedLiveSession,
   getSharedLiveSession,
+  markPsychologistRoomEntered,
   setSharedLiveSession,
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
@@ -22,6 +24,7 @@ import {
   joinPsychologistRoom,
   patchPsychologistAppointmentMeetingLink,
 } from "@/app/lib/psychologist-agenda-api";
+import { openRoomRealtimeSocket, sendRoomRealtimeEvent } from "@/app/lib/room-realtime-ws";
 import { todayIso, type PsychologistAgendaAppointment } from "@/app/lib/psicologo-mocks";
 
 /** Pode iniciar até 15 min antes do horário marcado */
@@ -138,6 +141,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
   const lastWaitingNotifyKey = useRef<string>("");
   const prevPatientOnline = useRef<Record<string, boolean>>({});
+  const roomWsRef = useRef<WebSocket | null>(null);
+  const roomWsAppointmentIdRef = useRef<string>("");
 
   const refreshSources = useCallback(async () => {
     const agendaResponse = await fetchPsychologistAgenda(today);
@@ -253,6 +258,46 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     }
     return null;
   }, [selectedRef, pickableToday, shared]);
+
+  useEffect(() => {
+    const roomRef = lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : selectedRef;
+    if (!isRoomPage || !roomRef) return;
+    const syncPresence = () => {
+      const current = getSharedLiveSession();
+      if (current?.phase === "live" || current?.phase === "ended") return;
+      markPsychologistRoomEntered(roomRef);
+    };
+    syncPresence();
+    const id = window.setInterval(syncPresence, 2500);
+    return () => {
+      window.clearInterval(id);
+      clearPsychologistRoomEntered(roomRef);
+    };
+  }, [isRoomPage, lockedRoomRef, selectedRef]);
+
+  useEffect(() => {
+    if (!isRoomPage) return;
+    const roomRef = lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : selectedRef;
+    if (!roomRef) return;
+    const appointmentId = extractAppointmentId(roomRef);
+    if (!appointmentId) return;
+    if (roomWsRef.current && roomWsAppointmentIdRef.current === appointmentId) return;
+    if (roomWsRef.current) {
+      roomWsRef.current.close();
+      roomWsRef.current = null;
+      roomWsAppointmentIdRef.current = "";
+    }
+    const ws = openRoomRealtimeSocket(appointmentId, () => {
+      // Mantém canal em tempo real para paciente/psicólogo na mesma sala.
+    });
+    roomWsRef.current = ws;
+    roomWsAppointmentIdRef.current = appointmentId;
+    return () => {
+      if (roomWsRef.current) roomWsRef.current.close();
+      roomWsRef.current = null;
+      roomWsAppointmentIdRef.current = "";
+    };
+  }, [isRoomPage, lockedRoomRef, selectedRef]);
 
   useEffect(() => {
     if (isRoomPage) return;
@@ -410,6 +455,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
         updatedAtMs: Date.now(),
       });
     }
+    sendRoomRealtimeEvent(roomWsRef.current, { type: "meeting_link_updated", meeting_link: trimmed });
     await refreshSources();
     toast.success("Link salvo — publicado para o paciente na sala de espera.");
   }
@@ -448,6 +494,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       updatedAtMs: Date.now(),
     };
     setSharedLiveSession(next);
+    sendRoomRealtimeEvent(roomWsRef.current, { type: "session_started" });
     await refreshSources();
     toast.success(
       patientWaitingSameRef
@@ -474,11 +521,14 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       endedAtMs: Date.now(),
       updatedAtMs: Date.now(),
     });
+    sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
+    clearPsychologistRoomEntered(cur.ref);
     await refreshSources();
     toast.message("Sessão encerrada. Consulta marcada como concluída e o paciente vê o encerramento.");
   }
 
   function handleClearEnded() {
+    if (shared?.ref) clearPsychologistRoomEntered(shared.ref);
     clearSharedLiveSession();
     setShared(null);
   }

@@ -16,11 +16,13 @@ import {
 import {
   clearSharedLiveSession,
   getSharedLiveSession,
+  isPsychologistRoomEnteredActive,
   setSharedLiveSession,
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
 import { todayIso } from "@/app/lib/psicologo-mocks";
+import { openRoomRealtimeSocket } from "@/app/lib/room-realtime-ws";
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -64,6 +66,13 @@ type LiveAppointment = {
   sessionStartedAt?: string;
 };
 
+type RealtimeRoomSnapshot = {
+  psychologist_online: boolean;
+  patient_online: boolean;
+  meeting_link?: string | null;
+  session_started: boolean;
+};
+
 function mapApiAppointment(a: ApiPatientAppointmentSummary): LiveAppointment {
   return {
     id: a.id,
@@ -100,7 +109,12 @@ export function PatientLiveSessionBoard() {
   const [tick, setTick] = useState(0);
   const prevPsychOnline = useRef<Record<string, boolean>>({});
   const prevMeetReady = useRef<Record<string, boolean>>({});
+  const prevPsychEnteredRealtime = useRef<Record<string, boolean>>({});
+  const prevWsSnapshot = useRef<Record<string, RealtimeRoomSnapshot>>({});
+  const roomWsRef = useRef<WebSocket | null>(null);
+  const roomWsAppointmentIdRef = useRef<string>("");
   const sharedRef = useRef<SharedLiveSessionState | null>(null);
+  const [roomRealtimeById, setRoomRealtimeById] = useState<Record<string, RealtimeRoomSnapshot>>({});
 
   const refresh = useCallback(async () => {
     const result = await listPatientAppointments(today);
@@ -125,6 +139,7 @@ export function PatientLiveSessionBoard() {
                 : Date.now(),
               updatedAtMs: Date.now(),
             });
+            toast.success("Psicólogo iniciou a sessão. Cronômetro oficial em andamento.");
           } else if (
             activeAppointment.status === "realizada" &&
             currentShared.phase !== "ended"
@@ -149,21 +164,34 @@ export function PatientLiveSessionBoard() {
       }
       const currentMap = Object.fromEntries(mapped.map((item) => [item.id, item.psychologistOnline]));
       const currentMeetMap = Object.fromEntries(mapped.map((item) => [item.id, Boolean(item.videoCallLink?.trim())]));
+      const currentPsychEnteredMap = Object.fromEntries(
+        mapped.map((item) => [`appointment:${item.id}`, isPsychologistRoomEnteredActive(`appointment:${item.id}`)]),
+      );
       const liveShared = sharedRef.current;
       if (liveShared?.phase === "patient_waiting" && liveShared.ref.startsWith("portal:")) {
         const currentId = liveShared.ref.slice("portal:".length);
+        const liveAppointmentRef = `appointment:${currentId}`;
         const wasOnline = prevPsychOnline.current[currentId] ?? false;
         const nowOnline = currentMap[currentId] ?? false;
         const wasMeetReady = prevMeetReady.current[currentId] ?? false;
         const nowMeetReady = currentMeetMap[currentId] ?? false;
+        const wasPsychEntered = prevPsychEnteredRealtime.current[liveAppointmentRef] ?? false;
+        const nowPsychEntered = currentPsychEnteredMap[liveAppointmentRef] ?? false;
+        const wasStepOneActive = wasOnline || wasPsychEntered;
+        const nowStepOneActive = nowOnline || nowPsychEntered;
         if (!wasOnline && nowOnline) {
           toast.success("Seu psicólogo entrou na sala. Você já pode iniciar o atendimento.");
+        } else if (!wasPsychEntered && nowPsychEntered) {
+          toast.success("Psicólogo entrou na sala. Aguarde o link para entrar na chamada.");
+        } else if (wasStepOneActive && !nowStepOneActive) {
+          toast.message("Psicólogo saiu da sala. As etapas voltaram para aguardar entrada.");
         } else if (!wasMeetReady && nowMeetReady) {
           toast.success("Seu psicólogo está pronto. Link da sala disponível para entrar.");
         }
       }
       prevPsychOnline.current = currentMap;
       prevMeetReady.current = currentMeetMap;
+      prevPsychEnteredRealtime.current = currentPsychEnteredMap;
     } else {
       setAppointments([]);
       toast.error(result.detail);
@@ -175,6 +203,66 @@ export function PatientLiveSessionBoard() {
   useEffect(() => {
     sharedRef.current = shared;
   }, [shared]);
+
+  useEffect(() => {
+    const roomRef = shared?.ref;
+    if (!roomRef || !roomRef.startsWith("portal:")) {
+      if (roomWsRef.current) roomWsRef.current.close();
+      roomWsRef.current = null;
+      roomWsAppointmentIdRef.current = "";
+      return;
+    }
+    const appointmentId = roomRef.slice("portal:".length);
+    if (!appointmentId) return;
+    if (roomWsRef.current && roomWsAppointmentIdRef.current === appointmentId) return;
+    if (roomWsRef.current) roomWsRef.current.close();
+
+    const ws = openRoomRealtimeSocket(appointmentId, (event) => {
+      const snapshot: RealtimeRoomSnapshot = {
+        psychologist_online: Boolean(event.psychologist_online),
+        patient_online: Boolean(event.patient_online),
+        meeting_link: event.meeting_link ?? undefined,
+        session_started: Boolean(event.session_started),
+      };
+      setRoomRealtimeById((prev) => ({ ...prev, [appointmentId]: snapshot }));
+      const prev = prevWsSnapshot.current[appointmentId];
+      if (!prev?.psychologist_online && snapshot.psychologist_online) {
+        toast.success("Seu psicólogo entrou na sala.");
+      } else if (prev?.psychologist_online && !snapshot.psychologist_online) {
+        toast.message("Psicólogo saiu da sala.");
+      }
+      if (!prev?.meeting_link && snapshot.meeting_link) {
+        toast.success("Link da videochamada disponível.");
+      }
+      const current = getSharedLiveSession();
+      if (current?.ref === `portal:${appointmentId}`) {
+        if (snapshot.meeting_link && snapshot.meeting_link !== current.meetUrl) {
+          setSharedLiveSession({
+            ...current,
+            meetUrl: snapshot.meeting_link,
+            updatedAtMs: Date.now(),
+          });
+        }
+        if (snapshot.session_started && current.phase !== "live") {
+          setSharedLiveSession({
+            ...current,
+            phase: "live",
+            startedAtMs: Date.now(),
+            updatedAtMs: Date.now(),
+          });
+          toast.success("Sessão iniciada em tempo real.");
+        }
+      }
+      prevWsSnapshot.current[appointmentId] = snapshot;
+    });
+    roomWsRef.current = ws;
+    roomWsAppointmentIdRef.current = appointmentId;
+    return () => {
+      if (roomWsRef.current) roomWsRef.current.close();
+      roomWsRef.current = null;
+      roomWsAppointmentIdRef.current = "";
+    };
+  }, [shared?.ref]);
 
   useEffect(() => {
     void refresh();
@@ -414,18 +502,31 @@ export function PatientLiveSessionBoard() {
                       {isThis && phase === "patient_waiting" && shared ? (
                         <div className="space-y-6">
                           {(() => {
+                            const wsSnapshot = roomRealtimeById[apt.id];
                             const stepPsychologistEntered =
+                              Boolean(wsSnapshot?.psychologist_online) ||
+                              isPsychologistRoomEnteredActive(`appointment:${apt.id}`) ||
                               apt.psychologistOnline ||
                               apt.status === "em_andamento" ||
                               Boolean(apt.sessionStartedAt) ||
-                              Boolean(apt.videoCallLink?.trim()) ||
                               shared.phase === "live";
                             const currentMeetUrl =
-                              shared.meetUrl?.trim() || apt.videoCallLink?.trim() || "";
+                              shared.meetUrl?.trim() ||
+                              wsSnapshot?.meeting_link?.trim() ||
+                              apt.videoCallLink?.trim() ||
+                              "";
                             const stepProfessionalReady = stepPsychologistEntered && Boolean(currentMeetUrl);
                             const stepSessionStarted =
+                              Boolean(wsSnapshot?.session_started) ||
                               shared.phase === "live" ||
                               (apt.status === "em_andamento" && Boolean(apt.sessionStartedAt));
+                            const currentStepLabel = !stepPsychologistEntered
+                              ? "Etapa atual: aguardando psicólogo entrar na sala"
+                              : !stepProfessionalReady
+                                ? "Etapa atual: psicólogo entrou, aguardando link da sala"
+                                : !stepSessionStarted
+                                  ? "Etapa atual: profissional pronto, você já pode entrar na sala"
+                                  : "Etapa atual: sessão iniciada, cronômetro em andamento";
                             return (
                               <>
                           <div className="overflow-hidden rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-slate-50/80 px-5 py-6 text-center shadow-sm">
@@ -452,37 +553,41 @@ export function PatientLiveSessionBoard() {
                               ◉
                             </div>
                             <p className="font-semibold text-slate-900">Sala de espera</p>
+                            <p className="mt-2 text-xs font-semibold text-sky-800">{currentStepLabel}</p>
                             <p className="sr-only">Estado do fluxo: aguardando link, profissional pronto ou sessão iniciada.</p>
-                            <div
-                              className="mx-auto mt-4 grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-600 sm:text-[11px]"
-                              role="tablist"
-                              aria-label="Progresso do atendimento"
-                            >
-                              <span
-                                className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                                  stepPsychologistEntered
-                                    ? "bg-sky-200 text-sky-950 shadow-sm"
-                                    : "text-slate-500 opacity-60"
-                                }`}
-                              >
-                                1 · Psicólogo entrou na sala
-                              </span>
-                              <span
-                                className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                                  stepProfessionalReady
-                                    ? "bg-sky-200 text-sky-950 shadow-sm"
-                                    : "opacity-55"
-                                }`}
-                              >
-                                2 · Profissional pronto: entre na sala
-                              </span>
-                              <span
-                                className={`rounded-lg px-1 py-2.5 sm:px-2 ${
-                                  stepSessionStarted ? "bg-sky-600 text-white shadow-sm" : "opacity-50"
-                                }`}
-                              >
-                                3 · Psicólogo inicia (cronômetro)
-                              </span>
+                            <div className="mx-auto mt-4 max-w-2xl" role="tablist" aria-label="Progresso do atendimento">
+                              <div className="grid grid-cols-3 gap-2">
+                                <div
+                                  className={`rounded-xl border px-2 py-2.5 text-left transition ${
+                                    stepPsychologistEntered
+                                      ? "border-sky-300 bg-sky-100 text-sky-950 shadow-sm"
+                                      : "border-slate-200 bg-white text-slate-500"
+                                  }`}
+                                >
+                                  <p className="text-[10px] font-bold uppercase tracking-wide">Etapa 1</p>
+                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Psicólogo entrou na sala</p>
+                                </div>
+                                <div
+                                  className={`rounded-xl border px-2 py-2.5 text-left transition ${
+                                    stepProfessionalReady
+                                      ? "border-sky-300 bg-sky-100 text-sky-950 shadow-sm"
+                                      : "border-slate-200 bg-white text-slate-500"
+                                  }`}
+                                >
+                                  <p className="text-[10px] font-bold uppercase tracking-wide">Etapa 2</p>
+                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Profissional pronto: entre na sala</p>
+                                </div>
+                                <div
+                                  className={`rounded-xl border px-2 py-2.5 text-left transition ${
+                                    stepSessionStarted
+                                      ? "border-sky-600 bg-sky-600 text-white shadow-sm"
+                                      : "border-slate-200 bg-white text-slate-500"
+                                  }`}
+                                >
+                                  <p className="text-[10px] font-bold uppercase tracking-wide">Etapa 3</p>
+                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Psicólogo inicia (cronômetro)</p>
+                                </div>
+                              </div>
                             </div>
                             <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-slate-700">
                               <strong className="text-slate-900">Só esta espera não liga o cronômetro.</strong>{" "}
@@ -511,11 +616,11 @@ export function PatientLiveSessionBoard() {
                                   Link da videochamada
                                 </p>
                                 <p className="mt-2 break-all font-mono text-xs text-slate-800">
-                                  {shared.meetUrl?.trim() || apt.videoCallLink}
+                                  {currentMeetUrl}
                                 </p>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                   <a
-                                    href={shared.meetUrl?.trim() || apt.videoCallLink}
+                                    href={currentMeetUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700"
@@ -526,7 +631,7 @@ export function PatientLiveSessionBoard() {
                                     type="button"
                                     onClick={() => {
                                       void navigator.clipboard
-                                        .writeText(shared.meetUrl?.trim() || apt.videoCallLink || "")
+                                        .writeText(currentMeetUrl)
                                         .then(() =>
                                         toast.success("Link copiado."),
                                         );

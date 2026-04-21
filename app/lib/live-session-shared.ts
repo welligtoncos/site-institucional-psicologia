@@ -122,6 +122,7 @@ export function clearSharedLiveSession(): void {
 }
 
 const PENDING_MEET_KEY = "clinica_live_pending_meet_v1";
+const PSYCHOLOGIST_ENTERED_KEY = "clinica_psychologist_entered_rooms_v1";
 
 function readPendingMap(): Record<string, string> {
   if (typeof window === "undefined") return {};
@@ -170,6 +171,48 @@ export function patchSharedLiveSessionMeetUrl(ref: string, meetUrl: string): voi
     meetUrl: t || undefined,
     updatedAtMs: Date.now(),
   });
+}
+
+function readPsychologistEnteredMap(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PSYCHOLOGIST_ENTERED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+/** Marca que o psicólogo abriu o painel da sala (sinal em tempo real para o paciente). */
+export function markPsychologistRoomEntered(ref: string): void {
+  if (typeof window === "undefined") return;
+  const map = readPsychologistEnteredMap();
+  map[ref] = Date.now();
+  localStorage.setItem(PSYCHOLOGIST_ENTERED_KEY, JSON.stringify(map));
+  broadcast();
+}
+
+export function clearPsychologistRoomEntered(ref: string): void {
+  if (typeof window === "undefined") return;
+  const map = readPsychologistEnteredMap();
+  if (!(ref in map)) return;
+  delete map[ref];
+  localStorage.setItem(PSYCHOLOGIST_ENTERED_KEY, JSON.stringify(map));
+  broadcast();
+}
+
+export function getPsychologistRoomEnteredAt(ref: string): number | undefined {
+  const value = readPsychologistEnteredMap()[ref];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function isPsychologistRoomEnteredActive(ref: string, maxAgeMs: number = 10_000): boolean {
+  const enteredAt = getPsychologistRoomEnteredAt(ref);
+  if (!enteredAt) return false;
+  return Date.now() - enteredAt <= maxAgeMs;
 }
 
 export function subscribeSharedLiveSession(onChange: () => void): () => void {
