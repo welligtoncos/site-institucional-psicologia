@@ -126,9 +126,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
+        NEXT_PUBLIC_BACKEND_API_URL: ${NEXT_PUBLIC_BACKEND_API_URL:-http://127.0.0.1:8000}
     environment:
-      BACKEND_API_URL: http://api:8000
-      NEXT_PUBLIC_BACKEND_API_URL: http://api:8000
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
+      NEXT_PUBLIC_BACKEND_API_URL: ${NEXT_PUBLIC_BACKEND_API_URL:-http://127.0.0.1:8000}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-troque-por-um-token-forte}
       AVAILABILITY_DAYS_AHEAD: ${AVAILABILITY_DAYS_AHEAD:-21}
       RESEND_API_KEY: ${RESEND_API_KEY:-re_xxxxxxxxxxxxxxxxxxxx}
