@@ -95,6 +95,11 @@ Você pode sobrescrever no arquivo `.env` da raiz (ou variáveis de ambiente do 
 - `MONGO_PORT` (padrão `27017`)
 - `MONGO_EXPRESS_PORT` (padrão `8081`)
 - `SECRET_KEY` (recomendado definir em ambiente não local)
+- `DEBUG` (padrão `false` no Compose da API), `CORS_ORIGINS` (obrigatório com `DEBUG=false`)
+
+### 4) Produção
+
+Veja [PRODUCTION.md](PRODUCTION.md): HTTPS, CORS, segredos, `NEXT_PUBLIC_BACKEND_API_URL`, escala da API com WebSocket e boas práticas de exposição dos serviços.
 
 ## Estrutura da funcionalidade de agendamento
 

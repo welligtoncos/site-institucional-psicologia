@@ -19,6 +19,17 @@ from app.routes import api_router
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+_cors_origins = settings.cors_origin_list() if not settings.debug else ["*"]
+if not settings.debug and not _cors_origins:
+    raise RuntimeError(
+        "Defina CORS_ORIGINS (lista separada por vírgulas) quando DEBUG=false. "
+        "Ex.: https://app.sua-clinica.com,https://www.sua-clinica.com",
+    )
+if not settings.debug:
+    logger.info("CORS: origens explícitas (%d). DEBUG=false.", len(_cors_origins))
+else:
+    logger.warning("CORS: allow_origins=['*'] (modo DEBUG). Não use em produção.")
+
 
 def _operational_error_detail(exc: OperationalError) -> str:
     return str(exc.orig) if exc.orig is not None else str(exc)
@@ -30,12 +41,10 @@ app = FastAPI(
     description="API com auth JWT (access + refresh): **POST /auth/register**, **POST /auth/login**.",
 )
 
-# Login usa JSON + JWT no header (sem cookie). `allow_origins=["*"]` exige `allow_credentials=False`
-# (senão o browser exige origem explícita e o preflight OPTIONS pode falhar com 400).
-# Em produção com cookies ou origens fixas, troque por `cors_origin_list()` + `allow_credentials=True`.
+# Login usa JSON + JWT no header (sem cookie). Em produção (DEBUG=false) usamos CORS_ORIGINS explícitas.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

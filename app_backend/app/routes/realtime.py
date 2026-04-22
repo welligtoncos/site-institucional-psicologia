@@ -84,6 +84,9 @@ async def appointment_room_ws(websocket: WebSocket, appointment_id: UUID) -> Non
         session_started = consulta.status == ConsultaStatus.em_andamento or (
             sessao is not None and sessao.fase == SessaoAoVivoFase.live and sessao.encerrada_em is None
         )
+        session_started_at_iso: str | None = None
+        if sessao is not None and getattr(sessao, "cronometro_iniciado_em", None):
+            session_started_at_iso = sessao.cronometro_iniciado_em.isoformat()
 
     room_id = str(appointment_id)
     await room_realtime_service.connect(
@@ -92,6 +95,7 @@ async def appointment_room_ws(websocket: WebSocket, appointment_id: UUID) -> Non
         role=role,
         meeting_link=meeting_link,
         session_started=session_started,
+        session_started_at=session_started_at_iso,
     )
     try:
         while True:

@@ -19,4 +19,6 @@ COPY . .
 EXPOSE 8000
 
 # Migrações antes de subir o servidor (ajuste o comando no docker-compose para hot reload em dev)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Um worker por padrão: WebSocket de sala (`/ws/appointments/*`) e estado em memória são coerentes por processo.
+# Para escalar HTTP com vários workers, use balanceador + sticky por consulta ou evolua para Redis na camada WS.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1"]

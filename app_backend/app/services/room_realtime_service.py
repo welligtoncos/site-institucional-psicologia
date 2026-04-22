@@ -20,6 +20,8 @@ class _RoomState:
     roles_by_socket: dict[WebSocket, str] = field(default_factory=dict)
     meeting_link: str | None = None
     session_started: bool = False
+    # ISO8601 do servidor (cronômetro); alinhado ao persistido na consulta.
+    session_started_at: str | None = None
 
     def payload(self, appointment_id: str) -> dict[str, Any]:
         patient_online = any(role == "patient" for role in self.roles_by_socket.values())
@@ -31,6 +33,7 @@ class _RoomState:
             "psychologist_online": psychologist_online,
             "meeting_link": self.meeting_link,
             "session_started": self.session_started,
+            "session_started_at": self.session_started_at,
             "updated_at": _utc_now_iso(),
         }
 
@@ -48,6 +51,7 @@ class RoomRealtimeService:
         role: str,
         meeting_link: str | None,
         session_started: bool,
+        session_started_at: str | None = None,
     ) -> None:
         await websocket.accept()
         async with self._lock:
@@ -57,6 +61,8 @@ class RoomRealtimeService:
             if meeting_link:
                 room.meeting_link = meeting_link
             room.session_started = room.session_started or session_started
+            if session_started_at is not None:
+                room.session_started_at = session_started_at
             payload = room.payload(appointment_id)
         await self._broadcast(appointment_id, payload)
 
@@ -84,8 +90,12 @@ class RoomRealtimeService:
                 room.meeting_link = link or None
             elif event_type == "session_started":
                 room.session_started = True
+                sa = message.get("session_started_at")
+                if isinstance(sa, str) and sa.strip():
+                    room.session_started_at = sa.strip()
             elif event_type == "session_ended":
                 room.session_started = False
+                room.session_started_at = None
             payload = room.payload(appointment_id)
         await self._broadcast(appointment_id, payload)
 

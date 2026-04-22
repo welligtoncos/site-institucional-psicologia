@@ -57,11 +57,14 @@ services:
     build:
       context: ./app_backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file:
       - ./app_backend/.env.example
     environment:
+      DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-appdb}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-app}:${RABBITMQ_DEFAULT_PASS:-app}@rabbitmq:5672/%2f
       MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
       MONGO_AUDIT_DB: ${MONGO_AUDIT_DB:-auditdb}
@@ -78,7 +81,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
-      uvicorn main:app --host 0.0.0.0 --port 8000"
+      uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1"
 
   audit_consumer:
     build:
@@ -129,6 +132,7 @@ services:
       args:
         BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
         NEXT_PUBLIC_BACKEND_API_URL: ${NEXT_PUBLIC_BACKEND_API_URL:-http://127.0.0.1:8000}
+    restart: unless-stopped
     environment:
       BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
       NEXT_PUBLIC_BACKEND_API_URL: ${NEXT_PUBLIC_BACKEND_API_URL:-http://127.0.0.1:8000}

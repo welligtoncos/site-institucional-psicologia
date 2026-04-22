@@ -71,6 +71,7 @@ type RealtimeRoomSnapshot = {
   patient_online: boolean;
   meeting_link?: string | null;
   session_started: boolean;
+  session_started_at?: string | null;
 };
 
 function mapApiAppointment(a: ApiPatientAppointmentSummary): LiveAppointment {
@@ -130,16 +131,20 @@ export function PatientLiveSessionBoard() {
             activeAppointment.status === "em_andamento" &&
             currentShared.phase !== "live"
           ) {
-            setSharedLiveSession({
-              ...currentShared,
-              phase: "live",
-              meetUrl: activeAppointment.videoCallLink ?? currentShared.meetUrl,
-              startedAtMs: activeAppointment.sessionStartedAt
+            {
+              const fromApi = activeAppointment.sessionStartedAt
                 ? Date.parse(activeAppointment.sessionStartedAt)
-                : Date.now(),
-              updatedAtMs: Date.now(),
-            });
-            toast.success("Psicólogo iniciou a sessão. Cronômetro oficial em andamento.");
+                : NaN;
+              const startedAtMs = Number.isFinite(fromApi) ? fromApi : currentShared.startedAtMs ?? Date.now();
+              setSharedLiveSession({
+                ...currentShared,
+                phase: "live",
+                meetUrl: activeAppointment.videoCallLink ?? currentShared.meetUrl,
+                startedAtMs,
+                updatedAtMs: Date.now(),
+              });
+            }
+            toast.success("Sessão iniciada — cronômetro sincronizado.");
           } else if (
             activeAppointment.status === "realizada" &&
             currentShared.phase !== "ended"
@@ -159,6 +164,19 @@ export function PatientLiveSessionBoard() {
               meetUrl: activeAppointment.videoCallLink,
               updatedAtMs: Date.now(),
             });
+          } else if (
+            activeAppointment.status === "em_andamento" &&
+            currentShared.phase === "live" &&
+            activeAppointment.sessionStartedAt
+          ) {
+            const fromApi = Date.parse(activeAppointment.sessionStartedAt);
+            if (Number.isFinite(fromApi) && currentShared.startedAtMs !== fromApi) {
+              setSharedLiveSession({
+                ...currentShared,
+                startedAtMs: fromApi,
+                updatedAtMs: Date.now(),
+              });
+            }
           }
         }
       }
@@ -180,13 +198,13 @@ export function PatientLiveSessionBoard() {
         const wasStepOneActive = wasOnline || wasPsychEntered;
         const nowStepOneActive = nowOnline || nowPsychEntered;
         if (!wasOnline && nowOnline) {
-          toast.success("Seu psicólogo entrou na sala. Você já pode iniciar o atendimento.");
+          toast.success("Psicólogo na sala.");
         } else if (!wasPsychEntered && nowPsychEntered) {
-          toast.success("Psicólogo entrou na sala. Aguarde o link para entrar na chamada.");
+          toast.success("Psicólogo na sala — aguarde o link.");
         } else if (wasStepOneActive && !nowStepOneActive) {
-          toast.message("Psicólogo saiu da sala. As etapas voltaram para aguardar entrada.");
+          toast.message("Psicólogo saiu da sala.");
         } else if (!wasMeetReady && nowMeetReady) {
-          toast.success("Seu psicólogo está pronto. Link da sala disponível para entrar.");
+          toast.success("Link da chamada disponível.");
         }
       }
       prevPsychOnline.current = currentMap;
@@ -223,16 +241,20 @@ export function PatientLiveSessionBoard() {
         patient_online: Boolean(event.patient_online),
         meeting_link: event.meeting_link ?? undefined,
         session_started: Boolean(event.session_started),
+        session_started_at:
+          typeof event.session_started_at === "string" && event.session_started_at.trim()
+            ? event.session_started_at.trim()
+            : undefined,
       };
       setRoomRealtimeById((prev) => ({ ...prev, [appointmentId]: snapshot }));
       const prev = prevWsSnapshot.current[appointmentId];
       if (!prev?.psychologist_online && snapshot.psychologist_online) {
-        toast.success("Seu psicólogo entrou na sala.");
+        toast.success("Psicólogo na sala.");
       } else if (prev?.psychologist_online && !snapshot.psychologist_online) {
         toast.message("Psicólogo saiu da sala.");
       }
       if (!prev?.meeting_link && snapshot.meeting_link) {
-        toast.success("Link da videochamada disponível.");
+        toast.success("Link da chamada disponível.");
       }
       const current = getSharedLiveSession();
       if (current?.ref === `portal:${appointmentId}`) {
@@ -244,13 +266,28 @@ export function PatientLiveSessionBoard() {
           });
         }
         if (snapshot.session_started && current.phase !== "live") {
+          const fromWs = snapshot.session_started_at ? Date.parse(snapshot.session_started_at) : NaN;
+          const startedAtMs = Number.isFinite(fromWs) ? fromWs : current.startedAtMs ?? Date.now();
           setSharedLiveSession({
             ...current,
             phase: "live",
-            startedAtMs: Date.now(),
+            startedAtMs,
             updatedAtMs: Date.now(),
           });
-          toast.success("Sessão iniciada em tempo real.");
+          toast.success("Sessão iniciada.");
+        } else if (
+          snapshot.session_started &&
+          current.phase === "live" &&
+          snapshot.session_started_at
+        ) {
+          const fromWs = Date.parse(snapshot.session_started_at);
+          if (Number.isFinite(fromWs) && current.startedAtMs !== fromWs) {
+            setSharedLiveSession({
+              ...current,
+              startedAtMs: fromWs,
+              updatedAtMs: Date.now(),
+            });
+          }
         }
       }
       prevWsSnapshot.current[appointmentId] = snapshot;
@@ -312,11 +349,11 @@ export function PatientLiveSessionBoard() {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
     if (cur && cur.phase !== "ended" && cur.ref !== ref) {
-      toast.error("Já existe outra sessão ativa na demonstração. Aguarde ou finalize a outra aba.");
+      toast.error("Outra sessão ativa. Encerre ou saia antes.");
       return;
     }
     if (cur && cur.ref === ref && cur.phase === "patient_waiting") {
-      toast.message("Você já está na sala de espera.");
+      toast.message("Você já está na fila.");
       return;
     }
     const join = await joinPatientAppointmentRoom(apt.id);
@@ -339,14 +376,15 @@ export function PatientLiveSessionBoard() {
       format: joinedAppointment.format,
       meetUrl,
       patientJoinedAtMs: Date.now(),
-      startedAtMs:
-        joinedAppointment.sessionStartedAt && joinedAppointment.status === "em_andamento"
-          ? Date.parse(joinedAppointment.sessionStartedAt)
-          : undefined,
+      startedAtMs: (() => {
+        if (joinedAppointment.status !== "em_andamento" || !joinedAppointment.sessionStartedAt) return undefined;
+        const t = Date.parse(joinedAppointment.sessionStartedAt);
+        return Number.isFinite(t) ? t : undefined;
+      })(),
       updatedAtMs: Date.now(),
     };
     setSharedLiveSession(next);
-    toast.success("Você entrou na sala com dados reais da consulta.");
+    toast.success("Na sala de espera.");
   }
 
   /** Sai da sala de espera sem encerrar consulta no portal — pode entrar de novo quando quiser. */
@@ -354,7 +392,7 @@ export function PatientLiveSessionBoard() {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
     if (!cur || cur.ref !== ref || cur.phase !== "patient_waiting") {
-      toast.message("Não há sala de espera ativa para sair.");
+      toast.message("Nada para sair nesta consulta.");
       return;
     }
     const leave = await leavePatientAppointmentRoom(apt.id);
@@ -365,7 +403,7 @@ export function PatientLiveSessionBoard() {
     clearSharedLiveSession();
     setShared(null);
     await refresh();
-    toast.success("Você saiu da sala de espera. Pode voltar a qualquer momento clicando em Entrar novamente.");
+    toast.success("Saiu da fila. Pode entrar de novo quando quiser.");
   }
 
   function handleDismissEnded() {
@@ -385,32 +423,25 @@ export function PatientLiveSessionBoard() {
     <div className="space-y-8">
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Atendimento ao vivo</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Entrar no atendimento</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Aparecem aqui só consultas <strong className="font-semibold text-slate-800">online</strong>, já{" "}
-          <strong className="font-semibold text-slate-800">pagas</strong> e com status{" "}
-          <strong className="font-semibold text-slate-800">confirmada</strong> ou{" "}
-          <strong className="font-semibold text-slate-800">em andamento</strong> (hoje ou data futura). Primeiro você{" "}
-          <strong className="font-semibold text-slate-800">aguarda o link</strong> que o psicólogo envia pelo painel; quando o link
-          aparecer aqui, o profissional está pronto na sala. Depois do <strong className="font-semibold text-slate-800">play</strong>{" "}
-          no painel dele, esta página mostra a sessão com o cronômetro.
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Atendimento online</h1>
+        <p className="mt-2 max-w-xl text-sm text-slate-600">
+          Só consultas online, pagas e confirmadas (ou em andamento). Entre na fila, use o link quando aparecer e acompanhe o
+          cronômetro após o psicólogo iniciar.
         </p>
       </section>
 
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm text-slate-700">Carregando consultas reais do portal...</p>
+          <p className="text-sm text-slate-700">Carregando consultas…</p>
         </div>
       ) : eligibleSessions.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="text-sm text-slate-700">
-            Nenhuma consulta <strong className="font-semibold text-slate-900">online</strong>,{" "}
-            <strong className="font-semibold text-slate-900">paga</strong> e{" "}
-            <strong className="font-semibold text-slate-900">confirmada</strong> (ou em andamento) para hoje ou datas futuras.
+            Nenhuma consulta online paga e confirmada (ou em andamento) a partir de hoje.
           </p>
-          <p className="mt-3 text-xs leading-relaxed text-slate-500">
-            Conclua o pagamento em <strong className="font-medium text-slate-700">Minhas consultas</strong> ou no fluxo de agendamento;
-            atendimentos presenciais não entram nesta sala virtual.
+          <p className="mt-3 text-xs text-slate-500">
+            Regularize em <strong className="font-medium text-slate-700">Minhas consultas</strong> ou agende de novo. Presencial não
+            usa esta sala.
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
@@ -442,59 +473,38 @@ export function PatientLiveSessionBoard() {
                 <div className="px-5 py-6 sm:px-6">
                   <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-sky-50/50 via-white to-white shadow-inner">
                     <div className="border-b border-sky-100/90 bg-sky-600/5 px-5 py-4 sm:px-6">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-800">Nesta sala</p>
-                      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-                            {formatAppointmentDatePt(apt.isoDate)} · {apt.time}
-                            {apt.isoDate === today ? (
-                              <span className="ml-2 align-middle rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900">
-                                Hoje
-                              </span>
-                            ) : null}
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-slate-800">{apt.psychologist}</p>
-                          <p className="mt-0.5 text-xs text-slate-600">
-                            {apt.psychologistCrp ? <>CRP {apt.psychologistCrp} · </> : null}
-                            {apt.format} · {statusShortLabel(apt.status)}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-900">
-                            Pago · pronto para sala
-                          </span>
-                          {apt.videoCallLink?.trim() ? (
-                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-900">
-                              Link da consulta disponível
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">Sessão online</p>
+                      <div className="mt-2 min-w-0">
+                        <p className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                          {formatAppointmentDatePt(apt.isoDate)} · {apt.time}
+                          {apt.isoDate === today ? (
+                            <span className="ml-2 align-middle rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900">
+                              Hoje
                             </span>
                           ) : null}
-                        </div>
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">{apt.psychologist}</p>
+                        <p className="mt-0.5 text-xs text-slate-600">
+                          {apt.psychologistCrp ? <>CRP {apt.psychologistCrp} · </> : null}
+                          {apt.format} · {statusShortLabel(apt.status)}
+                        </p>
                       </div>
-                      <p className="mt-3 text-xs leading-relaxed text-slate-600">
-                        Mesmo layout da sala do psicólogo em <strong className="font-medium text-slate-800">/psicologo/sessao</strong>:
-                        aguarde o link, use a videochamada e acompanhe o cronômetro após o play.
-                      </p>
                     </div>
 
                     <div className="px-5 py-6 sm:px-6">
                       {!isThis || !phase ? (
                         <div className="space-y-3">
-                          <p className="text-sm leading-relaxed text-slate-600">
-                            Quando for a hora, entre na sala de espera. Você acompanha os passos abaixo (como no painel do
-                            profissional), até o link aparecer e a sessão iniciar com o cronômetro.
-                          </p>
+                          <p className="text-sm text-slate-600">Na hora, entre na fila. Acompanhe link e cronômetro abaixo.</p>
                           <button
                             type="button"
                             onClick={() => handleEnterWaiting(apt)}
                             disabled={Boolean(shared && shared.phase !== "ended" && shared.ref !== ref)}
                             className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-sky-900/10 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Entrar na sala de espera
+                            Entrar na fila
                           </button>
                           {shared && shared.phase !== "ended" && shared.ref !== ref ? (
-                            <p className="text-xs text-amber-800">
-                              Outra consulta está em uso na demonstração. Finalize-a antes.
-                            </p>
+                            <p className="text-xs text-amber-800">Outra sessão ativa — encerre ou saia antes.</p>
                           ) : null}
                         </div>
                       ) : null}
@@ -521,12 +531,12 @@ export function PatientLiveSessionBoard() {
                               shared.phase === "live" ||
                               (apt.status === "em_andamento" && Boolean(apt.sessionStartedAt));
                             const currentStepLabel = !stepPsychologistEntered
-                              ? "Etapa atual: aguardando psicólogo entrar na sala"
+                              ? "Aguardando psicólogo"
                               : !stepProfessionalReady
-                                ? "Etapa atual: psicólogo entrou, aguardando link da sala"
+                                ? "Aguardando link da chamada"
                                 : !stepSessionStarted
-                                  ? "Etapa atual: profissional pronto, você já pode entrar na sala"
-                                  : "Etapa atual: sessão iniciada, cronômetro em andamento";
+                                  ? "Pode entrar na videochamada"
+                                  : "Sessão em andamento";
                             return (
                               <>
                           <div className="overflow-hidden rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-slate-50/80 px-5 py-6 text-center shadow-sm">
@@ -538,13 +548,12 @@ export function PatientLiveSessionBoard() {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                               </svg>
                             </div>
-                            <p className="mt-4 text-lg font-bold tracking-tight text-slate-900">Você entrou na sala</p>
-                            <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                              Sala virtual · <strong className="font-semibold text-slate-800">{shared.psychologistName}</strong>
+                            <p className="mt-4 text-lg font-bold tracking-tight text-slate-900">Na fila</p>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Com <strong className="font-semibold text-slate-800">{shared.psychologistName}</strong>
                             </p>
-                            <p className="mt-3 rounded-lg border border-sky-100 bg-white/90 px-3 py-2 text-xs leading-relaxed text-slate-600">
-                              Abaixo, o mesmo fluxo em etapas visto pelo psicólogo: link → presença na fila → sessão com tempo
-                              oficial.
+                            <p className="mt-3 rounded-lg border border-sky-100 bg-white/90 px-3 py-2 text-xs text-slate-600">
+                              Presença → link → cronômetro (mesmo fluxo do psicólogo).
                             </p>
                           </div>
 
@@ -552,10 +561,10 @@ export function PatientLiveSessionBoard() {
                             <div className="mx-auto mb-3 flex h-14 w-14 animate-pulse items-center justify-center rounded-full bg-sky-200 text-2xl text-sky-900">
                               ◉
                             </div>
-                            <p className="font-semibold text-slate-900">Sala de espera</p>
+                            <p className="font-semibold text-slate-900">Aguardando</p>
                             <p className="mt-2 text-xs font-semibold text-sky-800">{currentStepLabel}</p>
-                            <p className="sr-only">Estado do fluxo: aguardando link, profissional pronto ou sessão iniciada.</p>
-                            <div className="mx-auto mt-4 max-w-2xl" role="tablist" aria-label="Progresso do atendimento">
+                            <p className="sr-only">Progresso: psicólogo na sala, link ou sessão iniciada.</p>
+                            <div className="mx-auto mt-4 max-w-2xl" role="tablist" aria-label="Etapas do atendimento">
                               <div className="grid grid-cols-3 gap-2">
                                 <div
                                   className={`rounded-xl border px-2 py-2.5 text-left transition ${
@@ -564,8 +573,8 @@ export function PatientLiveSessionBoard() {
                                       : "border-slate-200 bg-white text-slate-500"
                                   }`}
                                 >
-                                  <p className="text-[10px] font-bold uppercase tracking-wide">Etapa 1</p>
-                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Psicólogo entrou na sala</p>
+                                  <p className="text-[10px] font-bold uppercase tracking-wide">1</p>
+                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Psicólogo na sala</p>
                                 </div>
                                 <div
                                   className={`rounded-xl border px-2 py-2.5 text-left transition ${
@@ -574,8 +583,8 @@ export function PatientLiveSessionBoard() {
                                       : "border-slate-200 bg-white text-slate-500"
                                   }`}
                                 >
-                                  <p className="text-[10px] font-bold uppercase tracking-wide">Etapa 2</p>
-                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Profissional pronto: entre na sala</p>
+                                  <p className="text-[10px] font-bold uppercase tracking-wide">2</p>
+                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Link da chamada</p>
                                 </div>
                                 <div
                                   className={`rounded-xl border px-2 py-2.5 text-left transition ${
@@ -584,37 +593,28 @@ export function PatientLiveSessionBoard() {
                                       : "border-slate-200 bg-white text-slate-500"
                                   }`}
                                 >
-                                  <p className="text-[10px] font-bold uppercase tracking-wide">Etapa 3</p>
-                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Psicólogo inicia (cronômetro)</p>
+                                  <p className="text-[10px] font-bold uppercase tracking-wide">3</p>
+                                  <p className="mt-1 text-[11px] font-semibold leading-snug">Cronômetro</p>
                                 </div>
                               </div>
                             </div>
-                            <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-slate-700">
-                              <strong className="text-slate-900">Só esta espera não liga o cronômetro.</strong>{" "}
+                            <p className="mx-auto mt-4 max-w-lg text-sm text-slate-700">
+                              <span className="font-medium text-slate-900">O cronômetro só inicia quando o psicólogo der play.</span>{" "}
                               {!stepPsychologistEntered ? (
-                                <>
-                                  Aguardando <strong>{shared.psychologistName}</strong> entrar na sala.
-                                </>
+                                <>Aguardando <strong>{shared.psychologistName}</strong>.</>
                               ) : !stepProfessionalReady ? (
-                                <>
-                                  O psicólogo já entrou. Aguarde ele publicar o link da chamada para você entrar na sala.
-                                </>
+                                <>Psicólogo na sala — aguarde o link.</>
                               ) : (
                                 <>
-                                  <strong>{shared.psychologistName}</strong> está pronto. Entre agora na Meet/Zoom; quando o
-                                  profissional <strong className="text-slate-900">der play no painel</strong>, esta página mostra o
-                                  tempo oficial da sessão.
+                                  Entre na chamada abaixo. O tempo oficial aparece aqui quando <strong>{shared.psychologistName}</strong>{" "}
+                                  iniciar no painel.
                                 </>
                               )}
                             </p>
                             {stepProfessionalReady ? (
                               <div className="mt-5 rounded-xl border border-sky-200 bg-white px-4 py-4 text-left shadow-sm">
-                                <p className="text-xs font-semibold text-sky-900">
-                                  Profissional pronto — entre na sala com o link abaixo.
-                                </p>
-                                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                  Link da videochamada
-                                </p>
+                                <p className="text-xs font-semibold text-sky-900">Link pronto — abra a chamada.</p>
+                                <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">URL</p>
                                 <p className="mt-2 break-all font-mono text-xs text-slate-800">
                                   {currentMeetUrl}
                                 </p>
@@ -625,7 +625,7 @@ export function PatientLiveSessionBoard() {
                                     rel="noopener noreferrer"
                                     className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700"
                                   >
-                                    Abrir na nova aba
+                                    Abrir chamada
                                   </a>
                                   <button
                                     type="button"
@@ -643,9 +643,7 @@ export function PatientLiveSessionBoard() {
                                 </div>
                               </div>
                             ) : (
-                              <p className="mt-4 text-xs text-slate-500">
-                                O link surge aqui quando o psicólogo salvar no painel dele (mesmo estado da sala do profissional).
-                              </p>
+                              <p className="mt-4 text-xs text-slate-500">O link aparece quando o psicólogo publicar no painel.</p>
                             )}
                             <div className="mt-6 flex flex-wrap items-center justify-center gap-3 border-t border-slate-200 pt-5">
                               <button
@@ -653,11 +651,11 @@ export function PatientLiveSessionBoard() {
                                 onClick={() => handleLeaveWaitingRoom(apt)}
                                 className="rounded-full border border-slate-400 bg-white px-6 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
                               >
-                                Sair da sala de espera
+                                Sair da fila
                               </button>
                             </div>
-                            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-                              Atualização automática. Sair remove você da fila neste dispositivo (demo).
+                            <p className="mt-3 text-center text-[11px] text-slate-500">
+                              Atualização automática. Sair remove você da fila.
                             </p>
                           </div>
                               </>
@@ -669,9 +667,7 @@ export function PatientLiveSessionBoard() {
                       {isThis && phase === "live" && shared?.startedAtMs ? (
                         <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-white to-sky-50/40 shadow-inner">
                           <div className="border-b border-sky-100 bg-sky-50/80 px-5 py-4 sm:px-6">
-                            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-900">
-                              Em andamento · sincronizado
-                            </p>
+                            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-900">Em andamento</p>
                             <p className="mt-1 text-sm font-semibold text-slate-900">{shared.psychologistName}</p>
                             <p className="text-xs text-slate-600">
                               {shared.time} · {shared.format} · {shared.durationMin} min
@@ -681,39 +677,29 @@ export function PatientLiveSessionBoard() {
                             <div
                               className="mx-auto grid max-w-lg grid-cols-3 gap-1 rounded-xl border border-sky-200/80 bg-white/90 p-1 text-[10px] font-bold uppercase leading-tight tracking-wide text-sky-900/70 sm:text-[11px]"
                               role="tablist"
-                              aria-label="Progresso do atendimento"
+                              aria-label="Etapas do atendimento"
                             >
-                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">
-                                1 · Psicólogo entrou na sala
-                              </span>
-                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">
-                                2 · Profissional pronto: entre na sala
-                              </span>
-                              <span className="rounded-lg bg-sky-600 px-1 py-2.5 text-white shadow-sm sm:px-2">
-                                3 · Psicólogo inicia (cronômetro)
-                              </span>
+                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">1 · Psicólogo</span>
+                              <span className="rounded-lg bg-sky-100/90 px-1 py-2.5 text-sky-900 sm:px-2">2 · Link</span>
+                              <span className="rounded-lg bg-sky-600 px-1 py-2.5 text-white shadow-sm sm:px-2">3 · Ao vivo</span>
                             </div>
-                            <p className="mx-auto mt-4 max-w-lg text-sm font-semibold leading-snug text-slate-900">
-                              <strong>Sessão iniciada</strong> — o mesmo cronômetro do painel do profissional. Você pode seguir na
-                              Meet/Zoom nesta ou em outra aba.
+                            <p className="mx-auto mt-4 max-w-lg text-sm text-slate-800">
+                              Cronômetro igual ao do psicólogo. A chamada pode ficar em outra aba.
                             </p>
                             {shared.meetUrl ? (
-                              <p className="mx-auto mt-3 max-w-lg text-xs text-slate-600">
-                                Link da chamada:{" "}
+                              <p className="mx-auto mt-2 max-w-lg text-xs text-slate-600">
                                 <a
                                   href={shared.meetUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="font-semibold text-sky-800 underline"
                                 >
-                                  abrir na nova aba
+                                  Abrir videochamada
                                 </a>
                               </p>
                             ) : null}
-                            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">
-                              Atendimento em andamento · tempo oficial
-                            </p>
-                            <p className="mt-4 font-mono text-5xl font-bold tabular-nums text-sky-900 sm:text-6xl">
+                            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tempo decorrido</p>
+                            <p className="mt-2 font-mono text-5xl font-bold tabular-nums text-sky-900 sm:text-6xl">
                               {formatElapsed(elapsedMs)}
                             </p>
                             <div className="mx-auto mt-6 h-2 max-w-xs overflow-hidden rounded-full bg-slate-200">
@@ -722,9 +708,6 @@ export function PatientLiveSessionBoard() {
                                 style={{ width: `${progressPct}%` }}
                               />
                             </div>
-                            <p className="mt-4 text-xs text-slate-600">
-                              Tempo sincronizado com o psicólogo neste navegador (demonstração).
-                            </p>
                           </div>
                         </div>
                       ) : null}
@@ -733,7 +716,7 @@ export function PatientLiveSessionBoard() {
                         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center">
                           <p className="text-lg font-semibold text-slate-900">Sessão encerrada</p>
                           <p className="mt-2 text-sm text-slate-700">
-                            O psicólogo finalizou o atendimento às{" "}
+                            Finalizada às{" "}
                             {new Date(shared.endedAtMs).toLocaleTimeString("pt-BR", {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -742,15 +725,14 @@ export function PatientLiveSessionBoard() {
                             .
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Duração registrada no mock:{" "}
-                            {shared.startedAtMs ? formatElapsed(shared.endedAtMs - shared.startedAtMs) : "—"}
+                            Duração: {shared.startedAtMs ? formatElapsed(shared.endedAtMs - shared.startedAtMs) : "—"}
                           </p>
                           <button
                             type="button"
                             onClick={handleDismissEnded}
                             className="mt-5 rounded-full bg-sky-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"
                           >
-                            Ok, entendi
+                            Fechar
                           </button>
                         </div>
                       ) : null}
@@ -762,18 +744,6 @@ export function PatientLiveSessionBoard() {
           })}
         </div>
       )}
-
-      <p className="text-center text-xs text-slate-500">
-        Em produção, use vídeo seguro e backend próprio. Para ver o mesmo estado que o psicólogo neste demo, use o mesmo URL em
-        todas as abas (ex.: só localhost:3000, não misturar com 127.0.0.1).{" "}
-        <Link href="/portal/consultas" className="font-medium text-sky-700 underline">
-          Consultas
-        </Link>
-        {" · "}
-        <Link href="/psicologo/sessao" className="font-medium text-sky-700 underline">
-          Sala do psicólogo
-        </Link>
-      </p>
     </div>
   );
 }

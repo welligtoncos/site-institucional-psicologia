@@ -7,6 +7,8 @@ type RoomStatusEvent = {
   psychologist_online: boolean;
   meeting_link?: string | null;
   session_started: boolean;
+  /** ISO8601 do servidor — base do cronômetro compartilhado. */
+  session_started_at?: string | null;
   updated_at: string;
 };
 
@@ -43,10 +45,12 @@ export function openRoomRealtimeSocket(
   return ws;
 }
 
-export function sendRoomRealtimeEvent(
-  ws: WebSocket | null,
-  payload: { type: "meeting_link_updated"; meeting_link: string } | { type: "session_started" } | { type: "session_ended" },
-): void {
+export type RoomRealtimeClientEvent =
+  | { type: "meeting_link_updated"; meeting_link: string }
+  | { type: "session_started"; session_started_at?: string | null }
+  | { type: "session_ended" };
+
+export function sendRoomRealtimeEvent(ws: WebSocket | null, payload: RoomRealtimeClientEvent): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(payload));
 }
