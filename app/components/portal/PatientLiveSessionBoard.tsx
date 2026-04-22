@@ -21,6 +21,11 @@ import {
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
+import {
+  elapsedMsInAgendaSlot,
+  isPastAgendaSlotEnd,
+  scheduledSlotStillBlocks,
+} from "@/app/lib/live-session-agenda";
 import { todayIso } from "@/app/lib/psicologo-mocks";
 import { openRoomRealtimeSocket } from "@/app/lib/room-realtime-ws";
 
@@ -222,6 +227,15 @@ export function PatientLiveSessionBoard() {
     sharedRef.current = shared;
   }, [shared]);
 
+  /** Quando passa do horário de término marcado, libera o paciente para outra consulta sem depender só do fluxo manual. */
+  useEffect(() => {
+    const cur = getSharedLiveSession();
+    if (!cur || cur.phase === "ended") return;
+    if (!isPastAgendaSlotEnd(Date.now(), cur.isoDate, cur.time, cur.durationMin)) return;
+    clearSharedLiveSession();
+    setShared(null);
+  }, [tick]);
+
   useEffect(() => {
     const roomRef = shared?.ref;
     if (!roomRef || !roomRef.startsWith("portal:")) {
@@ -348,9 +362,13 @@ export function PatientLiveSessionBoard() {
   async function handleEnterWaiting(apt: LiveAppointment) {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
-    if (cur && cur.phase !== "ended" && cur.ref !== ref) {
-      toast.error("Outra sessão ativa. Encerre ou saia antes.");
-      return;
+    const now = Date.now();
+    if (cur && cur.ref !== ref) {
+      if (scheduledSlotStillBlocks(cur.phase, cur.isoDate, cur.time, cur.durationMin, now)) {
+        toast.error("Outra sessão ativa no horário marcado. Aguarde o fim do slot ou saia da fila.");
+        return;
+      }
+      clearSharedLiveSession();
     }
     if (cur && cur.ref === ref && cur.phase === "patient_waiting") {
       toast.message("Você já está na fila.");
@@ -412,8 +430,8 @@ export function PatientLiveSessionBoard() {
   }
 
   const elapsedMs = useMemo(() => {
-    if (shared?.phase !== "live" || !shared.startedAtMs) return 0;
-    return Date.now() - shared.startedAtMs;
+    if (shared?.phase !== "live") return 0;
+    return elapsedMsInAgendaSlot(Date.now(), shared.isoDate, shared.time, shared.durationMin);
   }, [shared, tick]);
   const plannedMs = shared ? shared.durationMin * 60 * 1000 : 0;
   const progressPct =
@@ -425,8 +443,8 @@ export function PatientLiveSessionBoard() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Atendimento ao vivo</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Atendimento online</h1>
         <p className="mt-2 max-w-xl text-sm text-slate-600">
-          Só consultas online, pagas e confirmadas (ou em andamento). Entre na fila, use o link quando aparecer e acompanhe o
-          cronômetro após o psicólogo iniciar.
+          Só consultas online, pagas e confirmadas (ou em andamento). O tempo da sessão segue o horário e a duração marcados na
+          agenda; após o fim do slot você pode entrar em outra consulta.
         </p>
       </section>
 
@@ -498,13 +516,21 @@ export function PatientLiveSessionBoard() {
                           <button
                             type="button"
                             onClick={() => handleEnterWaiting(apt)}
-                            disabled={Boolean(shared && shared.phase !== "ended" && shared.ref !== ref)}
+                            disabled={Boolean(
+                              shared &&
+                                shared.ref !== ref &&
+                                scheduledSlotStillBlocks(shared.phase, shared.isoDate, shared.time, shared.durationMin, Date.now()),
+                            )}
                             className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-sky-900/10 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             Entrar na fila
                           </button>
-                          {shared && shared.phase !== "ended" && shared.ref !== ref ? (
-                            <p className="text-xs text-amber-800">Outra sessão ativa — encerre ou saia antes.</p>
+                          {shared &&
+                          shared.ref !== ref &&
+                          scheduledSlotStillBlocks(shared.phase, shared.isoDate, shared.time, shared.durationMin, Date.now()) ? (
+                            <p className="text-xs text-amber-800">
+                              Há outra sessão dentro do horário marcado na agenda — aguarde o fim do slot ou saia da fila.
+                            </p>
                           ) : null}
                         </div>
                       ) : null}
