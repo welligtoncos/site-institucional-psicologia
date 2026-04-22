@@ -126,57 +126,57 @@ export function PatientLiveSessionBoard() {
       if (currentShared?.ref.startsWith("portal:")) {
         const activeId = currentShared.ref.slice("portal:".length);
         const activeAppointment = mapped.find((item) => item.id === activeId);
-        if (activeAppointment) {
-          if (
-            activeAppointment.status === "em_andamento" &&
-            currentShared.phase !== "live"
-          ) {
-            {
-              const fromApi = activeAppointment.sessionStartedAt
-                ? Date.parse(activeAppointment.sessionStartedAt)
-                : NaN;
-              const startedAtMs = Number.isFinite(fromApi) ? fromApi : currentShared.startedAtMs ?? Date.now();
-              setSharedLiveSession({
-                ...currentShared,
-                phase: "live",
-                meetUrl: activeAppointment.videoCallLink ?? currentShared.meetUrl,
-                startedAtMs,
-                updatedAtMs: Date.now(),
-              });
-            }
-            toast.success("Sessão iniciada — cronômetro sincronizado.");
-          } else if (
-            activeAppointment.status === "realizada" &&
-            currentShared.phase !== "ended"
-          ) {
+        if (!activeAppointment) {
+          /* Consulta sumiu da lista (ex.: from_date=hoje não retorna datas passadas) ou ID antigo — senão o paciente fica bloqueado em "outra sessão ativa". */
+          clearSharedLiveSession();
+        } else if (activeAppointment.status === "cancelada" || activeAppointment.status === "nao_compareceu") {
+          clearSharedLiveSession();
+        } else if (
+          activeAppointment.status === "em_andamento" &&
+          currentShared.phase !== "live"
+        ) {
+          {
+            const fromApi = activeAppointment.sessionStartedAt
+              ? Date.parse(activeAppointment.sessionStartedAt)
+              : NaN;
+            const startedAtMs = Number.isFinite(fromApi) ? fromApi : currentShared.startedAtMs ?? Date.now();
             setSharedLiveSession({
               ...currentShared,
-              phase: "ended",
-              endedAtMs: Date.now(),
+              phase: "live",
+              meetUrl: activeAppointment.videoCallLink ?? currentShared.meetUrl,
+              startedAtMs,
               updatedAtMs: Date.now(),
             });
-          } else if (
-            activeAppointment.videoCallLink &&
-            activeAppointment.videoCallLink !== currentShared.meetUrl
-          ) {
+          }
+          toast.success("Sessão iniciada — cronômetro sincronizado.");
+        } else if (activeAppointment.status === "realizada" && currentShared.phase !== "ended") {
+          setSharedLiveSession({
+            ...currentShared,
+            phase: "ended",
+            endedAtMs: Date.now(),
+            updatedAtMs: Date.now(),
+          });
+        } else if (
+          activeAppointment.videoCallLink &&
+          activeAppointment.videoCallLink !== currentShared.meetUrl
+        ) {
+          setSharedLiveSession({
+            ...currentShared,
+            meetUrl: activeAppointment.videoCallLink,
+            updatedAtMs: Date.now(),
+          });
+        } else if (
+          activeAppointment.status === "em_andamento" &&
+          currentShared.phase === "live" &&
+          activeAppointment.sessionStartedAt
+        ) {
+          const fromApi = Date.parse(activeAppointment.sessionStartedAt);
+          if (Number.isFinite(fromApi) && currentShared.startedAtMs !== fromApi) {
             setSharedLiveSession({
               ...currentShared,
-              meetUrl: activeAppointment.videoCallLink,
+              startedAtMs: fromApi,
               updatedAtMs: Date.now(),
             });
-          } else if (
-            activeAppointment.status === "em_andamento" &&
-            currentShared.phase === "live" &&
-            activeAppointment.sessionStartedAt
-          ) {
-            const fromApi = Date.parse(activeAppointment.sessionStartedAt);
-            if (Number.isFinite(fromApi) && currentShared.startedAtMs !== fromApi) {
-              setSharedLiveSession({
-                ...currentShared,
-                startedAtMs: fromApi,
-                updatedAtMs: Date.now(),
-              });
-            }
           }
         }
       }
