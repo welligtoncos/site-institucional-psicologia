@@ -14,6 +14,14 @@ type RoomStatusEvent = {
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
+/** Alinhado ao path `appointment_id: UUID` da API — evita WebSocket para mocks (`apt-1`, etc.). */
+const BACKEND_APPOINTMENT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isBackendAppointmentId(id: string): boolean {
+  return BACKEND_APPOINTMENT_UUID_RE.test(String(id).trim());
+}
+
 function readToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(ACCESS_TOKEN_KEY);
@@ -31,6 +39,7 @@ export function openRoomRealtimeSocket(
 ): WebSocket | null {
   const token = readToken();
   if (!token) return null;
+  if (!isBackendAppointmentId(appointmentId)) return null;
   const base = toWsBaseUrl(getBackendApiUrl()).replace(/\/$/, "");
   const url = `${base}/ws/appointments/${encodeURIComponent(appointmentId)}?token=${encodeURIComponent(token)}`;
   const ws = new WebSocket(url);
