@@ -179,6 +179,27 @@ export function PatientLiveSessionBoard() {
             });
           }
         }
+      } else {
+        // Restaura sessão ao vivo quando o paciente reabre a tela sem estado local.
+        const liveFromApi = mapped.find((item) => item.status === "em_andamento" && item.format === "Online");
+        if (liveFromApi) {
+          const parsedStartedAt = liveFromApi.sessionStartedAt ? Date.parse(liveFromApi.sessionStartedAt) : NaN;
+          const startedAtMs = Number.isFinite(parsedStartedAt) ? parsedStartedAt : Date.now();
+          setSharedLiveSession({
+            version: 1,
+            ref: portalRef(liveFromApi.id),
+            phase: "live",
+            patientName: liveFromApi.patientName?.trim() || `Paciente (consulta ${liveFromApi.id})`,
+            psychologistName: liveFromApi.psychologist,
+            isoDate: liveFromApi.isoDate,
+            time: liveFromApi.time,
+            durationMin: liveFromApi.durationMin,
+            format: liveFromApi.format,
+            meetUrl: liveFromApi.videoCallLink?.trim() || undefined,
+            startedAtMs,
+            updatedAtMs: Date.now(),
+          });
+        }
       }
     } else {
       setAppointments([]);
@@ -475,7 +496,11 @@ export function PatientLiveSessionBoard() {
                     <div className="px-5 py-6 sm:px-6">
                       {!isThis || !phase ? (
                         <div className="space-y-3">
-                          <p className="text-sm text-slate-600">Na hora, entre na fila. Acompanhe link e cronômetro abaixo.</p>
+                          <p className="text-sm text-slate-600">
+                            {apt.status === "em_andamento"
+                              ? "Consulta em andamento. Volte para a sala para continuar do mesmo ponto."
+                              : "Na hora, entre na fila. Acompanhe link e cronômetro abaixo."}
+                          </p>
                           <button
                             type="button"
                             onClick={() => handleEnterWaiting(apt)}
@@ -486,7 +511,7 @@ export function PatientLiveSessionBoard() {
                             )}
                             className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-sky-900/10 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Entrar na fila
+                            {apt.status === "em_andamento" ? "Voltar para sala" : "Entrar na fila"}
                           </button>
                           {shared &&
                           shared.ref !== ref &&
