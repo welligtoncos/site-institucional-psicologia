@@ -9,7 +9,6 @@ const items = [
   { href: "/portal/faturamento", label: "Financeiro" },
   { href: "/portal/atendimento", label: "Atendimento online" },
   { href: "/portal/perfil", label: "Meu cadastro" },
-  { href: "/portal/ofertas", label: "Profissional" },
   { href: "/portal/agendar", label: "Agendar" },
 ];
 

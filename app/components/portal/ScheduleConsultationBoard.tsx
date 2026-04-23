@@ -92,8 +92,25 @@ type BookablePayload = {
   days: BookableDay[];
 };
 
+type CatalogItem = {
+  id: string;
+  nome: string;
+  crp: string;
+  bio: string;
+  valor_consulta: string;
+  duracao_minutos: number;
+  foto_url: string | null;
+  especialidades: string[];
+};
+
 function isUuidLike(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function formatBrl(value: string): string {
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function StepBadge({ n, state }: { n: number; state: "pending" | "current" | "complete" }) {
@@ -114,6 +131,12 @@ export function ScheduleConsultationBoard() {
   const searchParams = useSearchParams();
   const psychId = searchParams.get("psych")?.trim() ?? "";
 
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [specialtyFilter, setSpecialtyFilter] = useState("all");
+
   const [bookable, setBookable] = useState<BookablePayload | null>(null);
   const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [loadMessage, setLoadMessage] = useState("");
@@ -124,6 +147,67 @@ export function ScheduleConsultationBoard() {
   const [lastCharge, setLastCharge] = useState<ApiPatientChargeSummary | null>(null);
   const [lastAppointmentId, setLastAppointmentId] = useState<string | null>(null);
   const [patientDisplayName, setPatientDisplayName] = useState("");
+
+  const availableSpecialties = useMemo(() => {
+    const values = new Set<string>();
+    for (const p of catalog) {
+      for (const s of p.especialidades ?? []) {
+        const normalized = s.trim();
+        if (normalized) values.add(normalized);
+      }
+    }
+    return Array.from(values).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [catalog]);
+
+  const visibleCatalog = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    return catalog.filter((p) => {
+      const matchesText =
+        q.length === 0 ||
+        p.nome.toLowerCase().includes(q) ||
+        p.crp.toLowerCase().includes(q) ||
+        (p.especialidades ?? []).some((s) => s.toLowerCase().includes(q));
+      const matchesSpecialty =
+        specialtyFilter === "all" || (p.especialidades ?? []).some((s) => s === specialtyFilter);
+      return matchesText && matchesSpecialty;
+    });
+  }, [catalog, searchText, specialtyFilter]);
+
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError("");
+    const token = typeof window !== "undefined" ? window.localStorage.getItem(ACCESS_TOKEN_KEY) : null;
+    if (!token) {
+      setCatalog([]);
+      setCatalogLoading(false);
+      setCatalogError("Sua sessão expirou. Faça login novamente.");
+      return;
+    }
+
+    const response = await fetch("/api/portal/psychologists?limit=50", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const data = (await response.json().catch(() => null)) as CatalogItem[] | { detail?: unknown };
+    if (!response.ok) {
+      setCatalog([]);
+      setCatalogLoading(false);
+      setCatalogError(formatApiErrorDetail(data, "Não foi possível carregar os profissionais."));
+      return;
+    }
+    if (!Array.isArray(data)) {
+      setCatalog([]);
+      setCatalogLoading(false);
+      setCatalogError("Resposta inválida ao listar profissionais.");
+      return;
+    }
+    setCatalog(data);
+    setCatalogLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadCatalog();
+  }, [loadCatalog]);
 
   useEffect(() => {
     const snap = readPortalPatientSnapshot();
@@ -305,15 +389,91 @@ export function ScheduleConsultationBoard() {
 
   if (!psychId) {
     return (
-      <div className="mx-auto max-w-lg space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-semibold tracking-tight text-slate-900">Agendar consulta</h1>
-        <p className="text-sm leading-relaxed text-slate-600">{loadMessage}</p>
-        <Link
-          href="/portal/ofertas"
-          className="inline-flex rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700"
-        >
-          Ver profissionais
-        </Link>
+      <div className="mx-auto max-w-4xl space-y-6 pb-10">
+        <header className="text-center sm:text-left">
+          <p className="text-xs font-semibold uppercase tracking-widest text-sky-600">Agendamento</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Escolha uma profissional</h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            Pesquise por nome, CRP ou especialidade e selecione para ver os horários disponíveis.
+          </p>
+        </header>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <input
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Buscar profissional ou especialidade"
+              className="sm:col-span-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+            />
+            <select
+              value={specialtyFilter}
+              onChange={(e) => setSpecialtyFilter(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+            >
+              <option value="all">Todas especialidades</option>
+              {availableSpecialties.map((spec) => (
+                <option key={spec} value={spec}>
+                  {spec}
+                </option>
+              ))}
+            </select>
+          </div>
+          {catalogLoading ? (
+            <p className="mt-4 text-sm text-slate-600">Carregando profissionais...</p>
+          ) : catalogError ? (
+            <div className="mt-4 space-y-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+              <p className="text-sm text-rose-800">{catalogError}</p>
+              <button
+                type="button"
+                onClick={() => void loadCatalog()}
+                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : visibleCatalog.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-600">Nenhuma profissional encontrada com esse filtro.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {visibleCatalog.map((p) => {
+                const specs = p.especialidades?.length ? p.especialidades.join(" · ") : "Especialidades a definir";
+                return (
+                  <article key={p.id} className="rounded-xl border border-slate-200 bg-white p-3 transition hover:border-slate-300">
+                    <div className="flex items-start gap-3">
+                      {p.foto_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.foto_url} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+                      ) : (
+                        <div
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-xs font-bold text-white ${gradientForId(p.id)}`}
+                          aria-hidden
+                        >
+                          {initialsFromName(p.nome)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
+                        <p className="text-xs text-sky-700">CRP {p.crp}</p>
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{specs}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-700">
+                          R$ {formatBrl(p.valor_consulta)} · {p.duracao_minutos} min
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/portal/agendar?psych=${encodeURIComponent(p.id)}`}
+                      className="mt-3 inline-flex w-full items-center justify-center rounded-full bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-700"
+                    >
+                      Selecionar e agendar
+                    </Link>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     );
   }
@@ -334,10 +494,10 @@ export function ScheduleConsultationBoard() {
         <h1 className="text-xl font-semibold text-rose-950">Algo deu errado</h1>
         <p className="text-sm leading-relaxed text-rose-900/90">{loadMessage}</p>
         <Link
-          href="/portal/ofertas"
+          href="/portal/agendar"
           className="inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-sky-700 ring-1 ring-slate-200 hover:bg-slate-50"
         >
-          Voltar aos profissionais
+          Trocar profissional
         </Link>
       </div>
     );
@@ -399,7 +559,7 @@ export function ScheduleConsultationBoard() {
               </span>
             </p>
             <Link
-              href="/portal/ofertas"
+              href="/portal/agendar"
               className="mt-3 inline-block text-sm font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
             >
               Trocar de profissional
@@ -416,10 +576,10 @@ export function ScheduleConsultationBoard() {
             profissional ou voltar em outro momento.
           </p>
           <Link
-            href="/portal/ofertas"
+            href="/portal/agendar"
             className="mt-4 inline-flex rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-200"
           >
-            Ver outros profissionais
+            Ver outras profissionais
           </Link>
         </div>
       ) : paymentComplete ? null : !hasFreeSlotsAfterBookings && awaitingPayment ? (
@@ -439,10 +599,10 @@ export function ScheduleConsultationBoard() {
             volte mais tarde.
           </p>
           <Link
-            href="/portal/ofertas"
+            href="/portal/agendar"
             className="mt-4 inline-flex rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-200"
           >
-            Ver outros profissionais
+            Ver outras profissionais
           </Link>
         </div>
       ) : (

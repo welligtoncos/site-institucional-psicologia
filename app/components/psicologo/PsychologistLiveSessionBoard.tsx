@@ -5,9 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
-  formatAppointmentDatePt,
-} from "@/app/lib/portal-mocks";
-import {
   clearPsychologistRoomEntered,
   clearSharedLiveSession,
   getSharedLiveSession,
@@ -87,6 +84,28 @@ function buildUpcomingSessions(today: string, agenda: PsychologistAgendaAppointm
   });
 }
 
+function formatAgendaDayHeading(isoDate: string): string {
+  const safe = `${isoDate}T12:00:00`;
+  const dt = new Date(safe);
+  return dt.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** Agrupa sessões já ordenadas por data/hora em blocos por `isoDate`. */
+function groupSessionsByIsoDate(sessions: PickableSession[]): { isoDate: string; items: PickableSession[] }[] {
+  const out: { isoDate: string; items: PickableSession[] }[] = [];
+  for (const s of sessions) {
+    const last = out[out.length - 1];
+    if (last && last.isoDate === s.isoDate) last.items.push(s);
+    else out.push({ isoDate: s.isoDate, items: [s] });
+  }
+  return out;
+}
+
 function findPickable(ref: string, list: PickableSession[]): PickableSession | undefined {
   return list.find((s) => s.ref === ref);
 }
@@ -132,14 +151,12 @@ type PsychologistLiveSessionBoardProps = {
 
 export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: PsychologistLiveSessionBoardProps) {
   const isRoomPage = Boolean(lockedRoomRef && lockedRoomRef.length > 0);
-  const [today] = useState(() => todayIso());
   const [agenda, setAgenda] = useState<PsychologistAgendaAppointment[]>([]);
   const [tick, setTick] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const [selectedRef, setSelectedRef] = useState(() => (lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : ""));
   const [meetDraft, setMeetDraft] = useState("");
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
-  const lastWaitingNotifyKey = useRef<string>("");
   const patientOnlineSignal = useRef<
     Record<string, { observed: boolean; stableCount: number; announced: boolean }>
   >({});
@@ -147,7 +164,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const roomWsAppointmentIdRef = useRef<string>("");
 
   const refreshSources = useCallback(async () => {
-    const agendaResponse = await fetchPsychologistAgenda(today);
+    const agendaResponse = await fetchPsychologistAgenda(todayIso());
     if (agendaResponse.ok && "appointments" in agendaResponse.data) {
       const mapped = apiAgendaToMock(agendaResponse.data).appointments;
       setAgenda(mapped);
@@ -205,7 +222,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       if (detail) toast.error(String(detail));
     }
     setShared(getSharedLiveSession());
-  }, [today]);
+  }, []);
 
   useEffect(() => {
     void refreshSources();
@@ -253,14 +270,14 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     }
   }, [lockedRoomRef]);
 
-  const pickableToday = useMemo(
-    () => buildUpcomingSessions(today, agenda),
-    [today, agenda],
+  const pickableFromTodayOnward = useMemo(
+    () => buildUpcomingSessions(todayIso(), agenda),
+    [agenda],
   );
 
   const resolvedSession = useMemo((): PickableSession | null => {
     if (selectedRef) {
-      const fromList = findPickable(selectedRef, pickableToday);
+      const fromList = findPickable(selectedRef, pickableFromTodayOnward);
       if (fromList) return fromList;
     }
     const s = shared;
@@ -273,7 +290,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       return pickableFromShared(s);
     }
     return null;
-  }, [selectedRef, pickableToday, shared]);
+  }, [selectedRef, pickableFromTodayOnward, shared]);
 
   useEffect(() => {
     const roomRef = lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : selectedRef;
@@ -338,28 +355,6 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     if (cur?.ref !== selectedRef || !cur.meetUrl) return;
     setMeetDraft(cur.meetUrl);
   }, [shared?.meetUrl, shared?.ref, selectedRef]);
-
-  useEffect(() => {
-    const s = shared;
-    if (!s || s.phase !== "patient_waiting") return;
-    const key = `${s.ref}|${s.patientJoinedAtMs ?? 0}`;
-    if (lastWaitingNotifyKey.current === key) return;
-    lastWaitingNotifyKey.current = key;
-    toast.success(`Sala de espera: ${s.patientName}`, {
-      duration: 10_000,
-      description: `${describeLiveSessionRef(s.ref)} · pode iniciar dentro da janela da consulta.`,
-    });
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-      try {
-        new Notification("Sala de espera com paciente", {
-          body: `${s.patientName} — ${describeLiveSessionRef(s.ref)}.`,
-          tag: "clinica-patient-waiting",
-        });
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [shared]);
 
   const scheduleWindow = useMemo(() => {
     if (!resolvedSession) return null;
@@ -565,26 +560,16 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   useEffect(() => {
     if (!hydrated || shared?.phase === "live" || shared?.phase === "patient_waiting") return;
-    const exists = shared ? pickableToday.some((s) => s.ref === shared.ref) : true;
+    const exists = shared ? pickableFromTodayOnward.some((s) => s.ref === shared.ref) : true;
     if (shared && !exists && shared.phase !== "ended") {
       clearSharedLiveSession();
       setShared(null);
       toast.message("Estado da sessão limpo — consulta saiu da lista de hoje.");
     }
-  }, [hydrated, shared, pickableToday]);
+  }, [hydrated, shared, pickableFromTodayOnward]);
 
   const showLiveUi = shared?.phase === "live";
   const showEndedPsych = shared?.phase === "ended";
-
-  const waitingSinceLabel = useMemo(() => {
-    const j = shared?.patientJoinedAtMs ?? shared?.updatedAtMs;
-    if (!j) return "agora há pouco";
-    const sec = Math.floor((Date.now() - j) / 1000);
-    if (sec < 10) return "agora há pouco";
-    if (sec < 60) return `há ${sec}s`;
-    const min = Math.floor(sec / 60);
-    return min === 1 ? "há 1 min" : `há ${min} min`;
-  }, [shared?.patientJoinedAtMs, shared?.updatedAtMs, tick]);
 
   /** URL para abrir a Meet/Zoom (API ou rascunho local). */
   const openMeetHref = useMemo(() => {
@@ -597,21 +582,29 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     return draft || undefined;
   }, [selectedRef, shared?.ref, shared?.meetUrl, meetDraft, agenda]);
 
-  const showPatientInWaitingBanner =
-    Boolean(shared?.phase === "patient_waiting") && !showLiveUi && !showEndedPsych;
-
-  const roomCards = useMemo((): PickableSession[] => {
-    const refs = new Set(pickableToday.map((x) => x.ref));
+  const roomGroups = useMemo(() => {
+    const list = [...pickableFromTodayOnward];
+    const refs = new Set(list.map((x) => x.ref));
     if (shared && shared.phase === "patient_waiting" && !refs.has(shared.ref)) {
-      return [...pickableToday, pickableFromShared(shared)];
+      const row = pickableFromShared(shared);
+      list.push(row);
+      list.sort((x, y) => {
+        const d = x.isoDate.localeCompare(y.isoDate);
+        if (d !== 0) return d;
+        const t = x.time.localeCompare(y.time);
+        if (t !== 0) return t;
+        return x.patientName.localeCompare(y.patientName, "pt-BR");
+      });
     }
-    return pickableToday;
-  }, [pickableToday, shared]);
+    return groupSessionsByIsoDate(list);
+  }, [pickableFromTodayOnward, shared]);
+
+  const flatRoomList = useMemo(() => roomGroups.flatMap((g) => g.items), [roomGroups]);
 
   const selectedRoomIndex = useMemo(() => {
-    const i = roomCards.findIndex((s) => s.ref === selectedRef);
+    const i = flatRoomList.findIndex((s) => s.ref === selectedRef);
     return i >= 0 ? i + 1 : 0;
-  }, [roomCards, selectedRef]);
+  }, [flatRoomList, selectedRef]);
 
   if (!hydrated) {
     return (
@@ -649,55 +642,6 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           <Link href={psychologistSessionRoomPath(shared.ref)} className="mt-2 inline-block font-semibold text-sky-800 underline">
             Ir para {describeLiveSessionRef(shared.ref)}
           </Link>
-        </div>
-      ) : null}
-
-      {showPatientInWaitingBanner && shared ? (
-        <div
-          className="relative overflow-hidden rounded-2xl border-2 border-sky-300 bg-gradient-to-r from-sky-600 to-indigo-700 p-4 text-white shadow-lg shadow-sky-900/20 sm:p-5"
-          role="status"
-          aria-live="polite"
-        >
-          <div className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
-          <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20 ring-2 ring-white/40">
-                <span className="absolute inline-flex h-9 w-9 animate-ping rounded-full bg-white/30 opacity-60" aria-hidden />
-                <span className="relative text-xl" aria-hidden>
-                  👤
-                </span>
-              </span>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-100">Paciente na sala de espera</p>
-                <p className="mt-0.5 truncate text-lg font-bold tracking-tight">{shared.patientName}</p>
-                <p className="mt-0.5 text-xs text-sky-100/95">{describeLiveSessionRef(shared.ref)}</p>
-                <p className="mt-1 text-sm text-sky-50">
-                  {waitingSinceLabel} · {formatAppointmentDatePt(shared.isoDate)} · {shared.time} · {shared.format}
-                </p>
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {!patientWaitingSameRef ? (
-                <Link
-                  href={psychologistSessionRoomPath(shared.ref)}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-900 shadow-md hover:bg-sky-50"
-                >
-                  Abrir painel da sala
-                </Link>
-              ) : isRoomPage && lockedRoomRef === shared.ref ? (
-                <span className="rounded-full bg-white/25 px-3 py-1.5 text-xs font-semibold ring-1 ring-white/40">
-                  Nesta sala: link e início abaixo
-                </span>
-              ) : (
-                <Link
-                  href={psychologistSessionRoomPath(shared.ref)}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-900 shadow-md hover:bg-sky-50"
-                >
-                  Ir para o painel desta sala
-                </Link>
-              )}
-            </div>
-          </div>
         </div>
       ) : null}
 
@@ -742,69 +686,106 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
       {!showLiveUi && !showEndedPsych ? (
         <>
-          {!isRoomPage && pickableToday.length === 0 && shared?.phase !== "patient_waiting" ? (
+          {!isRoomPage && flatRoomList.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-              <p className="text-sm text-slate-600">Não há consultas online futuras disponíveis a partir de {today}.</p>
+              <p className="text-sm text-slate-600">
+                Não há consultas online futuras na agenda (a partir de{" "}
+                <span className="font-semibold text-slate-800">{formatAgendaDayHeading(todayIso())}</span>) para abrir
+                como sala.
+              </p>
               <p className="mt-2 text-xs text-slate-500">
-                Consulte a{" "}
+                As salas aparecem aqui agrupadas por data da consulta. Confira a{" "}
                 <Link href="/psicologo/agenda" className="font-semibold text-sky-800 underline">
-                  agenda
-                </Link>
-                .
+                  agenda completa
+                </Link>{" "}
+                ou cadastre consultas online pagas.
               </p>
             </div>
           ) : null}
 
-          {!isRoomPage && (pickableToday.length > 0 || shared?.phase === "patient_waiting") ? (
+          {!isRoomPage && flatRoomList.length > 0 ? (
             <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <header className="border-b border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Próximas consultas</p>
-                <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Escolha uma sala</h2>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+                  Salas online por data
+                </h2>
                 <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                  Consultas online do dia. O card destaca quando o paciente entra no portal.
+                  Cada data da agenda lista as salas daquele dia (uma por consulta online). O card destaca quando o
+                  paciente entra no portal.
                 </p>
               </header>
-              <div className="px-5 py-6 sm:px-6">
-                <div className="mt-1 grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Salas de atendimento disponíveis">
-                  {roomCards.map((s, idx) => {
-                    const patientInThis = Boolean(s.patientOnline);
-                    return (
-                      <Link
-                        key={s.ref}
-                        href={psychologistSessionRoomPath(s.ref)}
-                        className={`flex min-h-[200px] flex-col rounded-2xl border-2 p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
-                          patientInThis
-                            ? "border-sky-500 bg-sky-50/80 shadow-md ring-2 ring-amber-400 ring-offset-2 ring-offset-white"
-                            : "border-slate-200 bg-white hover:border-sky-300 hover:bg-slate-50/90"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-800">Sala {idx + 1}</span>
-                          {patientInThis ? (
-                            <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
-                              Paciente entrou na sala
-                            </span>
-                          ) : (
-                            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                              Disponível
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-5 text-3xl font-bold tabular-nums leading-none tracking-tight text-slate-900">{s.time}</p>
-                        <p className="mt-3 line-clamp-2 text-sm font-semibold leading-snug text-slate-800">{s.patientName}</p>
-                        <p className="mt-2 text-xs text-slate-500">
-                          {s.format} · {s.sourceLabel}
-                        </p>
-                        {patientInThis ? (
-                          <p className="mt-2 text-xs font-medium text-emerald-700">Paciente na fila no portal.</p>
-                        ) : null}
-                        <div className="mt-auto border-t border-slate-200/80 pt-4">
-                          <p className="text-xs font-semibold text-sky-800">Abrir sala →</p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+              <div className="divide-y divide-slate-100">
+                {roomGroups.map((group) => (
+                  <section
+                    key={group.isoDate}
+                    id={`salas-dia-${group.isoDate}`}
+                    className="px-5 py-6 sm:px-6"
+                    aria-label={`Consultas do dia ${group.isoDate}`}
+                  >
+                    <div className="mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">Dia da agenda</p>
+                        <h3 className="mt-0.5 text-base font-semibold text-slate-900 sm:text-lg">
+                          {formatAgendaDayHeading(group.isoDate)}
+                        </h3>
+                        <p className="mt-1 font-mono text-xs text-slate-500">{group.isoDate}</p>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {group.items.length} sala{group.items.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <div
+                      className="grid min-h-0 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                      aria-label={`Salas de atendimento em ${group.isoDate}`}
+                    >
+                      {group.items.map((s, idx) => {
+                        const patientInThis = Boolean(s.patientOnline);
+                        return (
+                          <Link
+                            key={s.ref}
+                            href={psychologistSessionRoomPath(s.ref)}
+                            className={`flex min-h-[200px] flex-col rounded-2xl border-2 p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+                              patientInThis
+                                ? "border-sky-500 bg-sky-50/80 shadow-md ring-2 ring-amber-400 ring-offset-2 ring-offset-white"
+                                : "border-slate-200 bg-white hover:border-sky-300 hover:bg-slate-50/90"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-800">
+                                Sala {idx + 1}
+                              </span>
+                              {patientInThis ? (
+                                <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+                                  Paciente entrou na sala
+                                </span>
+                              ) : (
+                                <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                  Disponível
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-5 text-3xl font-bold tabular-nums leading-none tracking-tight text-slate-900">
+                              {s.time}
+                            </p>
+                            <p className="mt-3 line-clamp-2 text-sm font-semibold leading-snug text-slate-800">
+                              {s.patientName}
+                            </p>
+                            <p className="mt-2 text-xs text-slate-500">
+                              {s.format} · {s.sourceLabel}
+                            </p>
+                            {patientInThis ? (
+                              <p className="mt-2 text-xs font-medium text-emerald-700">Paciente na fila no portal.</p>
+                            ) : null}
+                            <div className="mt-auto border-t border-slate-200/80 pt-4">
+                              <p className="text-xs font-semibold text-sky-800">Abrir sala →</p>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             </article>
           ) : null}

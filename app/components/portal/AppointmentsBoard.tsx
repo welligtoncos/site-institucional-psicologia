@@ -5,19 +5,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import {
-  MOCK_APPOINTMENTS_SEED,
-  PORTAL_APPOINTMENTS_STORAGE_KEY,
-  PORTAL_CANCEL_MIN_HOURS,
-  canModifyAppointment,
   formatAppointmentDatePt,
   isAppointmentHistory,
   isAppointmentUpcoming,
-  mockSlotsForDate,
-  nextDates,
   type MockAppointment,
   type MockAppointmentStatus,
 } from "@/app/lib/portal-mocks";
-import { getChargeById, registerGatewayPaymentSuccess } from "@/app/lib/portal-payment-mock";
+import { listPatientAppointments, simulatePatientAppointmentPayment, type ApiPatientAppointmentSummary } from "@/app/lib/portal-appointments-api";
 
 function statusLabel(s: MockAppointmentStatus): string {
   const map: Record<MockAppointmentStatus, string> = {
@@ -44,67 +38,75 @@ type MainTab = "proximas" | "historico";
 
 type HistoryFilter = "todos" | "realizada" | "cancelada" | "falta";
 
-function loadStored(): MockAppointment[] {
-  if (typeof window === "undefined") return MOCK_APPOINTMENTS_SEED;
-  try {
-    const raw = localStorage.getItem(PORTAL_APPOINTMENTS_STORAGE_KEY);
-    if (!raw) return MOCK_APPOINTMENTS_SEED;
-    const parsed = JSON.parse(raw) as MockAppointment[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return MOCK_APPOINTMENTS_SEED;
-    return parsed;
-  } catch {
-    return MOCK_APPOINTMENTS_SEED;
-  }
+function mapApiAppointment(a: ApiPatientAppointmentSummary): MockAppointment {
+  return {
+    id: a.id,
+    psychId: a.psychologist_id,
+    psychologist: a.psychologist_name,
+    psychologistCrp: a.psychologist_crp,
+    patientName: a.patient_name,
+    specialty: a.specialty,
+    isoDate: a.iso_date,
+    time: a.time,
+    format: a.format,
+    price: Number(a.price),
+    durationMin: a.duration_min,
+    payment: a.payment,
+    status: a.status,
+    videoCallLink: a.video_call_link ?? undefined,
+    notes: "",
+  };
 }
 
 export function AppointmentsBoard() {
-  const [rows, setRows] = useState<MockAppointment[]>(MOCK_APPOINTMENTS_SEED);
+  const [rows, setRows] = useState<MockAppointment[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [loadingError, setLoadingError] = useState("");
   const [mainTab, setMainTab] = useState<MainTab>("proximas");
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("todos");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const [cancelId, setCancelId] = useState<string | null>(null);
-  const [rescheduleId, setRescheduleId] = useState<string | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState("");
-  const [rescheduleTime, setRescheduleTime] = useState("");
-
-  useEffect(() => {
-    setRows(loadStored());
+  const loadAppointments = useCallback(async () => {
+    // Busca amplo para incluir próximas + histórico.
+    const out = await listPatientAppointments("2000-01-01");
+    if (!out.ok) {
+      setRows([]);
+      setLoadingError(out.detail);
+      setHydrated(true);
+      return;
+    }
+    setRows(out.data.appointments.map(mapApiAppointment));
+    setLoadingError("");
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    function reload() {
-      setRows(loadStored());
-    }
+    void loadAppointments();
+  }, [loadAppointments]);
+
+  useEffect(() => {
+    const reload = () => {
+      void loadAppointments();
+    };
     window.addEventListener("portal-billing-changed", reload);
     window.addEventListener("storage", reload);
+    window.addEventListener("focus", reload);
     return () => {
       window.removeEventListener("portal-billing-changed", reload);
       window.removeEventListener("storage", reload);
+      window.removeEventListener("focus", reload);
     };
-  }, []);
+  }, [loadAppointments]);
 
-  const persist = useCallback((next: MockAppointment[]) => {
-    setRows(next);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(PORTAL_APPOINTMENTS_STORAGE_KEY, JSON.stringify(next));
+  const handleSimulateGatewayPayment = useCallback(async (appointmentId: string) => {
+    const out = await simulatePatientAppointmentPayment(appointmentId);
+    if (!out.ok) {
+      toast.error(out.detail);
+      return;
     }
-  }, []);
-
-  const handleSimulateGatewayPayment = useCallback(
-    (chargeId: string) => {
-      const result = registerGatewayPaymentSuccess(chargeId);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("Pagamento registrado. Consulta atualizada.");
-      setRows(loadStored());
-    },
-    [],
-  );
+    toast.success("Pagamento registrado. Consulta atualizada.");
+    await loadAppointments();
+  }, [loadAppointments]);
 
   const upcoming = useMemo(() => rows.filter(isAppointmentUpcoming), [rows]);
   const upcomingSorted = useMemo(() => {
@@ -127,79 +129,6 @@ export function AppointmentsBoard() {
 
   const nextSlot = useMemo(() => upcomingSorted[0] ?? null, [upcomingSorted]);
 
-  const cancelTarget = cancelId ? rows.find((r) => r.id === cancelId) : null;
-  const rescheduleTarget = rescheduleId ? rows.find((r) => r.id === rescheduleId) : null;
-
-  const rescheduleDates = useMemo(() => nextDates(new Date(), 14), []);
-  useEffect(() => {
-    if (rescheduleTarget && !rescheduleDate && rescheduleDates.length > 0) {
-      setRescheduleDate(rescheduleDates[0]!);
-    }
-  }, [rescheduleTarget, rescheduleDate, rescheduleDates]);
-
-  const rescheduleSlots = useMemo(() => {
-    if (!rescheduleTarget || !rescheduleDate) return [];
-    return mockSlotsForDate(rescheduleTarget.psychId, rescheduleDate);
-  }, [rescheduleTarget, rescheduleDate]);
-
-  function handleCancelConfirm() {
-    if (!cancelTarget) return;
-    const check = canModifyAppointment(cancelTarget.isoDate, cancelTarget.time);
-    if (!check.ok) {
-      toast.error(check.message);
-      setCancelId(null);
-      return;
-    }
-    persist(
-      rows.map((r) =>
-        r.id === cancelTarget.id
-          ? { ...r, status: "cancelada" as const, reminder: undefined, videoCallLink: undefined, notes: r.notes ?? "Cancelada pelo paciente no portal (mock)." }
-          : r,
-      ),
-    );
-    setCancelId(null);
-    setMainTab("historico");
-    setHistoryFilter("cancelada");
-    toast.success("Consulta cancelada.");
-  }
-
-  function handleRescheduleConfirm() {
-    if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) return;
-    const check = canModifyAppointment(rescheduleTarget.isoDate, rescheduleTarget.time);
-    if (!check.ok) {
-      toast.error(check.message);
-      setRescheduleId(null);
-      return;
-    }
-    persist(
-      rows.map((r) =>
-        r.id === rescheduleTarget.id
-          ? {
-              ...r,
-              isoDate: rescheduleDate,
-              time: rescheduleTime,
-              status: "confirmada" as const,
-              reminder: "Horário atualizado. Novo lembrete será enviado (mock).",
-            }
-          : r,
-      ),
-    );
-    setRescheduleId(null);
-    setRescheduleTime("");
-    toast.success("Consulta remarcada.");
-  }
-
-  function openReschedule(a: MockAppointment) {
-    const check = canModifyAppointment(a.isoDate, a.time);
-    if (!check.ok) {
-      toast.error(check.message);
-      return;
-    }
-    setRescheduleDate(a.isoDate);
-    setRescheduleTime(a.time);
-    setRescheduleId(a.id);
-  }
-
   if (!hydrated) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
@@ -219,10 +148,15 @@ export function AppointmentsBoard() {
           <strong className="font-semibold text-slate-800">data e horário</strong>,{" "}
           <strong className="font-semibold text-slate-800">status</strong> e, em atendimentos online, o{" "}
           <strong className="font-semibold text-slate-800">link da sessão</strong> quando estiver disponível. No
-          histórico ficam sessões concluídas, canceladas ou falta. Cancelar ou remarcar exige pelo menos{" "}
-          {PORTAL_CANCEL_MIN_HOURS} horas de antecedência (demonstração no navegador).
+          histórico ficam sessões concluídas, canceladas ou falta. Esta tela usa as consultas registradas na API.
         </p>
       </section>
+
+      {loadingError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          {loadingError}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <Link
@@ -297,9 +231,8 @@ export function AppointmentsBoard() {
                 a={a}
                 expanded={expandedId === a.id}
                 onToggleDetails={() => setExpandedId((id) => (id === a.id ? null : a.id))}
-                onCancel={() => setCancelId(a.id)}
-                onReschedule={() => openReschedule(a)}
                 onSimulateGatewayPayment={handleSimulateGatewayPayment}
+                readOnly
               />
             ))
           )}
@@ -346,106 +279,6 @@ export function AppointmentsBoard() {
           )}
         </section>
       )}
-
-      {cancelTarget ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">Cancelar consulta?</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              {cancelTarget.psychologist} — {formatAppointmentDatePt(cancelTarget.isoDate)} às {cancelTarget.time}.
-            </p>
-            <p className="mt-3 text-xs text-slate-500">
-              Cancelamentos com pelo menos {PORTAL_CANCEL_MIN_HOURS}h de antecedência seguem a política de reembolso
-              vigente (texto ilustrativo nesta demonstração).
-            </p>
-            <div className="mt-6 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCancelId(null)}
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Voltar
-              </button>
-              <button
-                type="button"
-                onClick={handleCancelConfirm}
-                className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
-              >
-                Confirmar cancelamento
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {rescheduleTarget ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">Remarcar consulta</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              {rescheduleTarget.psychologist} — disponibilidade fictícia para demonstração.
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              A mesma regra de {PORTAL_CANCEL_MIN_HOURS}h se aplica à remarcação em relação ao horário atualmente
-              agendado.
-            </p>
-            <div className="mt-4">
-              <p className="text-xs font-medium uppercase text-slate-500">Nova data</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {rescheduleDates.map((iso) => (
-                  <button
-                    key={iso}
-                    type="button"
-                    onClick={() => {
-                      setRescheduleDate(iso);
-                      setRescheduleTime("");
-                    }}
-                    className={`rounded-lg border px-3 py-2 text-left text-xs ${
-                      rescheduleDate === iso ? "border-sky-400 bg-sky-50 font-semibold text-sky-900" : "border-slate-200"
-                    }`}
-                  >
-                    {formatAppointmentDatePt(iso)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4">
-              <p className="text-xs font-medium uppercase text-slate-500">Horário</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {rescheduleSlots.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setRescheduleTime(t)}
-                    className={`rounded-full border px-3 py-1.5 text-sm ${
-                      rescheduleTime === t ? "border-sky-400 bg-sky-50 font-semibold text-sky-900" : "border-slate-200"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-6 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setRescheduleId(null)}
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={!rescheduleDate || !rescheduleTime}
-                onClick={handleRescheduleConfirm}
-                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-              >
-                Salvar novo horário
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -467,14 +300,10 @@ function AppointmentCard({
   onSimulateGatewayPayment?: (chargeId: string) => void;
   readOnly?: boolean;
 }) {
-  const modCheck = canModifyAppointment(a.isoDate, a.time);
-  const canAct = !readOnly && isAppointmentUpcoming(a) && modCheck.ok;
-  const charge = a.chargeId ? getChargeById(a.chargeId) : undefined;
+  const canAct = !readOnly && isAppointmentUpcoming(a) && Boolean(onCancel && onReschedule);
   const canSimulatePay =
     !readOnly &&
     a.payment === "Pendente" &&
-    charge &&
-    charge.gatewayStatus === "awaiting_payment" &&
     onSimulateGatewayPayment;
 
   const consultaTipo = a.format === "Online" ? "Consulta online" : "Consulta presencial";
@@ -551,16 +380,6 @@ function AppointmentCard({
         </div>
       ) : null}
 
-      {a.reminder ? (
-        <p className="mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">{a.reminder}</p>
-      ) : null}
-
-      {!readOnly && !modCheck.ok && isAppointmentUpcoming(a) ? (
-        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {modCheck.message}
-        </p>
-      ) : null}
-
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
@@ -572,7 +391,7 @@ function AppointmentCard({
         {canSimulatePay ? (
           <button
             type="button"
-            onClick={() => onSimulateGatewayPayment!(a.chargeId!)}
+            onClick={() => onSimulateGatewayPayment!(a.id)}
             className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
           >
             Registrar pagamento (simular gateway)
@@ -608,25 +427,6 @@ function AppointmentCard({
             {" · "}
             <span className="text-slate-500">Duração:</span> {a.durationMin} min
           </p>
-          {charge ? (
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-              <p className="font-semibold text-slate-800">Registro financeiro (RF-009)</p>
-              <p className="mt-1 text-slate-600">
-                Cobrança: <code className="rounded bg-white px-1">{charge.id}</code> · Intent:{" "}
-                <code className="rounded bg-white px-1">{charge.gatewayIntentId}</code>
-              </p>
-              <p className="mt-1 text-slate-600">
-                Gateway: {charge.gatewayProvider} · Status:{" "}
-                <span className="font-medium">
-                  {charge.gatewayStatus === "awaiting_payment"
-                    ? "aguardando pagamento"
-                    : charge.gatewayStatus === "succeeded"
-                      ? "pago"
-                      : "falhou"}
-                </span>
-              </p>
-            </div>
-          ) : null}
           {a.notes ? (
             <p className="mt-2 text-slate-600">
               <span className="font-medium text-slate-800">Observações:</span> {a.notes}
