@@ -600,8 +600,6 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const showPatientInWaitingBanner =
     Boolean(shared?.phase === "patient_waiting") && !showLiveUi && !showEndedPsych;
 
-  const waitingRoomIsOpen = shared?.phase === "patient_waiting";
-
   const roomCards = useMemo((): PickableSession[] => {
     const refs = new Set(pickableToday.map((x) => x.ref));
     if (shared && shared.phase === "patient_waiting" && !refs.has(shared.ref)) {
@@ -851,16 +849,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                           </p>
                         </div>
                         {patientWaitingSameRef ? (
-                          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-950">
-                            Na fila
+                          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-900">
+                            <span aria-hidden>👤</span>
+                            Paciente na sala
                           </span>
-                        ) : (
-                          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                            Sem paciente na fila
-                          </span>
-                        )}
+                        ) : null}
                       </div>
-                      <p className="mt-2 text-xs text-slate-500">Link → fila no portal → iniciar.</p>
                     </div>
 
                     <div className="px-5 py-6 sm:px-6">
@@ -917,42 +911,10 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
                         <li className="flex gap-3 sm:gap-4">
                           <span
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-800 ring-2 ring-white"
-                            aria-hidden
-                          >
-                            2
-                          </span>
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <h3 className="text-sm font-semibold text-slate-900">Paciente no portal</h3>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm">
-                              {waitingRoomIsOpen && shared ? (
-                                <p className="text-slate-800">
-                                  <span className="inline-flex items-center gap-1.5 font-semibold text-sky-800">
-                                    <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" aria-hidden />
-                                    Na fila
-                                  </span>
-                                  {" — "}
-                                  <strong>{shared.patientName}</strong>
-                                  <span className="text-slate-600"> ({describeLiveSessionRef(shared.ref)})</span>
-                                  {!patientWaitingSameRef ? (
-                                    <span className="mt-1 block text-xs text-slate-600">
-                                      Abra a sala desta mesma consulta se o aviso do topo indicar outra referência.
-                                    </span>
-                                  ) : null}
-                                </p>
-                              ) : (
-                                <p className="text-slate-600">Ninguém na fila no momento.</p>
-                              )}
-                            </div>
-                          </div>
-                        </li>
-
-                        <li className="flex gap-3 sm:gap-4">
-                          <span
                             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-sm font-bold text-white shadow-sm ring-2 ring-white"
                             aria-hidden
                           >
-                            3
+                            2
                           </span>
                           <div className="min-w-0 flex-1 space-y-3">
                             <h3 className="text-sm font-semibold text-slate-900">Iniciar sessão</h3>
