@@ -1043,9 +1043,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
             </p>
 
             <div className="mt-8 w-full max-w-2xl rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-left">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Correção em tempo real</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Corrigir link</p>
               <p className="mt-1 text-sm text-amber-950">
-                Se a sessão iniciou com link incorreto, atualize abaixo. O paciente recebe a alteração na hora.
+                Se o link estiver errado, atualize abaixo. O paciente recebe a alteração na hora.
               </p>
               <label htmlFor="meet-url-live-edit" className="sr-only">
                 Corrigir URL da videochamada em andamento
