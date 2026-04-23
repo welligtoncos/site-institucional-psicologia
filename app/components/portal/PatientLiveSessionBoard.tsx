@@ -150,7 +150,10 @@ export function PatientLiveSessionBoard() {
             });
           }
           toast.success("Sessão iniciada — cronômetro sincronizado.");
-        } else if (activeAppointment.status === "realizada" && currentShared.phase !== "ended") {
+        } else if (
+          (activeAppointment.status === "realizada" || activeAppointment.sessionPhase === "ended") &&
+          currentShared.phase !== "ended"
+        ) {
           setSharedLiveSession({
             ...currentShared,
             phase: "ended",
@@ -185,14 +188,22 @@ export function PatientLiveSessionBoard() {
         }
       } else {
         // Restaura sessão ao vivo quando o paciente reabre a tela sem estado local.
-        const liveFromApi = mapped.find((item) => item.status === "em_andamento" && item.format === "Online");
+        const liveFromApi = mapped.find(
+          (item) =>
+            item.status === "em_andamento" &&
+            item.format === "Online" &&
+            Boolean(item.sessionStartedAt) &&
+            item.sessionPhase !== "ended",
+        );
         if (liveFromApi) {
           const parsedStartedAt = liveFromApi.sessionStartedAt ? Date.parse(liveFromApi.sessionStartedAt) : NaN;
           const startedAtMs = Number.isFinite(parsedStartedAt) ? parsedStartedAt : Date.now();
+          const phase: SharedLiveSessionState["phase"] =
+            liveFromApi.sessionPhase === "patient_waiting" ? "patient_waiting" : "live";
           setSharedLiveSession({
             version: 1,
             ref: portalRef(liveFromApi.id),
-            phase: "live",
+            phase,
             patientName: liveFromApi.patientName?.trim() || `Paciente (consulta ${liveFromApi.id})`,
             psychologistName: liveFromApi.psychologist,
             isoDate: liveFromApi.isoDate,
@@ -200,7 +211,7 @@ export function PatientLiveSessionBoard() {
             durationMin: liveFromApi.durationMin,
             format: liveFromApi.format,
             meetUrl: liveFromApi.videoCallLink?.trim() || undefined,
-            startedAtMs,
+            startedAtMs: phase === "live" ? startedAtMs : undefined,
             updatedAtMs: Date.now(),
           });
         }

@@ -1,8 +1,9 @@
 """Persistência do domínio clínico (paciente, psicólogo) — SQLAlchemy async."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -306,6 +307,54 @@ class ClinicalRepository:
         await self._db.commit()
         await self._db.refresh(sessao)
         return sessao
+
+    async def auto_finish_live_sessions_past_duration(self, *, now: datetime | None = None) -> int:
+        """Marca como realizadas consultas em andamento cujo cronômetro (live) já excedeu a duração oficial.
+
+        Usa `cronometro_iniciado_em` + `duracao_minutos` da consulta. Idempotente para consultas já encerradas.
+        Chamado em leituras frequentes (agenda) para não depender de job separado.
+        """
+        tz = ZoneInfo("America/Sao_Paulo")
+        if now is None:
+            now = datetime.now(tz)
+        elif now.tzinfo is None:
+            now = now.replace(tzinfo=tz)
+        else:
+            now = now.astimezone(tz)
+
+        stmt = (
+            select(Consulta)
+            .join(SessaoAoVivo, SessaoAoVivo.consulta_id == Consulta.id)
+            .where(
+                Consulta.status == ConsultaStatus.em_andamento,
+                SessaoAoVivo.fase == SessaoAoVivoFase.live,
+                SessaoAoVivo.encerrada_em.is_(None),
+                SessaoAoVivo.cronometro_iniciado_em.isnot(None),
+            )
+            .options(selectinload(Consulta.sessao_ao_vivo))
+        )
+        result = await self._db.execute(stmt)
+        candidates = list(result.scalars().unique().all())
+        closed = 0
+        for c in candidates:
+            sessao = c.sessao_ao_vivo
+            if sessao is None or sessao.cronometro_iniciado_em is None:
+                continue
+            started = sessao.cronometro_iniciado_em
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=tz)
+            else:
+                started = started.astimezone(tz)
+            deadline = started + timedelta(minutes=int(c.duracao_minutos))
+            if deadline > now:
+                continue
+            c.status = ConsultaStatus.realizada
+            sessao.fase = SessaoAoVivoFase.ended
+            sessao.encerrada_em = now
+            closed += 1
+        if closed:
+            await self._db.commit()
+        return closed
 
     async def mark_payment_success_for_consulta(
         self,

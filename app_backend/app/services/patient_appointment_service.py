@@ -232,6 +232,7 @@ class PatientAppointmentService:
         from_date: date,
     ) -> PatientAppointmentListResponse:
         self._ensure_patient(user)
+        await self._clinical.auto_finish_live_sessions_past_duration()
         rows = await self._clinical.list_consultas_com_cobranca_do_paciente_desde(user.id, from_date)
         return PatientAppointmentListResponse(
             appointments=[self._appointment_summary(c) for c in rows],
@@ -239,6 +240,7 @@ class PatientAppointmentService:
 
     async def join_room(self, user: User, appointment_id: UUID) -> AppointmentJoinRoomResponse:
         self._ensure_patient(user)
+        await self._clinical.auto_finish_live_sessions_past_duration()
         c = await self._clinical.get_consulta_com_cobranca_do_paciente(appointment_id, user.id)
         if c is None:
             raise NotFoundError("Consulta não encontrada para este paciente.")

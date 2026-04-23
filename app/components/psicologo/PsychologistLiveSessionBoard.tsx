@@ -17,7 +17,6 @@ import { psychologistSessionRoomPath } from "@/app/lib/psychologist-session-rout
 import {
   apiAgendaToMock,
   fetchPsychologistAgenda,
-  finishPsychologistAppointment,
   joinPsychologistRoom,
   patchPsychologistAppointmentMeetingLink,
 } from "@/app/lib/psychologist-agenda-api";
@@ -162,36 +161,88 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   >({});
   const roomWsRef = useRef<WebSocket | null>(null);
   const roomWsAppointmentIdRef = useRef<string>("");
+  const lastAutoEndNotifyKey = useRef<string>("");
 
   const refreshSources = useCallback(async () => {
     const agendaResponse = await fetchPsychologistAgenda(todayIso());
     if (agendaResponse.ok && "appointments" in agendaResponse.data) {
       const mapped = apiAgendaToMock(agendaResponse.data).appointments;
       setAgenda(mapped);
+
+      /** Consulta em andamento com cronômetro ativo no backend (não encerrada na API). */
       const liveFromApi = mapped.find(
-        (item) => item.status === "em_andamento" && item.sessionStartedAt,
+        (item) =>
+          item.status === "em_andamento" &&
+          Boolean(item.sessionStartedAt) &&
+          item.sessionPhase !== "ended",
       );
-      if (liveFromApi) {
+
+      const cur = getSharedLiveSession();
+      if (cur) {
+        const aid = extractAppointmentId(cur.ref);
+        if (aid) {
+          const appt = mapped.find((a) => a.id === aid);
+          if (appt) {
+            if (appt.status === "realizada" || appt.sessionPhase === "ended") {
+              if (cur.phase !== "ended") {
+                setSharedLiveSession({
+                  ...cur,
+                  phase: "ended",
+                  endedAtMs: Date.now(),
+                  updatedAtMs: Date.now(),
+                });
+                sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
+                clearPsychologistRoomEntered(cur.ref);
+                const notifyKey = `${aid}|ended`;
+                if (lastAutoEndNotifyKey.current !== notifyKey) {
+                  lastAutoEndNotifyKey.current = notifyKey;
+                  toast.message("Consulta concluída no sistema — sessão encerrada automaticamente.");
+                }
+              }
+            } else if (appt.status === "em_andamento" && appt.sessionStartedAt && cur.phase !== "ended") {
+              const parsed = Date.parse(appt.sessionStartedAt);
+              const startedAtMs = Number.isFinite(parsed) ? parsed : Date.now();
+              const phaseFromBack: SharedLiveSessionState["phase"] =
+                appt.sessionPhase === "patient_waiting" ? "patient_waiting" : "live";
+              setSharedLiveSession({
+                ...cur,
+                phase: phaseFromBack,
+                patientName: appt.patientName ?? cur.patientName,
+                isoDate: appt.isoDate,
+                time: appt.time,
+                durationMin: appt.durationMin ?? cur.durationMin ?? 50,
+                format: appt.format,
+                meetUrl: appt.videoCallLink ?? cur.meetUrl,
+                startedAtMs: phaseFromBack === "live" ? startedAtMs : cur.startedAtMs,
+                updatedAtMs: Date.now(),
+              });
+            }
+          }
+        }
+      }
+
+      if (liveFromApi && !getSharedLiveSession()) {
         const parsed = liveFromApi.sessionStartedAt ? Date.parse(liveFromApi.sessionStartedAt) : NaN;
         const startedAtMs = Number.isFinite(parsed) ? parsed : Date.now();
-        const current = getSharedLiveSession();
+        const phase: SharedLiveSessionState["phase"] =
+          liveFromApi.sessionPhase === "patient_waiting" ? "patient_waiting" : "live";
         const next: SharedLiveSessionState = {
           version: 1,
           ref: `appointment:${liveFromApi.id}`,
-          phase: "live",
+          phase,
           patientName: liveFromApi.patientName,
-          psychologistName: current?.psychologistName || "Psicólogo",
+          psychologistName: "Psicólogo",
           isoDate: liveFromApi.isoDate,
           time: liveFromApi.time,
           durationMin: liveFromApi.durationMin ?? 50,
           format: liveFromApi.format,
-          meetUrl: liveFromApi.videoCallLink ?? current?.meetUrl,
-          patientJoinedAtMs: current?.patientJoinedAtMs,
-          startedAtMs,
+          meetUrl: liveFromApi.videoCallLink,
+          startedAtMs: phase === "live" ? startedAtMs : undefined,
           updatedAtMs: Date.now(),
         };
         setSharedLiveSession(next);
       }
+
       const nextSignal: Record<string, { observed: boolean; stableCount: number; announced: boolean }> = {};
       for (const item of mapped) {
         const key = item.id;
@@ -517,30 +568,6 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     );
   }
 
-  async function handleEnd() {
-    const cur = getSharedLiveSession();
-    if (!cur || cur.phase !== "live") return;
-    const appointmentId = extractAppointmentId(cur.ref);
-    if (appointmentId) {
-      const finish = await finishPsychologistAppointment(appointmentId);
-      if (!finish.ok) {
-        toast.error(finish.detail);
-        return;
-      }
-    }
-
-    setSharedLiveSession({
-      ...cur,
-      phase: "ended",
-      endedAtMs: Date.now(),
-      updatedAtMs: Date.now(),
-    });
-    sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
-    clearPsychologistRoomEntered(cur.ref);
-    await refreshSources();
-    toast.message("Sessão encerrada · consulta concluída.");
-  }
-
   function handleClearEnded() {
     if (shared?.ref) clearPsychologistRoomEntered(shared.ref);
     clearSharedLiveSession();
@@ -620,7 +647,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Atendimento ao vivo</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Sessão com o paciente</h1>
         <p className="mt-2 max-w-xl text-sm text-slate-600">
-          Alinhado ao portal do paciente: escolha a sala, publique o link, inicie o cronômetro quando estiver pronto.
+          Alinhado ao portal do paciente: escolha a sala, publique o link e inicie o cronômetro quando estiver pronto. O
+          encerramento da sessão e a conclusão da consulta são automáticos no sistema após a realização.
         </p>
       </section>
 
@@ -659,7 +687,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           ) : null}
           <p className="text-lg font-semibold text-slate-900">Sessão finalizada</p>
           <p className="mt-2 text-sm text-slate-600">
-            Encerrada às{" "}
+            O sistema encerrou a sessão ao concluir a consulta (registrada às{" "}
             {shared.endedAtMs
               ? new Date(shared.endedAtMs).toLocaleTimeString("pt-BR", {
                   hour: "2-digit",
@@ -667,7 +695,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                   second: "2-digit",
                 })
               : "—"}
-            . A consulta foi atualizada no sistema.
+            ). Só o psicólogo inicia o cronômetro; a finalização é automática.
           </p>
           {shared.startedAtMs && shared.endedAtMs ? (
             <p className="mt-2 text-sm text-slate-700">
@@ -900,7 +928,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                           <div className="min-w-0 flex-1 space-y-3">
                             <h3 className="text-sm font-semibold text-slate-900">Iniciar sessão</h3>
                             <p className="text-xs text-slate-600">
-                              O cronômetro só corre depois de iniciar, dentro da janela permitida da consulta.
+                              O cronômetro só corre depois que você iniciar, dentro da janela permitida da consulta. O
+                              encerramento da sessão no sistema é automático quando a consulta for concluída.
                             </p>
 
                             {resolvedSession && timeStatus && !patientWaitingSameRef ? (
@@ -1020,7 +1049,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
             <p className="mt-3 text-center text-sm text-slate-600">
               {remainingMs > 0
                 ? `~${Math.ceil(remainingMs / 60000)} min restantes (previsto ${shared.durationMin} min).`
-                : "Tempo previsto esgotado — encerre quando terminar."}
+                : "Tempo previsto esgotado — a sessão segue até o sistema concluir a consulta automaticamente."}
             </p>
 
             <div className="mt-8 w-full max-w-2xl rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-left">
@@ -1063,13 +1092,10 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleEnd}
-              className="mt-8 rounded-full border border-slate-300 bg-white px-8 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-            >
-              Encerrar sessão
-            </button>
+            <p className="mt-8 max-w-md text-center text-xs text-slate-500">
+              Não é necessário encerrar manualmente: quando a consulta for marcada como concluída no sistema, esta sala
+              atualiza sozinha.
+            </p>
           </div>
         </div>
       ) : null}

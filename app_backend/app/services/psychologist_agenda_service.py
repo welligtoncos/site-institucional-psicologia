@@ -110,6 +110,9 @@ class PsychologistAgendaService:
         return start, end
 
     async def get_agenda(self, user: User, *, from_date: date) -> PsychologistAgendaResponse:
+        n_closed = await self._clinical.auto_finish_live_sessions_past_duration()
+        if n_closed:
+            logger.info("Encerramento automático no backend: %d consulta(s) após fim do cronômetro.", n_closed)
         pid = await self._get_psicologo_id(user)
         consultations = await self._clinical.list_consultas_psicologo_desde(pid, from_date)
         blocks = await self._clinical.list_bloqueios_agenda_desde(pid, from_date)
@@ -130,6 +133,7 @@ class PsychologistAgendaService:
         )
 
     async def join_room(self, user: User, appointment_id: UUID) -> PsychologistAppointmentOnlineResponse:
+        await self._clinical.auto_finish_live_sessions_past_duration()
         c = await self._get_owned_appointment(user, appointment_id)
         if c.situacao_pagamento != ConsultaSituacaoPagamento.pago:
             raise ConflictError("A sala só fica disponível para consultas com pagamento confirmado.")

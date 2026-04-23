@@ -48,6 +48,25 @@ def _consulta(status: ConsultaStatus = ConsultaStatus.confirmada):
 
 
 @pytest.mark.asyncio
+async def test_get_agenda_calls_auto_finish_live_sessions() -> None:
+    user = _psychologist_user()
+    pid = uuid4()
+    mock_clinical = AsyncMock()
+    mock_clinical.auto_finish_live_sessions_past_duration = AsyncMock(return_value=0)
+    mock_clinical.get_psicologo_by_usuario_id = AsyncMock(return_value=SimpleNamespace(id=pid))
+    mock_clinical.list_consultas_psicologo_desde = AsyncMock(return_value=[])
+    mock_clinical.list_bloqueios_agenda_desde = AsyncMock(return_value=[])
+
+    svc = PsychologistAgendaService(AsyncMock())
+    svc._clinical = mock_clinical  # type: ignore[attr-defined]
+    svc._audit = SimpleNamespace(publish=lambda **_: None)  # type: ignore[attr-defined]
+
+    await svc.get_agenda(user, from_date=date.today())  # type: ignore[arg-type]
+
+    mock_clinical.auto_finish_live_sessions_past_duration.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_psychologist_join_room_marks_in_progress() -> None:
     user = _psychologist_user()
     consulta = _consulta(status=ConsultaStatus.confirmada)
