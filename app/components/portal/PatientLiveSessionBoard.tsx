@@ -731,12 +731,6 @@ export function PatientLiveSessionBoard() {
                                 </div>
                               </div>
                             ) : null}
-                            <div className="mx-auto mt-3 w-full max-w-lg rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-left">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900">Link da chamada</p>
-                              <p className="mt-1 text-xs text-sky-950">
-                                Se o psicólogo corrigir o link, ele atualiza aqui na hora.
-                              </p>
-                            </div>
                             <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tempo decorrido</p>
                             <p className="mt-2 font-mono text-5xl font-bold tabular-nums text-sky-900 sm:text-6xl">
                               {formatElapsed(elapsedMs)}
