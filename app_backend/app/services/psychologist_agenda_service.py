@@ -106,7 +106,7 @@ class PsychologistAgendaService:
     def _join_window(self, c: Consulta) -> tuple[datetime, datetime]:
         starts_at = datetime.combine(c.data_agendada, c.hora_inicio, tzinfo=CLINIC_TZ)
         start = starts_at - timedelta(minutes=10)
-        end = starts_at + timedelta(minutes=c.duracao_minutos + 15)
+        end = starts_at + timedelta(minutes=c.duracao_minutos)
         return start, end
 
     async def get_agenda(self, user: User, *, from_date: date) -> PsychologistAgendaResponse:
@@ -131,6 +131,8 @@ class PsychologistAgendaService:
 
     async def join_room(self, user: User, appointment_id: UUID) -> PsychologistAppointmentOnlineResponse:
         c = await self._get_owned_appointment(user, appointment_id)
+        if c.situacao_pagamento != ConsultaSituacaoPagamento.pago:
+            raise ConflictError("A sala só fica disponível para consultas com pagamento confirmado.")
         if c.status not in (ConsultaStatus.confirmada, ConsultaStatus.em_andamento):
             raise ConflictError("Somente consultas confirmadas permitem entrada na sala.")
         now = datetime.now(CLINIC_TZ)

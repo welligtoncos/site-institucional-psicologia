@@ -106,7 +106,7 @@ class PatientAppointmentService:
     def _join_window(self, c: Consulta) -> tuple[datetime, datetime]:
         starts_at = datetime.combine(c.data_agendada, c.hora_inicio, tzinfo=CLINIC_TZ)
         start = starts_at - timedelta(minutes=10)
-        end = starts_at + timedelta(minutes=c.duracao_minutos + 15)
+        end = starts_at + timedelta(minutes=c.duracao_minutos)
         return start, end
 
     async def create_appointment(
@@ -242,6 +242,8 @@ class PatientAppointmentService:
         c = await self._clinical.get_consulta_com_cobranca_do_paciente(appointment_id, user.id)
         if c is None:
             raise NotFoundError("Consulta não encontrada para este paciente.")
+        if c.situacao_pagamento != ConsultaSituacaoPagamento.pago:
+            raise ConflictError("A sala só fica disponível para consultas com pagamento confirmado.")
         if c.status not in (ConsultaStatus.confirmada, ConsultaStatus.em_andamento):
             raise ConflictError("Somente consultas confirmadas permitem entrada na sala.")
 

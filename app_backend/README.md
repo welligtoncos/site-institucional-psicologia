@@ -126,7 +126,7 @@ Novos endpoints para fluxo de sessão e histórico:
 Regras principais:
 
 - entrada na sala só para consulta confirmada/em andamento;
-- janela de acesso: 10 minutos antes até duração + 15 minutos;
+- janela de acesso: 10 minutos antes até o fim da duração acordada;
 - finalização marca status `realizada`;
 - eventos de auditoria publicados no RabbitMQ (`appointment.room.joined.*`, `appointment.notes.updated`, `appointment.finished`).
 

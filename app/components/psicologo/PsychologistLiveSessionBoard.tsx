@@ -27,8 +27,8 @@ import {
 import { openRoomRealtimeSocket, sendRoomRealtimeEvent } from "@/app/lib/room-realtime-ws";
 import { todayIso, type PsychologistAgendaAppointment } from "@/app/lib/psicologo-mocks";
 
-/** Pode iniciar até 15 min antes do horário marcado */
-const EARLY_START_MS = 15 * 60 * 1000;
+/** Pode iniciar até 10 min antes do horário marcado */
+const EARLY_START_MS = 10 * 60 * 1000;
 
 type PickableSession = {
   ref: string;
@@ -64,6 +64,7 @@ function buildUpcomingSessions(today: string, agenda: PsychologistAgendaAppointm
   for (const a of agenda) {
     if (a.isoDate < today) continue;
     if (a.format !== "Online") continue;
+    if (a.pagamentoPendente) continue;
     if (a.status === "cancelada" || a.status === "realizada") continue;
     rows.push({
       ref: `appointment:${a.id}`,
@@ -137,10 +138,11 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const [hydrated, setHydrated] = useState(false);
   const [selectedRef, setSelectedRef] = useState(() => (lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : ""));
   const [meetDraft, setMeetDraft] = useState("");
-  const [demoUnlock, setDemoUnlock] = useState(false);
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
   const lastWaitingNotifyKey = useRef<string>("");
-  const prevPatientOnline = useRef<Record<string, boolean>>({});
+  const patientOnlineSignal = useRef<
+    Record<string, { observed: boolean; stableCount: number; announced: boolean }>
+  >({});
   const roomWsRef = useRef<WebSocket | null>(null);
   const roomWsAppointmentIdRef = useRef<string>("");
 
@@ -173,18 +175,30 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
         };
         setSharedLiveSession(next);
       }
-      const nowMap = Object.fromEntries(mapped.map((item) => [item.id, Boolean(item.patientOnline)]));
+      const nextSignal: Record<string, { observed: boolean; stableCount: number; announced: boolean }> = {};
       for (const item of mapped) {
         const key = item.id;
-        const wasOnline = prevPatientOnline.current[key] ?? false;
         const isOnline = Boolean(item.patientOnline);
-        if (!wasOnline && isOnline) {
-          toast.success(`Paciente online na sala: ${item.patientName}`);
-        } else if (wasOnline && !isOnline) {
-          toast.message(`Paciente saiu da sala: ${item.patientName}`);
+        const prev = patientOnlineSignal.current[key];
+        if (!prev) {
+          // Primeira leitura não gera alerta para evitar falso positivo ao abrir o painel.
+          nextSignal[key] = { observed: isOnline, stableCount: 1, announced: isOnline };
+          continue;
         }
+        const observed = prev.observed === isOnline ? prev.observed : isOnline;
+        const stableCount = prev.observed === isOnline ? prev.stableCount + 1 : 1;
+        let announced = prev.announced;
+        if (observed !== announced && stableCount >= 2) {
+          if (observed) {
+            toast.success(`Paciente online na sala: ${item.patientName}`);
+          } else {
+            toast.message(`Paciente saiu da sala: ${item.patientName}`);
+          }
+          announced = observed;
+        }
+        nextSignal[key] = { observed, stableCount, announced };
       }
-      prevPatientOnline.current = nowMap;
+      patientOnlineSignal.current = nextSignal;
     } else {
       setAgenda([]);
       const detail = "detail" in agendaResponse.data ? agendaResponse.data.detail : "";
@@ -333,7 +347,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     lastWaitingNotifyKey.current = key;
     toast.success(`Sala de espera: ${s.patientName}`, {
       duration: 10_000,
-      description: `${describeLiveSessionRef(s.ref)} · pode iniciar quando quiser.`,
+      description: `${describeLiveSessionRef(s.ref)} · pode iniciar dentro da janela da consulta.`,
     });
     if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
       try {
@@ -364,7 +378,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       return {
         tone: "neutral" as const,
         title: "Fora da janela de início",
-        detail: `Início permitido até 15 min antes · faltam ~${untilEarly} min (às ${resolvedSession.time}).`,
+        detail: `Início permitido até 10 min antes · faltam ~${untilEarly} min (às ${resolvedSession.time}).`,
       };
     }
     if (nowMs >= earlyMs && nowMs < startMs) {
@@ -388,7 +402,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     return {
       tone: "late" as const,
       title: "Após o horário da agenda",
-      detail: "Com paciente na fila, ainda pode iniciar. Sem paciente, marque a opção abaixo para liberar fora do horário.",
+      detail: "A janela desta consulta acabou. Não é possível iniciar fora do período previsto.",
     };
   }, [scheduleWindow, resolvedSession, tick]);
 
@@ -407,12 +421,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   /** Paciente na sala + link + janela do fluxo (estado compartilhado) liberou o início. */
   const patientPathStartReady = useMemo(() => {
     if (!patientWaitingSameRef || !shared) return false;
-    return Boolean(shared.meetUrl?.trim());
-  }, [patientWaitingSameRef, shared]);
+    return canStartBySchedule && Boolean(shared.meetUrl?.trim());
+  }, [patientWaitingSameRef, shared, canStartBySchedule]);
 
-  /** Início sem paciente na sala de espera (janela da agenda ou opção explícita). */
+  /** Início sem paciente na sala de espera — somente na janela da agenda. */
   const soloStartAllowed =
-    !patientWaitingSameRef && Boolean(resolvedSession) && (canStartBySchedule || demoUnlock);
+    !patientWaitingSameRef && Boolean(resolvedSession) && canStartBySchedule;
 
   const canStartPrep =
     Boolean(resolvedSession) &&
@@ -943,7 +957,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                           <div className="min-w-0 flex-1 space-y-3">
                             <h3 className="text-sm font-semibold text-slate-900">Iniciar sessão</h3>
                             <p className="text-xs text-slate-600">
-                              O cronômetro só corre depois de iniciar. Com paciente na fila e link salvo, a agenda não bloqueia.
+                              O cronômetro só corre depois de iniciar, dentro da janela permitida da consulta.
                             </p>
 
                             {resolvedSession && timeStatus && !patientWaitingSameRef ? (
@@ -967,21 +981,13 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                               <div className="rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-2.5 text-sm text-sky-950">
                                 {!shared.meetUrl?.trim() ? (
                                   <p className="font-medium">Salve o link (passo 1) antes de iniciar.</p>
+                                ) : !canStartBySchedule ? (
+                                  <p className="font-medium">Aguarde a janela da consulta (10 min antes até o fim).</p>
                                 ) : (
-                                  <p className="font-medium">Pode iniciar quando quiser.</p>
+                                  <p className="font-medium">Janela ativa: pode iniciar agora.</p>
                                 )}
                               </div>
                             ) : null}
-
-                            <label className="flex max-w-md cursor-pointer items-center gap-2 text-xs text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={demoUnlock}
-                                onChange={(e) => setDemoUnlock(e.target.checked)}
-                                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                              />
-                              Iniciar sem paciente na fila / fora do horário
-                            </label>
 
                             <button
                               type="button"
@@ -998,16 +1004,12 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
                             {!canStartPrep && resolvedSession ? (
                               <p className="text-xs text-slate-500">
-                                {!patientWaitingSameRef && !canStartBySchedule && !demoUnlock
-                                  ? "Aguarde o horário, marque a opção abaixo ou tenha paciente na fila com link salvo."
+                                {!canStartBySchedule
+                                  ? "Aguarde a janela da consulta (10 min antes até o fim da duração)."
                                   : patientWaitingSameRef && !shared?.meetUrl?.trim()
                                     ? "Salve o link no passo 1."
                                     : "Confira a sala selecionada."}
                               </p>
-                            ) : null}
-
-                            {!canStartBySchedule && resolvedSession && !demoUnlock && !patientWaitingSameRef ? (
-                              <p className="text-xs text-slate-500">Paciente na fila nesta sala libera o início fora do horário.</p>
                             ) : null}
 
                             {typeof window !== "undefined" &&

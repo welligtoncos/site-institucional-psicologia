@@ -113,13 +113,9 @@ export function PatientLiveSessionBoard() {
   const [loading, setLoading] = useState(true);
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
   const [tick, setTick] = useState(0);
-  const prevPsychOnline = useRef<Record<string, boolean>>({});
-  const prevMeetReady = useRef<Record<string, boolean>>({});
-  const prevPsychEnteredRealtime = useRef<Record<string, boolean>>({});
   const prevWsSnapshot = useRef<Record<string, RealtimeRoomSnapshot>>({});
   const roomWsRef = useRef<WebSocket | null>(null);
   const roomWsAppointmentIdRef = useRef<string>("");
-  const sharedRef = useRef<SharedLiveSessionState | null>(null);
   const [roomRealtimeById, setRoomRealtimeById] = useState<Record<string, RealtimeRoomSnapshot>>({});
 
   const refresh = useCallback(async () => {
@@ -185,36 +181,6 @@ export function PatientLiveSessionBoard() {
           }
         }
       }
-      const currentMap = Object.fromEntries(mapped.map((item) => [item.id, item.psychologistOnline]));
-      const currentMeetMap = Object.fromEntries(mapped.map((item) => [item.id, Boolean(item.videoCallLink?.trim())]));
-      const currentPsychEnteredMap = Object.fromEntries(
-        mapped.map((item) => [`appointment:${item.id}`, isPsychologistRoomEnteredActive(`appointment:${item.id}`)]),
-      );
-      const liveShared = sharedRef.current;
-      if (liveShared?.phase === "patient_waiting" && liveShared.ref.startsWith("portal:")) {
-        const currentId = liveShared.ref.slice("portal:".length);
-        const liveAppointmentRef = `appointment:${currentId}`;
-        const wasOnline = prevPsychOnline.current[currentId] ?? false;
-        const nowOnline = currentMap[currentId] ?? false;
-        const wasMeetReady = prevMeetReady.current[currentId] ?? false;
-        const nowMeetReady = currentMeetMap[currentId] ?? false;
-        const wasPsychEntered = prevPsychEnteredRealtime.current[liveAppointmentRef] ?? false;
-        const nowPsychEntered = currentPsychEnteredMap[liveAppointmentRef] ?? false;
-        const wasStepOneActive = wasOnline || wasPsychEntered;
-        const nowStepOneActive = nowOnline || nowPsychEntered;
-        if (!wasOnline && nowOnline) {
-          toast.success("Psicólogo na sala.");
-        } else if (!wasPsychEntered && nowPsychEntered) {
-          toast.success("Psicólogo na sala — aguarde o link.");
-        } else if (wasStepOneActive && !nowStepOneActive) {
-          toast.message("Psicólogo saiu da sala.");
-        } else if (!wasMeetReady && nowMeetReady) {
-          toast.success("Link da chamada disponível.");
-        }
-      }
-      prevPsychOnline.current = currentMap;
-      prevMeetReady.current = currentMeetMap;
-      prevPsychEnteredRealtime.current = currentPsychEnteredMap;
     } else {
       setAppointments([]);
       toast.error(result.detail);
@@ -222,10 +188,6 @@ export function PatientLiveSessionBoard() {
     setLoading(false);
     setShared(getSharedLiveSession());
   }, [today]);
-
-  useEffect(() => {
-    sharedRef.current = shared;
-  }, [shared]);
 
   /** Quando passa do horário de término marcado, libera o paciente para outra consulta sem depender só do fluxo manual. */
   useEffect(() => {
@@ -262,13 +224,15 @@ export function PatientLiveSessionBoard() {
       };
       setRoomRealtimeById((prev) => ({ ...prev, [appointmentId]: snapshot }));
       const prev = prevWsSnapshot.current[appointmentId];
-      if (!prev?.psychologist_online && snapshot.psychologist_online) {
-        toast.success("Psicólogo na sala.");
-      } else if (prev?.psychologist_online && !snapshot.psychologist_online) {
-        toast.message("Psicólogo saiu da sala.");
-      }
-      if (!prev?.meeting_link && snapshot.meeting_link) {
-        toast.success("Link da chamada disponível.");
+      if (prev) {
+        if (!prev.psychologist_online && snapshot.psychologist_online) {
+          toast.success("Psicólogo na sala.");
+        } else if (prev.psychologist_online && !snapshot.psychologist_online) {
+          toast.message("Psicólogo saiu da sala.");
+        }
+        if (!prev.meeting_link && snapshot.meeting_link) {
+          toast.success("Link da chamada disponível.");
+        }
       }
       const current = getSharedLiveSession();
       if (current?.ref === `portal:${appointmentId}`) {
