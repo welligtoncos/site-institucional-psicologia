@@ -111,6 +111,7 @@ export function PatientLiveSessionBoard() {
   const [appointments, setAppointments] = useState<LiveAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
+  const [newLinkRef, setNewLinkRef] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const prevWsSnapshot = useRef<Record<string, RealtimeRoomSnapshot>>({});
   const roomWsRef = useRef<WebSocket | null>(null);
@@ -160,6 +161,9 @@ export function PatientLiveSessionBoard() {
           activeAppointment.videoCallLink &&
           activeAppointment.videoCallLink !== currentShared.meetUrl
         ) {
+          if (currentShared.phase === "live" && currentShared.meetUrl?.trim()) {
+            setNewLinkRef(currentShared.ref);
+          }
           setSharedLiveSession({
             ...currentShared,
             meetUrl: activeAppointment.videoCallLink,
@@ -257,6 +261,9 @@ export function PatientLiveSessionBoard() {
       const current = getSharedLiveSession();
       if (current?.ref === `portal:${appointmentId}`) {
         if (snapshot.meeting_link && snapshot.meeting_link !== current.meetUrl) {
+          if (current.phase === "live" && current.meetUrl?.trim()) {
+            setNewLinkRef(current.ref);
+          }
           setSharedLiveSession({
             ...current,
             meetUrl: snapshot.meeting_link,
@@ -701,16 +708,28 @@ export function PatientLiveSessionBoard() {
                               Cronômetro igual ao do psicólogo. A chamada pode ficar em outra aba.
                             </p>
                             {shared.meetUrl ? (
-                              <p className="mx-auto mt-2 max-w-lg text-xs text-slate-600">
-                                <a
-                                  href={shared.meetUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-semibold text-sky-800 underline"
-                                >
-                                  Abrir videochamada
-                                </a>
-                              </p>
+                              <div className="mx-auto mt-2 w-full max-w-lg rounded-xl border border-slate-200 bg-white px-3 py-3 text-left">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Link da chamada</p>
+                                  {newLinkRef === ref ? (
+                                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+                                      Link novo
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-2 break-all font-mono text-xs text-slate-800">{shared.meetUrl}</p>
+                                <div className="mt-3">
+                                  <a
+                                    href={shared.meetUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => setNewLinkRef(null)}
+                                    className="font-semibold text-sky-800 underline"
+                                  >
+                                    Abrir videochamada
+                                  </a>
+                                </div>
+                              </div>
                             ) : null}
                             <div className="mx-auto mt-3 w-full max-w-lg rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-left">
                               <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900">Link da chamada</p>
