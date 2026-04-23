@@ -22,7 +22,6 @@ import {
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
 import {
-  elapsedMsInAgendaSlot,
   isPastAgendaSlotEnd,
   scheduledSlotStillBlocks,
 } from "@/app/lib/live-session-agenda";
@@ -394,9 +393,9 @@ export function PatientLiveSessionBoard() {
   }
 
   const elapsedMs = useMemo(() => {
-    if (shared?.phase !== "live") return 0;
-    return elapsedMsInAgendaSlot(Date.now(), shared.isoDate, shared.time, shared.durationMin);
-  }, [shared, tick]);
+    if (shared?.phase !== "live" || !shared.startedAtMs) return 0;
+    return Math.max(0, Date.now() - shared.startedAtMs);
+  }, [shared?.phase, shared?.startedAtMs, tick]);
   const plannedMs = shared ? shared.durationMin * 60 * 1000 : 0;
   const progressPct =
     shared?.phase === "live" && plannedMs > 0 ? Math.min(100, (elapsedMs / plannedMs) * 100) : 0;
@@ -675,6 +674,16 @@ export function PatientLiveSessionBoard() {
                             </div>
                             <p className="mx-auto mt-4 max-w-lg text-sm text-slate-800">
                               Cronômetro igual ao do psicólogo. A chamada pode ficar em outra aba.
+                            </p>
+                            <p className="mx-auto mt-2 max-w-lg text-xs text-slate-600">
+                              Iniciado por <strong>{shared.psychologistName}</strong>{" "}
+                              {shared.startedAtMs
+                                ? `às ${new Date(shared.startedAtMs).toLocaleTimeString("pt-BR", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                  })}`
+                                : ""}.
                             </p>
                             {shared.meetUrl ? (
                               <p className="mx-auto mt-2 max-w-lg text-xs text-slate-600">
