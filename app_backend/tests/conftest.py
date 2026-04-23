@@ -13,6 +13,7 @@ os.environ["DATABASE_URL"] = "postgresql+asyncpg://app:app@127.0.0.1:5432/testdb
 os.environ["SECRET_KEY"] = "unit-test-secret-key-at-least-32-characters-long"
 os.environ["DEBUG"] = "true"
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+os.environ.setdefault("MERCADO_PAGO_ACCESS_TOKEN", "TEST_ACCESS_TOKEN")
 
 
 def pytest_configure() -> None:
