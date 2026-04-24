@@ -220,18 +220,37 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
               const startedAtMs = Number.isFinite(parsed) ? parsed : Date.now();
               const phaseFromBack: SharedLiveSessionState["phase"] =
                 appt.sessionPhase === "patient_waiting" ? "patient_waiting" : "live";
-              setSharedLiveSession({
-                ...cur,
-                phase: phaseFromBack,
-                patientName: appt.patientName ?? cur.patientName,
-                isoDate: appt.isoDate,
-                time: appt.time,
-                durationMin: appt.durationMin ?? cur.durationMin ?? 50,
-                format: appt.format,
-                meetUrl: appt.videoCallLink ?? cur.meetUrl,
-                startedAtMs: phaseFromBack === "live" ? startedAtMs : cur.startedAtMs,
-                updatedAtMs: Date.now(),
-              });
+              const nextMeet = appt.videoCallLink ?? cur.meetUrl;
+              const nextStartedAt = phaseFromBack === "live" ? startedAtMs : cur.startedAtMs;
+              const nextPatient = appt.patientName ?? cur.patientName;
+              const nextDur = appt.durationMin ?? cur.durationMin ?? 50;
+              const meetUnchanged =
+                (cur.meetUrl?.trim() || "") === (typeof nextMeet === "string" ? nextMeet.trim() : "");
+              if (
+                cur.phase === phaseFromBack &&
+                cur.startedAtMs === nextStartedAt &&
+                meetUnchanged &&
+                cur.patientName === nextPatient &&
+                cur.isoDate === appt.isoDate &&
+                cur.time === appt.time &&
+                cur.durationMin === nextDur &&
+                cur.format === appt.format
+              ) {
+                /* evita regravar localStorage / Broadcast a cada poll — elimina flicker na sala */
+              } else {
+                setSharedLiveSession({
+                  ...cur,
+                  phase: phaseFromBack,
+                  patientName: nextPatient,
+                  isoDate: appt.isoDate,
+                  time: appt.time,
+                  durationMin: nextDur,
+                  format: appt.format,
+                  meetUrl: nextMeet,
+                  startedAtMs: nextStartedAt,
+                  updatedAtMs: Date.now(),
+                });
+              }
             }
           }
         }

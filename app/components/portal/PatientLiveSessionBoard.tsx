@@ -114,6 +114,8 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
   const roomWsAppointmentIdRef = useRef<string>("");
   const [roomRealtimeById, setRoomRealtimeById] = useState<Record<string, RealtimeRoomSnapshot>>({});
   const autoOpenTriedRef = useRef(false);
+  /** Evita toast repetido se o WebSocket reenviar `session_started` com o mesmo instante. */
+  const wsSessionStartedToastKeyRef = useRef<string>("");
 
   const refresh = useCallback(async () => {
     const result = await listPatientAppointments(today);
@@ -131,7 +133,8 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
           clearSharedLiveSession();
         } else if (
           activeAppointment.status === "em_andamento" &&
-          currentShared.phase !== "live"
+          currentShared.phase !== "live" &&
+          (Boolean(activeAppointment.sessionStartedAt?.trim()) || activeAppointment.sessionPhase === "live")
         ) {
           {
             const fromApi = activeAppointment.sessionStartedAt
@@ -287,7 +290,11 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
             startedAtMs,
             updatedAtMs: Date.now(),
           });
-          toast.success("Sessão iniciada.");
+          const toastKey = `${appointmentId}|${snapshot.session_started_at ?? ""}|${startedAtMs}`;
+          if (wsSessionStartedToastKeyRef.current !== toastKey) {
+            wsSessionStartedToastKeyRef.current = toastKey;
+            toast.success("Sessão iniciada.");
+          }
         } else if (
           snapshot.session_started &&
           current.phase === "live" &&
@@ -322,7 +329,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
     const id = window.setInterval(() => setTick((x) => x + 1), 1000);
     const pollId = window.setInterval(() => {
       void refresh();
-    }, 1000);
+    }, 4000);
     const onBillingChanged = () => {
       void refresh();
     };
