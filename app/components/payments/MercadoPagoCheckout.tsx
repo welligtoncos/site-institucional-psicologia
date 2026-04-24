@@ -62,9 +62,11 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
       setLoadState("error");
       return;
     }
+    // Preferimos init_point: evita inconsistências de ambiente
+    // quando o SDK retorna sandbox_init_point com challenge inválido.
     const direct =
-      (result.data.sandbox_init_point && result.data.sandbox_init_point.trim()) ||
       (result.data.init_point && result.data.init_point.trim()) ||
+      (result.data.sandbox_init_point && result.data.sandbox_init_point.trim()) ||
       null;
     if (!direct) {
       setErrorDetail("Não foi possível gerar o link do checkout. Tente novamente.");
