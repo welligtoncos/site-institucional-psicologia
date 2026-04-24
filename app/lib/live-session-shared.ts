@@ -1,9 +1,24 @@
 /**
- * Estado compartilhado entre portal do paciente e área do psicólogo (mock no navegador).
- * Usa localStorage + BroadcastChannel + eventos para atualização em tempo real entre abas.
+ * Estado compartilhado entre portal do paciente e área do psicólogo (cache no navegador).
+ * Usa localStorage + BroadcastChannel + eventos entre abas.
+ *
+ * Autoridade: consulta `em_andamento` + `session_started_at` vêm do backend (API autenticada).
+ * Use `reconcileSharedLiveSessionWithBackend` após reabrir o app ou periodicamente — não confie só neste cache.
  */
 
 export const LIVE_SESSION_STORAGE_KEY = "clinica_live_session_shared_v1";
+
+/** Exibe tempo decorrido (paciente, psicólogo e banner da home usam o mesmo formato). */
+export function formatLiveElapsed(ms: number): string {
+  const totalSec = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const min = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  if (h > 0) {
+    return `${h}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+  return `${min}:${String(sec).padStart(2, "0")}`;
+}
 
 /** Reservado para simulações futuras; o play libera assim que houver link e paciente na fila. */
 export const PSYCH_START_MIN_WAIT_MS = 0;

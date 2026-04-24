@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { usePortalPatientSession } from "@/app/components/auth/PortalGate";
+import { LiveSessionHomeBanner } from "@/app/components/shared/LiveSessionHomeBanner";
 import { listPatientAppointments, type ApiPatientAppointmentSummary } from "@/app/lib/portal-appointments-api";
 import { siteConfig } from "@/app/lib/site";
 
@@ -111,6 +112,7 @@ export function PatientPortalDashboard() {
 
   return (
     <div className="space-y-8 pb-10">
+      <LiveSessionHomeBanner role="patient" />
       {/* Topo: acolhimento + resumo + CTA */}
       <section className="overflow-hidden rounded-2xl border border-sky-100/80 bg-gradient-to-br from-sky-50 via-white to-indigo-50/40 p-6 shadow-sm sm:p-8">
         <p className="text-sm font-medium text-sky-900/90">

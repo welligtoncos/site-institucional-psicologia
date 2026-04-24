@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   clearPsychologistRoomEntered,
   clearSharedLiveSession,
+  formatLiveElapsed,
   getSharedLiveSession,
   markPsychologistRoomEntered,
   setSharedLiveSession,
@@ -41,17 +42,6 @@ function atLocalDateTime(isoDate: string, hhmm: string): Date {
   const [y, m, d] = isoDate.split("-").map(Number);
   const [hh, mm] = hhmm.split(":").map(Number);
   return new Date(y, m - 1, d, hh, mm, 0, 0);
-}
-
-function formatElapsed(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const min = Math.floor((totalSec % 3600) / 60);
-  const sec = totalSec % 60;
-  if (h > 0) {
-    return `${h}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  }
-  return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
 function buildUpcomingSessions(today: string, agenda: PsychologistAgendaAppointment[]): PickableSession[] {
@@ -162,6 +152,32 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const roomWsRef = useRef<WebSocket | null>(null);
   const roomWsAppointmentIdRef = useRef<string>("");
   const lastAutoEndNotifyKey = useRef<string>("");
+  /** Confirmação visível após publicar link — some sozinha (evita depender só do toast). */
+  const meetLinkAckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [meetLinkPatientAck, setMeetLinkPatientAck] = useState<string | null>(null);
+
+  function flashMeetLinkSentToPatient(patientLabel: string) {
+    if (meetLinkAckTimerRef.current) clearTimeout(meetLinkAckTimerRef.current);
+    setMeetLinkPatientAck(patientLabel);
+    meetLinkAckTimerRef.current = setTimeout(() => {
+      setMeetLinkPatientAck(null);
+      meetLinkAckTimerRef.current = null;
+    }, 3200);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (meetLinkAckTimerRef.current) clearTimeout(meetLinkAckTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    setMeetLinkPatientAck(null);
+    if (meetLinkAckTimerRef.current) {
+      clearTimeout(meetLinkAckTimerRef.current);
+      meetLinkAckTimerRef.current = null;
+    }
+  }, [selectedRef]);
 
   const refreshSources = useCallback(async () => {
     const agendaResponse = await fetchPsychologistAgenda(todayIso());
@@ -518,7 +534,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     }
     sendRoomRealtimeEvent(roomWsRef.current, { type: "meeting_link_updated", meeting_link: trimmed });
     await refreshSources();
-    toast.success("Link publicado na sala de espera.");
+    const who = resolvedSession.patientName.trim() || "paciente";
+    flashMeetLinkSentToPatient(who);
+    toast.success(`Link enviado para a sala de espera de ${who}.`, { duration: 2200 });
   }
 
   async function handleStart() {
@@ -576,7 +594,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   const elapsedMs = useMemo(() => {
     if (shared?.phase !== "live" || !shared.startedAtMs) return 0;
-    return Date.now() - shared.startedAtMs;
+    return Math.max(0, Date.now() - shared.startedAtMs);
   }, [shared, tick]);
 
   const plannedMs = shared?.phase === "live" ? shared.durationMin * 60 * 1000 : 0;
@@ -699,7 +717,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           </p>
           {shared.startedAtMs && shared.endedAtMs ? (
             <p className="mt-2 text-sm text-slate-700">
-              Duração: <strong>{formatElapsed(shared.endedAtMs - shared.startedAtMs)}</strong>
+              Duração: <strong>{formatLiveElapsed(shared.endedAtMs - shared.startedAtMs)}</strong>
             </p>
           ) : null}
           <button
@@ -878,7 +896,10 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                           <div className="min-w-0 flex-1 space-y-2">
                             <h3 className="text-sm font-semibold text-slate-900">Link da videochamada</h3>
                             <p className="text-xs text-slate-600">
-                              Salvar envia o link para a sala de espera do paciente. Abrir usa o mesmo endereço aqui.
+                              <span className="font-medium text-slate-700">Enviar à sala do paciente</span> grava na
+                              consulta e aparece na fila de espera do portal dele na hora.{" "}
+                              <span className="font-medium text-slate-700">Abrir chamada</span> abre o mesmo URL aqui
+                              (para você entrar na Meet/Zoom).
                             </p>
                             <label htmlFor="meet-url-psych" className="sr-only">
                               URL da videochamada
@@ -900,7 +921,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                                 disabled={!selectedRef}
                                 className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                Salvar link
+                                Enviar à sala do paciente
                               </button>
                               {openMeetHref ? (
                                 <a
@@ -915,6 +936,18 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                                 <span className="text-xs text-slate-500">Informe o link para habilitar.</span>
                               )}
                             </div>
+                            {meetLinkPatientAck ? (
+                              <div
+                                role="status"
+                                aria-live="polite"
+                                className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-950 shadow-sm transition-opacity duration-300"
+                              >
+                                <p className="font-semibold">Enviado para {meetLinkPatientAck}</p>
+                                <p className="mt-0.5 text-xs font-normal text-emerald-900/90">
+                                  O link já está na sala de espera do paciente. Esta mensagem some em instantes.
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
                         </li>
 
@@ -1038,7 +1071,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           <div className="flex flex-col items-center px-6 py-10">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tempo decorrido</p>
             <p className="mt-4 font-mono text-6xl font-bold tabular-nums tracking-tight text-sky-900 sm:text-7xl">
-              {formatElapsed(elapsedMs)}
+              {formatLiveElapsed(elapsedMs)}
             </p>
             <div className="mt-8 h-3 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
               <div
@@ -1077,7 +1110,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                   disabled={!selectedRef}
                   className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Atualizar link agora
+                  Enviar correção à sala do paciente
                 </button>
                 {openMeetHref ? (
                   <a
@@ -1090,6 +1123,18 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                   </a>
                 ) : null}
               </div>
+              {meetLinkPatientAck ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-950 shadow-sm"
+                >
+                  <p className="font-semibold">Atualização enviada para {meetLinkPatientAck}</p>
+                  <p className="mt-0.5 text-xs font-normal text-emerald-900/90">
+                    O paciente vê o novo link na sala de espera. Esta mensagem some em instantes.
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <p className="mt-8 max-w-md text-center text-xs text-slate-500">

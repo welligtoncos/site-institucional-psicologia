@@ -15,6 +15,7 @@ import {
 } from "@/app/lib/portal-appointments-api";
 import {
   clearSharedLiveSession,
+  formatLiveElapsed,
   getSharedLiveSession,
   isPsychologistRoomEnteredActive,
   setSharedLiveSession,
@@ -27,15 +28,6 @@ import {
 } from "@/app/lib/live-session-agenda";
 import { todayIso } from "@/app/lib/psicologo-mocks";
 import { openRoomRealtimeSocket } from "@/app/lib/room-realtime-ws";
-
-function formatElapsed(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const min = Math.floor((totalSec % 3600) / 60);
-  const sec = totalSec % 60;
-  if (h > 0) return `${h}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  return `${min}:${String(sec).padStart(2, "0")}`;
-}
 
 function portalRef(id: string): string {
   return `portal:${id}`;
@@ -778,7 +770,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
                             ) : null}
                             <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tempo decorrido</p>
                             <p className="mt-2 font-mono text-5xl font-bold tabular-nums text-sky-900 sm:text-6xl">
-                              {formatElapsed(elapsedMs)}
+                              {formatLiveElapsed(elapsedMs)}
                             </p>
                             <div className="mx-auto mt-6 h-2 max-w-xs overflow-hidden rounded-full bg-slate-200">
                               <div
@@ -803,7 +795,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
                             .
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Duração: {shared.startedAtMs ? formatElapsed(shared.endedAtMs - shared.startedAtMs) : "—"}
+                            Duração: {shared.startedAtMs ? formatLiveElapsed(shared.endedAtMs - shared.startedAtMs) : "—"}
                           </p>
                           <button
                             type="button"

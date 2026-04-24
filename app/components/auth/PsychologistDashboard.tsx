@@ -2,14 +2,39 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { usePsychologistSession } from "@/app/components/auth/PsychologistAuthShell";
+import { LiveSessionHomeBanner } from "@/app/components/shared/LiveSessionHomeBanner";
 import { type PsychologistAgendaAppointment, todayIso } from "@/app/lib/psicologo-mocks";
 import { apiAgendaToMock, fetchPsychologistAgenda } from "@/app/lib/psychologist-agenda-api";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
+
+function parseAppointmentStart(isoDate: string, hhmm: string): Date {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const [hour, minute] = hhmm.split(":").map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, 0, 0);
+}
+
+function formatAppointmentDatePt(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  });
+}
+
+function isPsychAppointmentUpcoming(a: PsychologistAgendaAppointment): boolean {
+  const start = parseAppointmentStart(a.isoDate, a.time);
+  return (
+    start.getTime() >= Date.now() &&
+    a.status !== "cancelada" &&
+    a.status !== "realizada"
+  );
+}
 
 function sortByDateTime(list: PsychologistAgendaAppointment[]): PsychologistAgendaAppointment[] {
   return [...list].sort((a, b) => {
@@ -21,30 +46,30 @@ function sortByDateTime(list: PsychologistAgendaAppointment[]): PsychologistAgen
 
 export function PsychologistDashboard() {
   const router = useRouter();
-  const { name: userName, email: userEmail } = usePsychologistSession();
+  const { name: userName } = usePsychologistSession();
   const [agenda, setAgenda] = useState<PsychologistAgendaAppointment[]>([]);
   const [loadError, setLoadError] = useState("");
-  const [hydrated, setHydrated] = useState(false);
+
+  const reload = useCallback(async () => {
+    const result = await fetchPsychologistAgenda(todayIso());
+    if (result.ok && "appointments" in result.data) {
+      const mapped = apiAgendaToMock(result.data);
+      setAgenda(mapped.appointments);
+      setLoadError("");
+      return;
+    }
+    setAgenda([]);
+    setLoadError(
+      "detail" in result.data && typeof result.data.detail === "string"
+        ? result.data.detail
+        : "Não foi possível carregar sua agenda.",
+    );
+  }, []);
 
   useEffect(() => {
-    async function refresh() {
-      const result = await fetchPsychologistAgenda(todayIso());
-      if (result.ok && "appointments" in result.data) {
-        const mapped = apiAgendaToMock(result.data);
-        setAgenda(mapped.appointments);
-        setLoadError("");
-        setHydrated(true);
-        return;
-      }
-      setAgenda([]);
-      setLoadError(
-        "Não foi possível carregar os dados do painel pela API. Verifique sua sessão e disponibilidade do backend.",
-      );
-      setHydrated(true);
-    }
-    void refresh();
+    void reload();
     const onAgendaChanged = () => {
-      void refresh();
+      void reload();
     };
     window.addEventListener("psychologist-availability-changed", onAgendaChanged);
     window.addEventListener("psychologist-agenda-changed", onAgendaChanged);
@@ -52,35 +77,66 @@ export function PsychologistDashboard() {
       window.removeEventListener("psychologist-availability-changed", onAgendaChanged);
       window.removeEventListener("psychologist-agenda-changed", onAgendaChanged);
     };
-  }, []);
+  }, [reload]);
 
-  const today = todayIso();
-  const formatIsoDatePt = (isoDate: string): string => {
-    const [y, m, d] = isoDate.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString("pt-BR", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-    });
-  };
+  const upcoming = useMemo(() => {
+    const visiveis = agenda.filter(
+      (a) => a.status === "confirmada" || a.status === "pendente" || a.status === "em_andamento",
+    );
+    return sortByDateTime(visiveis.filter(isPsychAppointmentUpcoming));
+  }, [agenda]);
 
-  const {
-    resumoHoje,
-    proximos,
-    pagamentosAlerta,
-  } = useMemo(() => {
-    const sorted = sortByDateTime(agenda);
-    const ativos = sorted.filter((a) => a.status !== "cancelada");
-    const hoje = ativos.filter((a) => a.isoDate === today);
-    const futuros = ativos.filter((a) => a.isoDate >= today);
-    const proximosSlice = futuros.slice(0, 5);
-    const pagPend = ativos.filter((a) => a.pagamentoPendente).length;
+  const next = upcoming[0] ?? null;
+
+  const confirmedCount = useMemo(
+    () => agenda.filter((a) => a.status === "confirmada" || a.status === "em_andamento").length,
+    [agenda],
+  );
+  const pendingPaymentCount = useMemo(() => agenda.filter((a) => a.pagamentoPendente).length, [agenda]);
+
+  const primaryAction = useMemo(() => {
+    if (!next) {
+      return {
+        label: "Ver agenda",
+        href: "/psicologo/agenda",
+        tone: "sky" as const,
+        sub: "Organize seus horários e atendimentos na semana.",
+      };
+    }
+    if (next.pagamentoPendente) {
+      return {
+        label: "Ver pendências de pagamento",
+        href: "/psicologo/faturas",
+        tone: "amber" as const,
+        sub: "Consulte cobranças e regularize antes do atendimento, se necessário.",
+      };
+    }
+    if (next.format === "Online" && (next.status === "confirmada" || next.status === "em_andamento")) {
+      return {
+        label: "Entrar na sessão de atendimento",
+        href: "/psicologo/sessao",
+        tone: "emerald" as const,
+        sub: "A videochamada da consulta é aberta na Sala de atendimento.",
+      };
+    }
     return {
-      resumoHoje: hoje,
-      proximos: proximosSlice,
-      pagamentosAlerta: pagPend,
+      label: "Ver minha agenda",
+      href: "/psicologo/agenda",
+      tone: "slate" as const,
+      sub: "Detalhes, histórico e próximos horários.",
     };
-  }, [agenda, today]);
+  }, [next]);
+
+  const primaryToneClass =
+    primaryAction.tone === "emerald"
+      ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/20"
+      : primaryAction.tone === "amber"
+        ? "bg-amber-600 hover:bg-amber-700 shadow-amber-900/15"
+        : primaryAction.tone === "sky"
+          ? "bg-sky-600 hover:bg-sky-700 shadow-sky-900/15"
+          : "bg-slate-700 hover:bg-slate-800 shadow-slate-900/20";
+
+  const firstName = userName.trim().split(/\s+/)[0] || "você";
 
   function handleLogout() {
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
@@ -88,128 +144,109 @@ export function PsychologistDashboard() {
     router.push("/login?next=/psicologo");
   }
 
-  if (!hydrated) {
-    return (
-      <div className="rounded-2xl border border-emerald-100 bg-white p-8 text-center text-sm text-slate-600">
-        Carregando painel…
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8">
-      <section className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50/50 p-6 shadow-sm">
-        <p className="text-sm font-medium text-emerald-900/80">Olá, {userName}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Sua agenda profissional</h1>
-        <p className="mt-2 max-w-xl text-sm text-slate-600">
-          Acompanhe seus atendimentos de hoje, próximos horários e pendências da agenda em tempo real.
+    <div className="space-y-8 pb-10">
+      <LiveSessionHomeBanner role="psychologist" />
+      <section className="overflow-hidden rounded-2xl border border-sky-100/80 bg-gradient-to-br from-sky-50 via-white to-indigo-50/40 p-6 shadow-sm sm:p-8">
+        <p className="text-sm font-medium text-sky-900/90">
+          Olá, <span className="font-semibold text-slate-900">{firstName}</span>. Aqui você acompanha seus atendimentos de
+          forma simples.
         </p>
+        <p className="mt-2 text-xs leading-relaxed text-slate-600">
+          Os dados dos pacientes e o conteúdo clínico são sigilosos. Em caso de dúvida, fale com a recepção.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-stretch lg:justify-between">
+          <div className="min-w-0 flex-1 rounded-2xl border border-white/80 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-800">Próximo atendimento</p>
+            {next ? (
+              <>
+                <p className="mt-2 text-lg font-semibold tracking-tight text-slate-900">
+                  {formatAppointmentDatePt(next.isoDate)} às {next.time}
+                </p>
+                <ul className="mt-3 space-y-1.5 text-sm text-slate-700">
+                  <li>
+                    <span className="text-slate-500">Paciente:</span>{" "}
+                    <span className="font-medium text-slate-900">{next.patientName}</span>
+                  </li>
+                  <li>
+                    <span className="text-slate-500">Modalidade:</span>{" "}
+                    <span className="font-medium text-slate-900">{next.format}</span>
+                  </li>
+                </ul>
+              </>
+            ) : (
+              <p className="mt-3 text-sm text-slate-600">
+                Não há atendimento futuro na agenda. Confira disponibilidade ou aguarde novos agendamentos.
+              </p>
+            )}
+          </div>
+
+          <div className="flex w-full shrink-0 flex-col justify-center gap-3 lg:max-w-sm">
+            <Link
+              href={primaryAction.href}
+              className={`inline-flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center text-sm font-semibold text-white shadow-lg transition ${primaryToneClass}`}
+            >
+              {primaryAction.label}
+            </Link>
+            <p className="text-center text-xs leading-relaxed text-slate-600 lg:text-left">{primaryAction.sub}</p>
+            <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
+              <Link
+                href="/psicologo/agenda"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Ver agenda completa
+              </Link>
+              {next?.pagamentoPendente ? (
+                <Link
+                  href="/psicologo/faturas"
+                  className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Ver cobranças
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <h2 className="text-base font-semibold text-slate-900">Resumo</h2>
+        <p className="mt-1 text-sm text-slate-600">Atendimentos confirmados ou em andamento e pagamentos pendentes.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-3 text-center">
+            <p className="text-2xl font-bold text-emerald-900">{confirmedCount}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-800">Atendimentos confirmados</p>
+          </div>
+          <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-3 text-center">
+            <p className="text-2xl font-bold text-amber-900">{pendingPaymentCount}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800">Pagamentos pendentes</p>
+          </div>
+        </div>
+      </section>
+
       {loadError ? (
         <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{loadError}</section>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hoje</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{resumoHoje.length}</p>
-          <p className="mt-1 text-xs text-slate-600">sessões agendadas</p>
-        </div>
-        <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Pagamentos</p>
-          <p className="mt-1 text-2xl font-semibold text-rose-950">{pagamentosAlerta}</p>
-          <p className="mt-1 text-xs text-rose-900/80">sessões com pagamento em aberto</p>
-        </div>
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900">Resumo do dia</h2>
-            <span className="text-xs text-slate-500">{formatIsoDatePt(today)}</span>
-          </div>
-          {resumoHoje.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">Nenhuma sessão para hoje nos dados de demonstração.</p>
-          ) : (
-            <ul className="mt-4 space-y-2">
-              {resumoHoje.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2 text-sm"
-                >
-                  <div>
-                    <p className="font-medium text-slate-900">{a.patientName}</p>
-                    <p className="text-xs text-slate-600">
-                      {a.time} ·{" "}
-                      <span className={a.format === "Online" ? "text-teal-700" : "text-slate-700"}>{a.format}</span>
-                      {a.status === "pendente" && (
-                        <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
-                          Pendente
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-800">Próximos atendimentos</h2>
-            <Link href="/psicologo/agenda" className="text-xs font-semibold text-emerald-700 hover:underline">
-              Ver agenda
-            </Link>
-          </div>
-          {proximos.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">Nenhum próximo atendimento.</p>
-          ) : (
-            <ul className="mt-4 space-y-2">
-              {proximos.map((a) => (
-                <li key={a.id} className="rounded-xl border border-slate-100 px-3 py-2 text-sm">
-                  <p className="font-medium text-slate-900">{a.patientName}</p>
-                  <p className="text-xs text-slate-600">
-                    {formatIsoDatePt(a.isoDate)} · {a.time} · {a.format}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-800">Atalhos rápidos</h2>
-        <p className="mt-1 text-xs text-slate-500">Acesse as áreas principais com um clique.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Link
-            href="/psicologo/faturas"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:border-emerald-200 hover:bg-emerald-50/50"
-          >
-            Minhas consultas
-          </Link>
-          <Link
-            href="/psicologo/sessao"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:border-emerald-200 hover:bg-emerald-50/50"
-          >
-            Atendimento
-          </Link>
-        </div>
-      </section>
-
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="truncate text-sm text-slate-600">
-          <span className="font-medium text-slate-900">{userEmail}</span>
+      <section className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-5 sm:p-6" id="privacidade-profissional">
+        <h2 className="text-base font-semibold text-indigo-950">Sigilo e ética profissional</h2>
+        <p className="mt-2 text-sm leading-relaxed text-indigo-950/85">
+          Este painel reúne organização da agenda e aspectos administrativos. Registros clínicos sensíveis permanecem no
+          contexto apropriado da prática; trate os dados dos pacientes com o mesmo cuidado do portal do paciente.
         </p>
+      </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6">
         <button
           type="button"
           onClick={handleLogout}
-          className="text-sm font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
+          className="rounded-full border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Sair
+          Sair do portal
         </button>
-      </section>
+        <p className="text-xs text-slate-500">Dúvidas? Use suporte no rodapé da página.</p>
+      </div>
     </div>
   );
 }
