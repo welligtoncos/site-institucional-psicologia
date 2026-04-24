@@ -74,6 +74,20 @@ class Settings(BaseSettings):
         validation_alias="MONGO_BUSINESS_AUDIT_COLLECTION",
     )
 
+    # URL pública do site (back_urls / retorno Checkout Pro). Em produção use HTTPS.
+    frontend_url: str = Field(
+        default="http://localhost:3000",
+        alias="FRONTEND_URL",
+        description="Base do frontend para Mercado Pago back_urls",
+    )
+
+    # URL pública que o Mercado Pago pode chamar (HTTPS). Localhost não recebe POST da internet — use ngrok/túnel ou deploy.
+    mercadopago_notification_url: str | None = Field(
+        default=None,
+        validation_alias="MERCADO_PAGO_NOTIFICATION_URL",
+        description="IPN/notificações: ex. https://api.seudominio.com/mercado-pago/notifications",
+    )
+
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 

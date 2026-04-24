@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { MercadoPagoCheckout } from "@/app/components/payments/MercadoPagoCheckout";
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
 import {
   createPatientAppointment,
@@ -111,6 +112,18 @@ function formatBrl(value: string): string {
   const n = Number.parseFloat(value);
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Inteiro positivo estável para `order_id` / `external_reference` na preferência MP (demo). */
+function stableOrderIdForMercadoPago(chargeId: string, appointmentId: string | null): number {
+  const seed = `${chargeId}:${appointmentId ?? ""}`;
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const positive = Math.abs(h) >>> 0;
+  return (positive % 2_000_000_000) + 1;
 }
 
 function StepBadge({ n, state }: { n: number; state: "pending" | "current" | "complete" }) {
@@ -568,6 +581,30 @@ export function ScheduleConsultationBoard() {
         </div>
       </div>
 
+      {!paymentComplete && !lastCharge ? (
+        <section className="rounded-2xl border border-sky-200 bg-sky-50/50 p-5 shadow-sm ring-1 ring-sky-100/80">
+          <h2 className="text-base font-semibold text-slate-900">Pagamento Mercado Pago</h2>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            Valor da consulta deste profissional — pode testar sem agendar antes. Após pagar, o retorno usa{" "}
+            <code className="rounded bg-white px-1 font-mono text-[11px] ring-1 ring-slate-200">FRONTEND_URL</code> no
+            backend (ex.: <code className="rounded bg-white px-1 font-mono text-[11px]">http://localhost:3000</code>).
+          </p>
+          <div className="mt-4">
+            <MercadoPagoCheckout
+              orderId={stableOrderIdForMercadoPago(`pre-${bookable.id}`, psychId)}
+              product={{
+                title: `Consulta — ${bookable.nome}`,
+                quantity: 1,
+                unit_price: Math.max(
+                  Number.parseFloat(String(bookable.valor_consulta).replace(",", ".")) || 0,
+                  0.01,
+                ),
+              }}
+            />
+          </div>
+        </section>
+      ) : null}
+
       {!hasRawSlotsFromApi ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/95 p-5 text-center shadow-sm">
           <p className="text-sm font-medium text-amber-950">Nenhum horário livre nos próximos 7 dias</p>
@@ -737,13 +774,27 @@ export function ScheduleConsultationBoard() {
             </div>
           </dl>
           {lastCharge.gateway_status === "awaiting_payment" ? (
-            <button
-              type="button"
-              onClick={handleSimulateGateway}
-              className="mt-4 w-full rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-50"
-            >
-              Simular pagamento concluído
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleSimulateGateway}
+                className="mt-4 w-full rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-50"
+              >
+                Simular pagamento concluído
+              </button>
+              {bookable ? (
+                <div className="mt-5 border-t border-emerald-200/80 pt-5">
+                  <MercadoPagoCheckout
+                    orderId={stableOrderIdForMercadoPago(lastCharge.id, lastAppointmentId)}
+                    product={{
+                      title: `Consulta — ${bookable.nome}`,
+                      quantity: 1,
+                      unit_price: Math.round(lastCharge.amount_cents) / 100,
+                    }}
+                  />
+                </div>
+              ) : null}
+            </>
           ) : (
             <div className="mt-4 space-y-3 text-sm font-medium text-emerald-800">
               <p>

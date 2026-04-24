@@ -14,6 +14,7 @@ os.environ["SECRET_KEY"] = "unit-test-secret-key-at-least-32-characters-long"
 os.environ["DEBUG"] = "true"
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("MERCADO_PAGO_ACCESS_TOKEN", "TEST_ACCESS_TOKEN")
+os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
 
 
 def pytest_configure() -> None:
