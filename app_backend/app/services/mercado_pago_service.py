@@ -70,6 +70,7 @@ class MercadoPagoService:
         parsed_base = urlparse(base)
         is_https = parsed_base.scheme.lower() == "https"
         is_local_http = parsed_base.scheme.lower() == "http" and parsed_base.hostname in {"localhost", "127.0.0.1"}
+        allow_callback_urls = is_https or is_local_http
 
         preference_data: dict[str, Any] = {
             "items": [
@@ -85,7 +86,7 @@ class MercadoPagoService:
         # Em produção, prefira HTTPS com back_urls configuradas.
         # Em HTTP público (ex.: IP sem TLS), algumas políticas do MP podem negar a criação da preferência.
         # Nesses casos, mantemos o checkout sem back_urls até habilitar domínio HTTPS.
-        if is_https or is_local_http:
+        if allow_callback_urls:
             preference_data["back_urls"] = {
                 "success": f"{base}/payment/success",
                 "failure": f"{base}/payment/failure",
@@ -96,7 +97,7 @@ class MercadoPagoService:
         if is_https:
             preference_data["auto_return"] = "approved"
 
-        if notification_url and notification_url.strip():
+        if allow_callback_urls and notification_url and notification_url.strip():
             preference_data["notification_url"] = notification_url.strip().rstrip("/")
 
         result = self.sdk.preference().create(preference_data)
