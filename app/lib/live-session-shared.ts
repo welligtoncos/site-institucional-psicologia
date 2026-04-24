@@ -20,6 +20,20 @@ export function formatLiveElapsed(ms: number): string {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
+/**
+ * Início do cronômetro + duração prevista (min) já ultrapassaram `nowMs`.
+ * Usado no cliente quando a API ainda retorna `em_andamento` antes do `auto_finish` no servidor.
+ */
+export function liveSessionChronoExceeded(
+  startedAtMs: number,
+  durationMin: number,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) return false;
+  const dm = Math.max(1, Math.floor(durationMin));
+  return nowMs - startedAtMs >= dm * 60 * 1000;
+}
+
 /** Id da consulta a partir de refs do estado compartilhado (`portal:`, `appointment:`, `agenda:`). */
 export function extractConsultaIdFromLiveRef(ref: string): string | null {
   if (ref.startsWith("portal:")) {

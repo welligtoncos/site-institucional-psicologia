@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { isPastAgendaSlotEnd } from "@/app/lib/live-session-agenda";
 import {
   clearPsychologistRoomEntered,
   clearSharedLiveSession,
   extractConsultaIdFromLiveRef,
   formatLiveElapsed,
   getSharedLiveSession,
+  liveSessionChronoExceeded,
   liveSessionRefsSameConsulta,
   markPsychologistRoomEntered,
   setSharedLiveSession,
@@ -49,21 +51,44 @@ function atLocalDateTime(isoDate: string, hhmm: string): Date {
 
 function buildUpcomingSessions(today: string, agenda: PsychologistAgendaAppointment[]): PickableSession[] {
   const rows: PickableSession[] = [];
+  const nowMs = Date.now();
+  const dm = (a: PsychologistAgendaAppointment) => a.durationMin ?? 50;
 
   for (const a of agenda) {
     if (a.isoDate < today) continue;
     if (a.format !== "Online") continue;
     if (a.pagamentoPendente) continue;
     if (a.status === "cancelada" || a.status === "realizada") continue;
+    /** API pode manter `em_andamento` até o auto_finish no servidor — não listar como sala ativa. */
+    if (
+      a.status === "em_andamento" &&
+      a.sessionStartedAt?.trim() &&
+      Number.isFinite(Date.parse(a.sessionStartedAt)) &&
+      liveSessionChronoExceeded(Date.parse(a.sessionStartedAt), dm(a), nowMs)
+    ) {
+      continue;
+    }
+    let patientOnline = Boolean(a.patientOnline);
+    if (patientOnline && a.status === "confirmada" && isPastAgendaSlotEnd(nowMs, a.isoDate, a.time, dm(a))) {
+      patientOnline = false;
+    }
+    if (
+      patientOnline &&
+      a.status === "em_andamento" &&
+      (!a.sessionStartedAt?.trim() || !Number.isFinite(Date.parse(a.sessionStartedAt))) &&
+      isPastAgendaSlotEnd(nowMs, a.isoDate, a.time, dm(a))
+    ) {
+      patientOnline = false;
+    }
     rows.push({
       ref: `appointment:${a.id}`,
       patientName: a.patientName?.trim() || `Paciente (agenda ${a.id})`,
       isoDate: a.isoDate,
       time: a.time,
-      durationMin: a.durationMin ?? 50,
+      durationMin: dm(a),
       format: a.format,
       sourceLabel: "Agenda",
-      patientOnline: Boolean(a.patientOnline),
+      patientOnline,
     });
   }
 
@@ -164,6 +189,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   /** Confirmação visível após publicar link — some sozinha (evita depender só do toast). */
   const meetLinkAckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [meetLinkPatientAck, setMeetLinkPatientAck] = useState<string | null>(null);
+  const [manualFinishing, setManualFinishing] = useState(false);
 
   function flashMeetLinkSentToPatient(patientLabel: string) {
     if (meetLinkAckTimerRef.current) clearTimeout(meetLinkAckTimerRef.current);
@@ -194,13 +220,43 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       const mapped = apiAgendaToMock(agendaResponse.data).appointments;
       setAgenda(mapped);
 
+      // #region agent log
+      {
+        const staleChrono = mapped.filter((item) => {
+          if (item.status !== "em_andamento" || !item.sessionStartedAt?.trim()) return false;
+          const st = Date.parse(item.sessionStartedAt);
+          if (!Number.isFinite(st)) return false;
+          return liveSessionChronoExceeded(st, item.durationMin ?? 50);
+        });
+        fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+          body: JSON.stringify({
+            sessionId: "6327f2",
+            runId: "psych-sala-list",
+            hypothesisId: "H4",
+            location: "PsychologistLiveSessionBoard.tsx:refreshSources",
+            message: "psychologist agenda poll",
+            data: {
+              mappedCount: mapped.length,
+              staleEmAndamentoChronoCount: staleChrono.length,
+              patientOnlineCount: mapped.filter((i) => i.patientOnline).length,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+      }
+      // #endregion
+
       /** Consulta em andamento com cronômetro ativo no backend (não encerrada na API). */
-      const liveFromApi = mapped.find(
-        (item) =>
-          item.status === "em_andamento" &&
-          Boolean(item.sessionStartedAt) &&
-          item.sessionPhase !== "ended",
-      );
+      const liveFromApi = mapped.find((item) => {
+        if (item.status !== "em_andamento" || !item.sessionStartedAt?.trim() || item.sessionPhase === "ended") {
+          return false;
+        }
+        const st = Date.parse(item.sessionStartedAt);
+        if (!Number.isFinite(st)) return true;
+        return !liveSessionChronoExceeded(st, item.durationMin ?? 50);
+      });
 
       const cur = getSharedLiveSession();
       if (cur) {
@@ -216,6 +272,20 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                 clearPsychologistRoomEntered(cur.ref);
                 clearSharedLiveSession();
                 toast.message("Consulta concluída no sistema — sessão encerrada automaticamente.");
+              }
+            } else if (
+              appt.status === "em_andamento" &&
+              appt.sessionStartedAt &&
+              Number.isFinite(Date.parse(appt.sessionStartedAt)) &&
+              liveSessionChronoExceeded(Date.parse(appt.sessionStartedAt), appt.durationMin ?? 50)
+            ) {
+              const notifyKey = `${aid}|api-chrono-stale`;
+              if (lastAutoEndNotifyKey.current !== notifyKey) {
+                lastAutoEndNotifyKey.current = notifyKey;
+                sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
+                clearPsychologistRoomEntered(cur.ref);
+                clearSharedLiveSession();
+                toast.message("Tempo da sessão esgotado na agenda — estado local encerrado (aguarde a API atualizar).");
               }
             } else if (appt.status === "em_andamento" && appt.sessionStartedAt && cur.phase !== "ended") {
               const parsed = Date.parse(appt.sessionStartedAt);
@@ -616,6 +686,54 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     setShared(null);
   }
 
+  /** POST /finish + limpar sala (cronômetro automático ou encerramento manual). */
+  const finishLiveAppointmentAndCloseUi = useCallback(
+    async (appointmentId: string, reason: "timer" | "manual") => {
+      const out = await finishPsychologistAppointment(appointmentId);
+      if (!out.ok) {
+        const d = (out.detail || "").toLowerCase();
+        const already = d.includes("já encerr") || d.includes("ja encerr") || d.includes("novamente");
+        if (!already) {
+          toast.error(out.detail);
+          if (reason === "timer") autoFinishClientKeyRef.current = "";
+          return;
+        }
+      }
+      await refreshSources();
+      const cur = getSharedLiveSession();
+      if (cur?.ref) clearPsychologistRoomEntered(cur.ref);
+      clearSharedLiveSession();
+      setShared(null);
+      sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
+      if (reason === "timer") {
+        toast.message("Tempo previsto da sessão concluído — consulta finalizada automaticamente.");
+      } else {
+        toast.success("Atendimento encerrado — consulta concluída no sistema.");
+      }
+    },
+    [refreshSources],
+  );
+
+  const handleManualFinishSession = useCallback(async () => {
+    const s = shared;
+    if (s?.phase !== "live") return;
+    const id = extractConsultaIdFromLiveRef(s.ref);
+    if (!id) return;
+    if (
+      !window.confirm(
+        "Encerrar o atendimento agora? A consulta será marcada como concluída, o paciente verá a sessão encerrada e esta sala será fechada.",
+      )
+    ) {
+      return;
+    }
+    setManualFinishing(true);
+    try {
+      await finishLiveAppointmentAndCloseUi(id, "manual");
+    } finally {
+      setManualFinishing(false);
+    }
+  }, [shared, finishLiveAppointmentAndCloseUi]);
+
   const elapsedMs = useMemo(() => {
     if (shared?.phase !== "live" || !shared.startedAtMs) return 0;
     return Math.max(0, Date.now() - shared.startedAtMs);
@@ -639,26 +757,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     const key = `${id}|${s.startedAtMs}|client`;
     if (autoFinishClientKeyRef.current === key) return;
     autoFinishClientKeyRef.current = key;
-    void (async () => {
-      const out = await finishPsychologistAppointment(id);
-      if (!out.ok) {
-        const d = (out.detail || "").toLowerCase();
-        const already = d.includes("já encerr") || d.includes("ja encerr") || d.includes("novamente");
-        if (!already) {
-          toast.error(out.detail);
-          autoFinishClientKeyRef.current = "";
-          return;
-        }
-      }
-      await refreshSources();
-      const cur = getSharedLiveSession();
-      if (cur?.ref) clearPsychologistRoomEntered(cur.ref);
-      clearSharedLiveSession();
-      setShared(null);
-      sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
-      toast.message("Tempo previsto da sessão concluído — consulta finalizada automaticamente.");
-    })();
-  }, [shared, tick, refreshSources]);
+    void finishLiveAppointmentAndCloseUi(id, "timer");
+  }, [shared, tick, finishLiveAppointmentAndCloseUi]);
 
   useEffect(() => {
     if (!hydrated || shared?.phase === "live" || shared?.phase === "patient_waiting") return;
@@ -1027,8 +1127,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
                           <div className="min-w-0 flex-1 space-y-3">
                             <h3 className="text-sm font-semibold text-slate-900">Iniciar sessão</h3>
                             <p className="text-xs text-slate-600">
-                              O cronômetro só corre depois que você iniciar, dentro da janela permitida da consulta. O
-                              encerramento da sessão no sistema é automático quando a consulta for concluída.
+                              O cronômetro só corre depois que você iniciar, dentro da janela permitida da consulta.
+                              Com o cronômetro ativo, você pode encerrar o atendimento manualmente a qualquer momento
+                              (além do encerramento automático ao fim do tempo previsto).
                             </p>
 
                             {resolvedSession && timeStatus && !patientWaitingSameRef ? (
@@ -1148,8 +1249,23 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
             <p className="mt-3 text-center text-sm text-slate-600">
               {remainingMs > 0
                 ? `~${Math.ceil(remainingMs / 60000)} min restantes (previsto ${shared.durationMin} min).`
-                : "Tempo previsto esgotado — a sessão segue até o sistema concluir a consulta automaticamente."}
+                : "Tempo previsto esgotado — a consulta pode ser finalizada automaticamente ou você pode encerrar manualmente abaixo."}
             </p>
+
+            <div className="mt-8 flex w-full max-w-md flex-col items-stretch gap-2">
+              <button
+                type="button"
+                onClick={() => void handleManualFinishSession()}
+                disabled={manualFinishing}
+                className="rounded-full border border-rose-300 bg-white px-5 py-3 text-sm font-semibold text-rose-900 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {manualFinishing ? "Encerrando…" : "Encerrar atendimento agora"}
+              </button>
+              <p className="text-center text-[11px] leading-snug text-slate-500">
+                Marca a consulta como concluída no sistema (como ao fim do cronômetro) e fecha a sala para você e o
+                paciente.
+              </p>
+            </div>
 
             <div className="mt-8 w-full max-w-2xl rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-left">
               <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Corrigir link</p>
@@ -1204,8 +1320,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
             </div>
 
             <p className="mt-8 max-w-md text-center text-xs text-slate-500">
-              Não é necessário encerrar manualmente: quando a consulta for marcada como concluída no sistema, esta sala
-              atualiza sozinha.
+              Você pode encerrar antes do fim do cronômetro com o botão acima. Se preferir aguardar, a consulta também
+              pode ser concluída automaticamente quando o tempo previsto acabar.
             </p>
           </div>
         </div>

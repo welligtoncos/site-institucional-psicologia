@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  clearSharedLiveSession,
   extractConsultaIdFromLiveRef,
   formatLiveElapsed,
   getSharedLiveSession,
+  liveSessionChronoExceeded,
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
@@ -65,6 +67,34 @@ export function LiveSessionHomeBanner({ role }: LiveSessionHomeBannerProps) {
     const id = window.setInterval(() => setTick((x) => x + 1), 1000);
     return () => window.clearInterval(id);
   }, [shared?.phase, shared?.startedAtMs]);
+
+  /** Se a API atrasar `realizada`, não manter o banner após fim do tempo previsto (início + duração). */
+  useEffect(() => {
+    if (shared?.phase !== "live" || !shared.startedAtMs) return;
+    if (!liveSessionChronoExceeded(shared.startedAtMs, shared.durationMin)) return;
+    // #region agent log
+    fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+      body: JSON.stringify({
+        sessionId: "6327f2",
+        runId: "chrono-verify",
+        hypothesisId: "H3",
+        location: "LiveSessionHomeBanner.tsx:chronoClear",
+        message: "banner clearing shared after chrono exceeded",
+        data: {
+          role,
+          startedAtMs: shared.startedAtMs,
+          durationMin: shared.durationMin,
+          nowMs: Date.now(),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    clearSharedLiveSession();
+    pull();
+  }, [shared, tick, pull, role]);
 
   const elapsedMs = useMemo(() => {
     if (shared?.phase !== "live" || !shared.startedAtMs) return 0;

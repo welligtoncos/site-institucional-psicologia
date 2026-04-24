@@ -7,6 +7,7 @@
 import {
   clearSharedLiveSession,
   getSharedLiveSession,
+  liveSessionChronoExceeded,
   setSharedLiveSession,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
@@ -28,12 +29,21 @@ function isPsychologistAgendaRef(ref: string): boolean {
   return ref.startsWith("appointment:") || ref.startsWith("agenda:");
 }
 
+function patientApiChronoStillWithinDuration(a: ApiPatientAppointmentSummary): boolean {
+  const raw = a.session_started_at?.trim();
+  if (!raw) return true;
+  const started = Date.parse(raw);
+  if (!Number.isFinite(started)) return true;
+  return !liveSessionChronoExceeded(started, a.duration_min ?? 50);
+}
+
 function pickPatientLiveFromRows(rows: ApiPatientAppointmentSummary[]): ApiPatientAppointmentSummary | null {
   const candidates = rows.filter(
     (a) =>
       a.status === "em_andamento" &&
       a.format === "Online" &&
-      Boolean(a.session_started_at?.trim()),
+      Boolean(a.session_started_at?.trim()) &&
+      patientApiChronoStillWithinDuration(a),
   );
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
@@ -44,12 +54,21 @@ function pickPatientLiveFromRows(rows: ApiPatientAppointmentSummary[]): ApiPatie
   return candidates[0] ?? null;
 }
 
+function psychAgendaChronoStillWithinDuration(a: PsychologistAgendaAppointment): boolean {
+  const raw = a.sessionStartedAt?.trim();
+  if (!raw) return true;
+  const started = Date.parse(raw);
+  if (!Number.isFinite(started)) return true;
+  return !liveSessionChronoExceeded(started, a.durationMin ?? 50);
+}
+
 function pickPsychologistLiveFromRows(rows: PsychologistAgendaAppointment[]): PsychologistAgendaAppointment | null {
   const candidates = rows.filter(
     (a) =>
       a.status === "em_andamento" &&
       a.format === "Online" &&
-      Boolean(a.sessionStartedAt?.trim()),
+      Boolean(a.sessionStartedAt?.trim()) &&
+      psychAgendaChronoStillWithinDuration(a),
   );
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
@@ -116,6 +135,29 @@ export async function reconcileSharedLiveSessionWithBackend(role: "patient" | "p
     }
 
     if (cur?.phase === "live" && isPatientPortalRef(cur.ref)) {
+      // #region agent log
+      const staleChronoCount = res.data.appointments.filter((a) => {
+        if (a.status !== "em_andamento" || a.format !== "Online") return false;
+        const raw = a.session_started_at?.trim();
+        if (!raw) return false;
+        const st = Date.parse(raw);
+        if (!Number.isFinite(st)) return false;
+        return liveSessionChronoExceeded(st, a.duration_min ?? 50);
+      }).length;
+      fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+        body: JSON.stringify({
+          sessionId: "6327f2",
+          runId: "chrono-verify",
+          hypothesisId: "H1",
+          location: "live-session-backend-sync.ts:reconcilePatientClear",
+          message: "reconcile clearing patient portal live (no row within chrono)",
+          data: { staleChronoCount, hadCurLive: true },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       clearSharedLiveSession();
     }
     return;

@@ -19,6 +19,7 @@ import {
   formatLiveElapsed,
   getSharedLiveSession,
   isPsychologistRoomEnteredActive,
+  liveSessionChronoExceeded,
   liveSessionRefsSameConsulta,
   setSharedLiveSession,
   subscribeSharedLiveSession,
@@ -139,6 +140,35 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
           clearSharedLiveSession();
         } else if (
           activeAppointment.status === "em_andamento" &&
+          activeAppointment.sessionStartedAt &&
+          Number.isFinite(Date.parse(activeAppointment.sessionStartedAt)) &&
+          liveSessionChronoExceeded(
+            Date.parse(activeAppointment.sessionStartedAt),
+            activeAppointment.durationMin,
+          )
+        ) {
+          // #region agent log
+          fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+            body: JSON.stringify({
+              sessionId: "6327f2",
+              runId: "chrono-verify",
+              hypothesisId: "H2",
+              location: "PatientLiveSessionBoard.tsx:refreshChronoClear",
+              message: "portal refresh cleared shared: em_andamento past duration",
+              data: {
+                durationMin: activeAppointment.durationMin,
+                startedParsed: Date.parse(activeAppointment.sessionStartedAt),
+                nowMs: Date.now(),
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+          clearSharedLiveSession();
+        } else if (
+          activeAppointment.status === "em_andamento" &&
           currentShared.phase !== "live" &&
           (Boolean(activeAppointment.sessionStartedAt?.trim()) || activeAppointment.sessionPhase === "live")
         ) {
@@ -202,13 +232,19 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
         }
       } else {
         // Restaura sessão ao vivo quando o paciente reabre a tela sem estado local.
-        const liveFromApi = mapped.find(
-          (item) =>
-            item.status === "em_andamento" &&
-            item.format === "Online" &&
-            Boolean(item.sessionStartedAt) &&
-            item.sessionPhase !== "ended",
-        );
+        const liveFromApi = mapped.find((item) => {
+          if (
+            item.status !== "em_andamento" ||
+            item.format !== "Online" ||
+            !item.sessionStartedAt ||
+            item.sessionPhase === "ended"
+          ) {
+            return false;
+          }
+          const st = Date.parse(item.sessionStartedAt);
+          if (!Number.isFinite(st)) return true;
+          return !liveSessionChronoExceeded(st, item.durationMin);
+        });
         if (liveFromApi) {
           const parsedStartedAt = liveFromApi.sessionStartedAt ? Date.parse(liveFromApi.sessionStartedAt) : NaN;
           const startedAtMs = Number.isFinite(parsedStartedAt) ? parsedStartedAt : Date.now();
