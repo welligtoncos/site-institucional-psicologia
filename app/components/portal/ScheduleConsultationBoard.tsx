@@ -9,7 +9,7 @@ import { MercadoPagoCheckout } from "@/app/components/payments/MercadoPagoChecko
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
 import {
   createPatientAppointment,
-  simulatePatientAppointmentPayment,
+  listPatientAppointments,
   type ApiPatientChargeSummary,
 } from "@/app/lib/portal-appointments-api";
 import { readPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
@@ -112,18 +112,6 @@ function formatBrl(value: string): string {
   const n = Number.parseFloat(value);
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-/** Inteiro positivo estável para `order_id` / `external_reference` na preferência MP (demo). */
-function stableOrderIdForMercadoPago(chargeId: string, appointmentId: string | null): number {
-  const seed = `${chargeId}:${appointmentId ?? ""}`;
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const positive = Math.abs(h) >>> 0;
-  return (positive % 2_000_000_000) + 1;
 }
 
 function StepBadge({ n, state }: { n: number; state: "pending" | "current" | "complete" }) {
@@ -306,6 +294,29 @@ export function ScheduleConsultationBoard() {
     void loadBookable();
   }, [loadBookable]);
 
+  const refreshPaymentStatus = useCallback(async () => {
+    if (!lastAppointmentId) return;
+    const out = await listPatientAppointments();
+    if (!out.ok) return;
+    const apt = out.data.appointments.find((a) => a.id === lastAppointmentId);
+    if (apt?.payment === "Pago") {
+      setLastCharge((c) => (c ? { ...c, gateway_status: "succeeded" } : c));
+    }
+  }, [lastAppointmentId]);
+
+  useEffect(() => {
+    if (!lastAppointmentId) return;
+    const onRefresh = () => {
+      void refreshPaymentStatus();
+    };
+    window.addEventListener("portal-billing-changed", onRefresh);
+    window.addEventListener("focus", onRefresh);
+    return () => {
+      window.removeEventListener("portal-billing-changed", onRefresh);
+      window.removeEventListener("focus", onRefresh);
+    };
+  }, [lastAppointmentId, refreshPaymentStatus]);
+
   const dateOptions = useMemo(() => {
     if (!bookable?.days?.length) return [];
     return bookable.days
@@ -377,27 +388,12 @@ export function ScheduleConsultationBoard() {
       setLastAppointmentId(result.data.appointment.id);
       await loadBookable();
       window.requestAnimationFrame(() => {
-        document.getElementById("portal-schedule-mock-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById("portal-schedule-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
-      toast.success("Consulta criada no backend com status agendada. Conclua o pagamento para confirmar.");
+      toast.success("Consulta reservada. Conclua o pagamento com o Mercado Pago abaixo para confirmar.");
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function handleSimulateGateway() {
-    if (!lastAppointmentId) return;
-    const result = await simulatePatientAppointmentPayment(lastAppointmentId);
-    if (!result.ok) {
-      toast.error(result.detail);
-      return;
-    }
-    setLastCharge(result.data.charge);
-    await loadBookable();
-    toast.success("Pagamento confirmado no backend. Consulta agora está confirmada.");
-    window.requestAnimationFrame(() => {
-      document.getElementById("portal-schedule-mock-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
   }
 
   if (!psychId) {
@@ -522,6 +518,7 @@ export function ScheduleConsultationBoard() {
   const hasFreeSlotsAfterBookings = hasRawSlotsFromApi;
   const paymentComplete = lastCharge?.gateway_status === "succeeded";
   const awaitingPayment = lastCharge?.gateway_status === "awaiting_payment";
+  const pickingSlots = !lastCharge;
   const priceFormatted = parseFloat(bookable.valor_consulta).toFixed(2).replace(".", ",");
   const step1Done = Boolean(selectedDate && dateOptions.includes(normalizeDayKey(selectedDate)));
   const step2Done = Boolean(selectedTime && slotsForDay.includes(selectedTime));
@@ -533,19 +530,20 @@ export function ScheduleConsultationBoard() {
       <header className="text-center sm:text-left">
         <p className="text-xs font-semibold uppercase tracking-widest text-sky-600">Agendamento</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-          {paymentComplete ? "Consulta confirmada" : "Escolha data e horário"}
+          {paymentComplete ? "Consulta confirmada" : awaitingPayment ? "Pagamento da consulta" : "Escolha data e horário"}
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           {paymentComplete ? (
             <>
-              O pagamento foi registrado na demonstração. Na lista de consultas o status fica{" "}
-              <strong className="font-semibold text-slate-800">confirmada</strong> e o horário deixa de aparecer como
-              livre.
+              Pagamento confirmado. Na lista de consultas o status aparece como{" "}
+              <strong className="font-semibold text-slate-800">confirmada</strong>.
             </>
+          ) : awaitingPayment ? (
+            <>Use o Mercado Pago abaixo para concluir o pagamento e confirmar sua sessão.</>
           ) : (
             <>
-              Mostramos apenas horários ainda livres. Horários já reservados por você (agendada ou confirmada) somem
-              desta lista.
+              Mostramos apenas horários livres. Horários já reservados por você (agendada ou confirmada) não aparecem
+              aqui.
             </>
           )}
         </p>
@@ -581,31 +579,7 @@ export function ScheduleConsultationBoard() {
         </div>
       </div>
 
-      {!paymentComplete && !lastCharge ? (
-        <section className="rounded-2xl border border-sky-200 bg-sky-50/50 p-5 shadow-sm ring-1 ring-sky-100/80">
-          <h2 className="text-base font-semibold text-slate-900">Pagamento Mercado Pago</h2>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600">
-            Valor da consulta deste profissional — pode testar sem agendar antes. Após pagar, o retorno usa{" "}
-            <code className="rounded bg-white px-1 font-mono text-[11px] ring-1 ring-slate-200">FRONTEND_URL</code> no
-            backend (ex.: <code className="rounded bg-white px-1 font-mono text-[11px]">http://localhost:3000</code>).
-          </p>
-          <div className="mt-4">
-            <MercadoPagoCheckout
-              orderId={stableOrderIdForMercadoPago(`pre-${bookable.id}`, psychId)}
-              product={{
-                title: `Consulta — ${bookable.nome}`,
-                quantity: 1,
-                unit_price: Math.max(
-                  Number.parseFloat(String(bookable.valor_consulta).replace(",", ".")) || 0,
-                  0.01,
-                ),
-              }}
-            />
-          </div>
-        </section>
-      ) : null}
-
-      {!hasRawSlotsFromApi ? (
+      {pickingSlots && !hasRawSlotsFromApi ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/95 p-5 text-center shadow-sm">
           <p className="text-sm font-medium text-amber-950">Nenhum horário livre nos próximos 7 dias</p>
           <p className="mt-2 text-xs leading-relaxed text-amber-900/85">
@@ -619,21 +593,13 @@ export function ScheduleConsultationBoard() {
             Ver outras profissionais
           </Link>
         </div>
-      ) : paymentComplete ? null : !hasFreeSlotsAfterBookings && awaitingPayment ? (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/90 p-5 shadow-sm">
-          <p className="text-sm font-medium text-sky-950">Horário reservado para você</p>
-          <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
-            Não há outros horários livres nesta janela para este profissional. Sua consulta está{" "}
-            <strong className="font-semibold text-sky-950">agendada</strong> até concluir o pagamento abaixo; depois
-            ela passa para <strong className="font-semibold text-sky-950">confirmada</strong>.
-          </p>
-        </div>
-      ) : !hasFreeSlotsAfterBookings ? (
+      ) : null}
+
+      {pickingSlots && hasRawSlotsFromApi && !hasFreeSlotsAfterBookings ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/95 p-5 text-center shadow-sm">
           <p className="text-sm font-medium text-amber-950">Nenhum horário livre no momento</p>
           <p className="mt-2 text-xs leading-relaxed text-amber-900/85">
-            Os horários que apareciam já estão ligados a consultas suas nesta demonstração. Tente outro profissional ou
-            volte mais tarde.
+            Não há vagas disponíveis neste período. Tente outro profissional ou volte mais tarde.
           </p>
           <Link
             href="/portal/agendar"
@@ -642,7 +608,19 @@ export function ScheduleConsultationBoard() {
             Ver outras profissionais
           </Link>
         </div>
-      ) : (
+      ) : null}
+
+      {awaitingPayment && !hasFreeSlotsAfterBookings ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/90 p-5 shadow-sm">
+          <p className="text-sm font-medium text-sky-950">Horário reservado</p>
+          <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
+            Sua consulta fica <strong className="font-semibold text-sky-950">agendada</strong> até o pagamento ser
+            concluído; em seguida passa para <strong className="font-semibold text-sky-950">confirmada</strong>.
+          </p>
+        </div>
+      ) : null}
+
+      {pickingSlots && hasRawSlotsFromApi && hasFreeSlotsAfterBookings && !paymentComplete ? (
         <>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
             <div className="flex items-start gap-3">
@@ -749,69 +727,76 @@ export function ScheduleConsultationBoard() {
             </button>
           </section>
         </>
-      )}
+      ) : null}
 
       {lastCharge ? (
         <section
-          id="portal-schedule-mock-payment"
-          className="scroll-mt-6 rounded-2xl border border-emerald-200/80 bg-emerald-50/60 p-5 shadow-sm"
+          id="portal-schedule-payment"
+          className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/5"
         >
-          <h2 className="text-base font-semibold text-emerald-950">Pagamento (simulação)</h2>
-          <p className="mt-1 text-xs leading-relaxed text-emerald-900/85">
-            Ambiente de demonstração: o valor abaixo é só para você testar o fluxo. Em produção, o pagamento será feito
-            pelo gateway seguro.
-          </p>
-          <dl className="mt-4 space-y-2 rounded-xl bg-white/80 p-4 text-sm text-emerald-950 ring-1 ring-emerald-100">
+          <h2 className="text-base font-semibold text-slate-900">Pagamento</h2>
+          {lastCharge.gateway_status === "awaiting_payment" ? (
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              O valor da cobrança é o da consulta reservada. Ao finalizar no Mercado Pago, o status da consulta é
+              atualizado automaticamente.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">Pagamento registrado com sucesso.</p>
+          )}
+          {selectedDate && selectedTime && lastCharge.gateway_status === "awaiting_payment" ? (
+            <p className="mt-3 text-sm text-slate-700">
+              <span className="font-medium text-slate-900">{formatLongDatePt(selectedDate)}</span>
+              {" · "}
+              <span className="font-medium text-slate-900">{formatClockPt(selectedTime)}</span>
+            </p>
+          ) : null}
+          <dl className="mt-4 space-y-2 rounded-xl border border-slate-100 bg-slate-50/80 p-4 text-sm text-slate-800">
             <div className="flex justify-between gap-4">
-              <dt className="text-emerald-800/90">Valor</dt>
+              <dt className="text-slate-500">Valor</dt>
               <dd className="font-semibold">R$ {(lastCharge.amount_cents / 100).toFixed(2).replace(".", ",")}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-emerald-800/90">Situação</dt>
+              <dt className="text-slate-500">Situação</dt>
               <dd className="font-medium">
                 {lastCharge.gateway_status === "awaiting_payment" ? "Aguardando pagamento" : "Pago"}
               </dd>
             </div>
           </dl>
           {lastCharge.gateway_status === "awaiting_payment" ? (
-            <>
-              <button
-                type="button"
-                onClick={handleSimulateGateway}
-                className="mt-4 w-full rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-50"
-              >
-                Simular pagamento concluído
-              </button>
-              {bookable ? (
-                <div className="mt-5 border-t border-emerald-200/80 pt-5">
-                  <MercadoPagoCheckout
-                    consultaId={lastAppointmentId}
-                    product={{
-                      title: `Consulta — ${bookable.nome}`,
-                      quantity: 1,
-                      unit_price: Math.round(lastCharge.amount_cents) / 100,
-                    }}
-                  />
-                </div>
-              ) : null}
-            </>
+            bookable && lastAppointmentId ? (
+              <div className="mt-5 border-t border-slate-100 pt-5">
+                <MercadoPagoCheckout
+                  consultaId={lastAppointmentId}
+                  product={{
+                    title: `Consulta — ${bookable.nome}`,
+                    quantity: 1,
+                    unit_price: Math.round(lastCharge.amount_cents) / 100,
+                  }}
+                />
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-rose-700">Não foi possível carregar os dados para o checkout. Atualize a página.</p>
+            )
           ) : (
-            <div className="mt-4 space-y-3 text-sm font-medium text-emerald-800">
+            <div className="mt-4 space-y-3 text-sm font-medium text-slate-700">
               <p>
-                Consulta com status <strong className="text-emerald-950">confirmada</strong> e pagamento registrado.
+                Consulta <strong className="text-slate-900">confirmada</strong> com pagamento registrado.
               </p>
               <p>
                 <Link
                   href="/portal/consultas"
-                  className="font-semibold text-emerald-900 underline decoration-emerald-400 underline-offset-2 hover:text-emerald-950"
+                  className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
                 >
                   Ver minhas consultas
                 </Link>
               </p>
               <button
                 type="button"
-                onClick={() => setLastCharge(null)}
-                className="w-full rounded-xl border border-emerald-400 bg-white px-4 py-3 text-sm font-semibold text-emerald-950 shadow-sm hover:bg-emerald-50"
+                onClick={() => {
+                  setLastCharge(null);
+                  setLastAppointmentId(null);
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
               >
                 Agendar outro horário
               </button>
