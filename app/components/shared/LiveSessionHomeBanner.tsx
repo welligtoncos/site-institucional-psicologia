@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  extractConsultaIdFromLiveRef,
   formatLiveElapsed,
   getSharedLiveSession,
   subscribeSharedLiveSession,
@@ -13,10 +14,8 @@ import { reconcileSharedLiveSessionWithBackend } from "@/app/lib/live-session-ba
 import { psychologistSessionRoomPath } from "@/app/lib/psychologist-session-routes";
 
 function salaHrefForPatient(shared: SharedLiveSessionState): string {
-  if (shared.ref.startsWith("portal:")) {
-    const id = shared.ref.slice("portal:".length);
-    return `/portal/consultas/sala?appointmentId=${encodeURIComponent(id)}`;
-  }
+  const id = extractConsultaIdFromLiveRef(shared.ref);
+  if (id) return `/portal/consultas/sala?appointmentId=${encodeURIComponent(id)}`;
   return "/portal/consultas/sala";
 }
 

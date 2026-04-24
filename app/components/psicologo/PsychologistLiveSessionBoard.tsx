@@ -7,14 +7,16 @@ import { toast } from "sonner";
 import {
   clearPsychologistRoomEntered,
   clearSharedLiveSession,
+  extractConsultaIdFromLiveRef,
   formatLiveElapsed,
   getSharedLiveSession,
+  liveSessionRefsSameConsulta,
   markPsychologistRoomEntered,
   setSharedLiveSession,
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
 } from "@/app/lib/live-session-shared";
-import { psychologistSessionRoomPath } from "@/app/lib/psychologist-session-routes";
+import { normalizePsychologistSalaSelectedRef, psychologistSessionRoomPath } from "@/app/lib/psychologist-session-routes";
 import {
   apiAgendaToMock,
   fetchPsychologistAgenda,
@@ -99,6 +101,15 @@ function findPickable(ref: string, list: PickableSession[]): PickableSession | u
   return list.find((s) => s.ref === ref);
 }
 
+function findPickableByRoomRef(ref: string, list: PickableSession[]): PickableSession | undefined {
+  const id = extractConsultaIdFromLiveRef(ref);
+  if (id) {
+    const byId = list.find((s) => extractConsultaIdFromLiveRef(s.ref) === id);
+    if (byId) return byId;
+  }
+  return findPickable(ref, list);
+}
+
 /** Origem da consulta + id — desambigua quando o nome é genérico ou repetido. */
 function describeLiveSessionRef(ref: string): string {
   if (ref.startsWith("appointment:")) {
@@ -111,13 +122,6 @@ function describeLiveSessionRef(ref: string): string {
     return `Agenda · ${ref.slice("agenda:".length)}`;
   }
   return ref;
-}
-
-function extractAppointmentId(ref: string): string | null {
-  if (ref.startsWith("appointment:")) return ref.slice("appointment:".length);
-  if (ref.startsWith("agenda:")) return ref.slice("agenda:".length);
-  if (ref.startsWith("portal:")) return ref.slice("portal:".length);
-  return null;
 }
 
 function pickableFromShared(s: SharedLiveSessionState): PickableSession {
@@ -143,7 +147,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const [agenda, setAgenda] = useState<PsychologistAgendaAppointment[]>([]);
   const [tick, setTick] = useState(0);
   const [hydrated, setHydrated] = useState(false);
-  const [selectedRef, setSelectedRef] = useState(() => (lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : ""));
+  const [selectedRef, setSelectedRef] = useState(() =>
+    lockedRoomRef && lockedRoomRef.length > 0 ? normalizePsychologistSalaSelectedRef(lockedRoomRef) : "",
+  );
   const [meetDraft, setMeetDraft] = useState("");
   const [shared, setShared] = useState<SharedLiveSessionState | null>(null);
   const patientOnlineSignal = useRef<
@@ -195,7 +201,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
       const cur = getSharedLiveSession();
       if (cur) {
-        const aid = extractAppointmentId(cur.ref);
+        const aid = extractConsultaIdFromLiveRef(cur.ref);
         if (aid) {
           const appt = mapped.find((a) => a.id === aid);
           if (appt) {
@@ -352,7 +358,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   useEffect(() => {
     if (lockedRoomRef && lockedRoomRef.length > 0) {
-      setSelectedRef(lockedRoomRef);
+      setSelectedRef(normalizePsychologistSalaSelectedRef(lockedRoomRef));
     }
   }, [lockedRoomRef]);
 
@@ -363,14 +369,14 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   const resolvedSession = useMemo((): PickableSession | null => {
     if (selectedRef) {
-      const fromList = findPickable(selectedRef, pickableFromTodayOnward);
+      const fromList = findPickableByRoomRef(selectedRef, pickableFromTodayOnward);
       if (fromList) return fromList;
     }
     const s = shared;
     if (
       s &&
       selectedRef &&
-      s.ref === selectedRef &&
+      liveSessionRefsSameConsulta(s.ref, selectedRef) &&
       (s.phase === "patient_waiting" || s.phase === "live" || s.phase === "ended")
     ) {
       return pickableFromShared(s);
@@ -398,7 +404,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     if (!isRoomPage) return;
     const roomRef = lockedRoomRef && lockedRoomRef.length > 0 ? lockedRoomRef : selectedRef;
     if (!roomRef) return;
-    const appointmentId = extractAppointmentId(roomRef);
+    const appointmentId = extractConsultaIdFromLiveRef(roomRef);
     if (!appointmentId) return;
     if (roomWsRef.current && roomWsAppointmentIdRef.current === appointmentId) return;
     if (roomWsRef.current) {
@@ -422,23 +428,26 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     if (isRoomPage) return;
     const s = getSharedLiveSession();
     if (s && (s.phase === "patient_waiting" || s.phase === "live")) {
-      setSelectedRef(s.ref);
+      setSelectedRef(normalizePsychologistSalaSelectedRef(s.ref));
     }
   }, [shared, isRoomPage]);
 
   useEffect(() => {
     const cur = getSharedLiveSession();
-    if (cur?.ref === selectedRef) {
+    if (cur && liveSessionRefsSameConsulta(cur.ref, selectedRef)) {
       setMeetDraft(cur.meetUrl ?? "");
       return;
     }
-    const fromAgenda = agenda.find((item) => `appointment:${item.id}` === selectedRef)?.videoCallLink;
+    const selId = extractConsultaIdFromLiveRef(selectedRef);
+    const fromAgenda = selId
+      ? agenda.find((item) => item.id === selId)?.videoCallLink
+      : agenda.find((item) => `appointment:${item.id}` === selectedRef)?.videoCallLink;
     setMeetDraft(fromAgenda ?? "");
   }, [selectedRef, agenda]);
 
   useEffect(() => {
     const cur = getSharedLiveSession();
-    if (cur?.ref !== selectedRef || !cur.meetUrl) return;
+    if (!cur || !liveSessionRefsSameConsulta(cur.ref, selectedRef) || !cur.meetUrl) return;
     setMeetDraft(cur.meetUrl);
   }, [shared?.meetUrl, shared?.ref, selectedRef]);
 
@@ -497,7 +506,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const patientWaitingSameRef =
     shared?.phase === "patient_waiting" &&
     Boolean(selectedRef) &&
-    shared.ref === selectedRef;
+    liveSessionRefsSameConsulta(shared.ref, selectedRef);
 
   /** Paciente na sala + link + janela do fluxo (estado compartilhado) liberou o início. */
   const patientPathStartReady = useMemo(() => {
@@ -533,7 +542,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
       toast.error("Informe um link válido para salvar.");
       return;
     }
-    const appointmentId = extractAppointmentId(resolvedSession.ref);
+    const appointmentId = extractConsultaIdFromLiveRef(resolvedSession.ref);
     if (!appointmentId) {
       toast.error("Consulta não identificada para salvar o link.");
       return;
@@ -560,7 +569,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   async function handleStart() {
     if (!resolvedSession) return;
-    const appointmentId = extractAppointmentId(resolvedSession.ref);
+    const appointmentId = extractConsultaIdFromLiveRef(resolvedSession.ref);
     if (!appointmentId) {
       toast.error("Consulta não identificada.");
       return;
@@ -624,7 +633,9 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   useEffect(() => {
     if (!hydrated || shared?.phase === "live" || shared?.phase === "patient_waiting") return;
-    const exists = shared ? pickableFromTodayOnward.some((s) => s.ref === shared.ref) : true;
+    const exists = shared
+      ? pickableFromTodayOnward.some((s) => liveSessionRefsSameConsulta(s.ref, shared.ref))
+      : true;
     if (shared && !exists && shared.phase !== "ended") {
       clearSharedLiveSession();
       setShared(null);
@@ -638,9 +649,13 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   /** URL para abrir a Meet/Zoom (API ou rascunho local). */
   const openMeetHref = useMemo(() => {
     if (!selectedRef) return undefined;
-    const fromShared = shared?.ref === selectedRef ? shared.meetUrl?.trim() : "";
+    const fromShared =
+      shared && liveSessionRefsSameConsulta(shared.ref, selectedRef) ? shared.meetUrl?.trim() : "";
     if (fromShared) return fromShared;
-    const fromAgenda = agenda.find((item) => `appointment:${item.id}` === selectedRef)?.videoCallLink?.trim();
+    const selId = extractConsultaIdFromLiveRef(selectedRef);
+    const fromAgenda = selId
+      ? agenda.find((item) => item.id === selId)?.videoCallLink?.trim()
+      : agenda.find((item) => `appointment:${item.id}` === selectedRef)?.videoCallLink?.trim();
     if (fromAgenda) return fromAgenda;
     const draft = meetDraft.trim();
     return draft || undefined;
@@ -648,8 +663,11 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
 
   const roomGroups = useMemo(() => {
     const list = [...pickableFromTodayOnward];
-    const refs = new Set(list.map((x) => x.ref));
-    if (shared && shared.phase === "patient_waiting" && !refs.has(shared.ref)) {
+    if (
+      shared &&
+      shared.phase === "patient_waiting" &&
+      !pickableFromTodayOnward.some((s) => liveSessionRefsSameConsulta(s.ref, shared.ref))
+    ) {
       const row = pickableFromShared(shared);
       list.push(row);
       list.sort((x, y) => {
@@ -666,7 +684,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const flatRoomList = useMemo(() => roomGroups.flatMap((g) => g.items), [roomGroups]);
 
   const selectedRoomIndex = useMemo(() => {
-    const i = flatRoomList.findIndex((s) => s.ref === selectedRef);
+    const i = flatRoomList.findIndex((s) => liveSessionRefsSameConsulta(s.ref, selectedRef));
     return i >= 0 ? i + 1 : 0;
   }, [flatRoomList, selectedRef]);
 
@@ -701,7 +719,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
         </div>
       ) : null}
 
-      {showLiveUi && isRoomPage && shared && lockedRoomRef && shared.ref !== lockedRoomRef ? (
+      {showLiveUi && isRoomPage && shared && lockedRoomRef && !liveSessionRefsSameConsulta(shared.ref, lockedRoomRef) ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="font-medium">Outra sala está com o cronômetro ativo.</p>
           <Link href={psychologistSessionRoomPath(shared.ref)} className="mt-2 inline-block font-semibold text-sky-800 underline">
@@ -1064,7 +1082,7 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
         </>
       ) : null}
 
-      {showLiveUi && shared && isRoomPage && lockedRoomRef && shared.ref === lockedRoomRef ? (
+      {showLiveUi && shared && isRoomPage && lockedRoomRef && liveSessionRefsSameConsulta(shared.ref, lockedRoomRef) ? (
         <div className="overflow-hidden rounded-2xl border-2 border-sky-200 bg-gradient-to-b from-white to-sky-50/40 shadow-xl">
           <div className="border-b border-sky-100 bg-sky-50/80 px-6 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-900">Em andamento</p>

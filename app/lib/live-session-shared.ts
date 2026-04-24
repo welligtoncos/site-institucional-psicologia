@@ -20,6 +20,30 @@ export function formatLiveElapsed(ms: number): string {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
+/** Id da consulta a partir de refs do estado compartilhado (`portal:`, `appointment:`, `agenda:`). */
+export function extractConsultaIdFromLiveRef(ref: string): string | null {
+  if (ref.startsWith("portal:")) {
+    const id = ref.slice("portal:".length).trim();
+    return id || null;
+  }
+  if (ref.startsWith("appointment:")) {
+    const id = ref.slice("appointment:".length).trim();
+    return id || null;
+  }
+  if (ref.startsWith("agenda:")) {
+    const id = ref.slice("agenda:".length).trim();
+    return id || null;
+  }
+  return null;
+}
+
+/** Mesma consulta no portal (`portal:uuid`) ou na agenda do psicólogo (`appointment:uuid`). */
+export function liveSessionRefsSameConsulta(a: string, b: string): boolean {
+  const ia = extractConsultaIdFromLiveRef(a);
+  const ib = extractConsultaIdFromLiveRef(b);
+  return ia !== null && ib !== null && ia === ib;
+}
+
 /** Reservado para simulações futuras; o play libera assim que houver link e paciente na fila. */
 export const PSYCH_START_MIN_WAIT_MS = 0;
 
