@@ -18,6 +18,7 @@ from app.models.clinical import (
 )
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
+from app.schemas.mercado_pago_schema import MercadoPagoSyncReturnResponse
 from app.schemas.patient_appointment_schema import (
     AppointmentJoinRoomResponse,
     AppointmentLeaveRoomResponse,
@@ -28,6 +29,7 @@ from app.schemas.patient_appointment_schema import (
     PatientAppointmentSummary,
     PatientChargeSummary,
 )
+from app.services.mercado_pago_service import MercadoPagoConfigurationError, MercadoPagoPreferenceApiError, MercadoPagoService
 
 
 logger = logging.getLogger(__name__)
@@ -224,6 +226,100 @@ class PatientAppointmentService:
             },
         )
         return response
+
+    async def sync_mercadopago_payment_from_return(self, user: User, *, payment_id: str) -> MercadoPagoSyncReturnResponse:
+        """
+        Após redirect do Checkout Pro: consulta o pagamento na API do MP e persiste no BD se aprovado.
+        Exige JWT do paciente dono da consulta (external_reference = UUID da consulta).
+        """
+        self._ensure_patient(user)
+        try:
+            svc = MercadoPagoService()
+        except MercadoPagoConfigurationError:
+            return MercadoPagoSyncReturnResponse(
+                synced=False,
+                detail="Servidor sem credenciais do Mercado Pago configuradas.",
+            )
+        try:
+            pay = svc.get_payment(payment_id)
+        except MercadoPagoPreferenceApiError as exc:
+            return MercadoPagoSyncReturnResponse(synced=False, detail=str(exc))
+
+        mp_status = (pay.get("status") or "").strip()
+        if mp_status != "approved":
+            return MercadoPagoSyncReturnResponse(
+                synced=False,
+                detail=f"Pagamento ainda não aprovado no Mercado Pago (status: {mp_status or 'desconhecido'}).",
+            )
+
+        ext_ref = pay.get("external_reference")
+        if ext_ref is None or str(ext_ref).strip() == "":
+            return MercadoPagoSyncReturnResponse(
+                synced=False,
+                detail="Pagamento sem vínculo de consulta. Ao pagar uma consulta, use o fluxo com consulta agendada.",
+            )
+
+        try:
+            consulta_id = UUID(str(ext_ref))
+        except ValueError:
+            return MercadoPagoSyncReturnResponse(
+                synced=False,
+                detail="Este pagamento não está vinculado a uma consulta neste sistema.",
+            )
+
+        c = await self._clinical.get_consulta_com_cobranca_do_paciente(consulta_id, user.id)
+        if c is None:
+            raise NotFoundError("Consulta não encontrada para este paciente ou pagamento não pertence à sua conta.")
+
+        link = f"https://meet.exemplo.com/{c.id}"
+        try:
+            updated, _chg = await self._clinical.mark_payment_success_for_consulta(
+                consulta_id,
+                default_video_link=link,
+                mercadopago_payment_id=str(payment_id).strip(),
+            )
+        except ConflictError as exc:
+            msg = str(exc)
+            if "Pagamento já registrado" in msg or "já registrado" in msg:
+                return MercadoPagoSyncReturnResponse(
+                    synced=True,
+                    already_registered=True,
+                    detail="Seu pagamento já estava registrado no sistema.",
+                )
+            raise
+
+        loaded = await self._clinical.get_consulta_com_cobranca_do_paciente(updated.id, user.id)
+        if loaded is None:
+            raise NotFoundError("Pagamento confirmado, mas não foi possível carregar a consulta.")
+
+        pay_view = PatientAppointmentPaymentResponse(
+            appointment=self._appointment_summary(loaded),
+            charge=self._charge_summary(loaded),
+        )
+        self._publish_business_event(
+            event_type="appointment.payment.mercadopago_success",
+            actor=str(user.id),
+            resource_id=str(pay_view.appointment.id),
+            data={
+                "status": pay_view.appointment.status,
+                "payment": pay_view.appointment.payment,
+                "charge_id": str(pay_view.charge.id),
+                "gateway_status": pay_view.charge.gateway_status,
+                "payment_id": str(payment_id).strip(),
+            },
+        )
+        self._publish_business_event(
+            event_type="appointment.confirmed",
+            actor=str(user.id),
+            resource_id=str(pay_view.appointment.id),
+            data={
+                "status": pay_view.appointment.status,
+                "payment": pay_view.appointment.payment,
+                "video_call_link": pay_view.appointment.video_call_link,
+            },
+        )
+
+        return MercadoPagoSyncReturnResponse(synced=True, detail="Consulta atualizada com sucesso.")
 
     async def list_my_appointments(
         self,

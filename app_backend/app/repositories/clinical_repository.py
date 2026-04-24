@@ -361,6 +361,7 @@ class ClinicalRepository:
         consulta_id: UUID,
         *,
         default_video_link: str | None = None,
+        mercadopago_payment_id: str | None = None,
     ) -> tuple[Consulta, Cobranca]:
         stmt = (
             select(Consulta)
@@ -380,6 +381,9 @@ class ClinicalRepository:
 
         cobranca.status_gateway = CobrancaStatusGateway.succeeded
         cobranca.pago_em = datetime.utcnow()
+        if mercadopago_payment_id and mercadopago_payment_id.strip():
+            cobranca.provedor_gateway = "mercadopago"
+            cobranca.id_intent_gateway = mercadopago_payment_id.strip()[:128]
         consulta.situacao_pagamento = ConsultaSituacaoPagamento.pago
         if consulta.status == ConsultaStatus.agendada:
             consulta.status = ConsultaStatus.confirmada

@@ -60,8 +60,11 @@ class MercadoPagoService:
                 "FRONTEND_URL deve ser uma URL absoluta (ex.: https://www.seu-site.com ou http://127.0.0.1:3000)."
             )
 
-        order_id = item.order_id if item.order_id is not None else _generate_order_id()
-        external_reference = str(order_id)
+        if item.consulta_id is not None:
+            external_reference = str(item.consulta_id)
+        else:
+            order_id = item.order_id if item.order_id is not None else _generate_order_id()
+            external_reference = str(order_id)
 
         preference_data: dict[str, Any] = {
             "items": [
@@ -107,10 +110,42 @@ class MercadoPagoService:
             sandbox_init_point=sandbox_init,
         )
 
+    def get_payment(self, payment_id: str) -> dict[str, Any]:
+        """
+        Consulta um pagamento na API oficial (GET payment).
+        Use no servidor para confirmar status após retorno do checkout ou reconciliar com webhooks.
+        """
+        raw = str(payment_id).strip()
+        if not raw or not raw.isdigit():
+            raise MercadoPagoPreferenceApiError("payment_id inválido (esperado numérico do Mercado Pago).")
+        result = self.sdk.payment().get(raw)
+        status = result.get("status")
+        body = result.get("response")
+        if status != 200 or not isinstance(body, dict):
+            msg = _format_payment_fetch_error(result)
+            raise MercadoPagoPreferenceApiError(msg)
+        return body
+
 
 def _generate_order_id() -> int:
     """Inteiro positivo quando o cliente não envia order_id (evita colisão trivial)."""
     return secrets.randbelow(2_147_000_000) + 1
+
+
+def _format_payment_fetch_error(result: dict[str, Any]) -> str:
+    """Extrai texto útil quando GET payment falha."""
+    status = result.get("status")
+    resp = result.get("response")
+    parts: list[str] = []
+    if status is not None:
+        parts.append(f"HTTP {status}")
+    if isinstance(resp, dict):
+        message = resp.get("message")
+        if isinstance(message, str) and message.strip():
+            parts.append(message.strip())
+    if parts:
+        return "Mercado Pago (pagamento): " + " — ".join(parts)
+    return "Não foi possível consultar o pagamento no Mercado Pago."
 
 
 def _format_preference_error(result: dict[str, Any]) -> str:

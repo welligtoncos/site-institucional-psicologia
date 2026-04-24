@@ -785,7 +785,7 @@ export function ScheduleConsultationBoard() {
               {bookable ? (
                 <div className="mt-5 border-t border-emerald-200/80 pt-5">
                   <MercadoPagoCheckout
-                    orderId={stableOrderIdForMercadoPago(lastCharge.id, lastAppointmentId)}
+                    consultaId={lastAppointmentId}
                     product={{
                       title: `Consulta — ${bookable.nome}`,
                       quantity: 1,

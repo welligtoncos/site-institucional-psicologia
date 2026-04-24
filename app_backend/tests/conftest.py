@@ -15,6 +15,7 @@ os.environ["DEBUG"] = "true"
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("MERCADO_PAGO_ACCESS_TOKEN", "TEST_ACCESS_TOKEN")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
+os.environ.setdefault("MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET", "test-internal-webhook-secret")
 
 
 def pytest_configure() -> None:

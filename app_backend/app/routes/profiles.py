@@ -21,6 +21,7 @@ from app.schemas.availability_schema import (
     PsychologistAvailabilityPutRequest,
     PsychologistAvailabilityResponse,
 )
+from app.schemas.mercado_pago_schema import MercadoPagoSyncReturnRequest, MercadoPagoSyncReturnResponse
 from app.schemas.profile_schema import (
     PatientMeResponse,
     PatientProfilePatchRequest,
@@ -198,6 +199,23 @@ async def patient_appointment_simulate_payment(
     svc: PatientAppointmentService = Depends(get_patient_appointment_service),
 ) -> PatientAppointmentPaymentResponse:
     return await svc.simulate_payment_success(current_user, appointment_id)
+
+
+@router.post(
+    "/patient/me/mercadopago/sync-return",
+    response_model=MercadoPagoSyncReturnResponse,
+    summary="Sincronizar pagamento após retorno do Mercado Pago",
+    description=(
+        "Requer JWT `patient`. Consulta o pagamento na API do Mercado Pago e atualiza cobrança/consulta se aprovado. "
+        "Complementa webhooks (dev ou quando a notificação atrasar)."
+    ),
+)
+async def patient_mercadopago_sync_return(
+    body: MercadoPagoSyncReturnRequest,
+    current_user: User = Depends(get_current_user),
+    svc: PatientAppointmentService = Depends(get_patient_appointment_service),
+) -> MercadoPagoSyncReturnResponse:
+    return await svc.sync_mercadopago_payment_from_return(current_user, payment_id=body.payment_id)
 
 
 @router.get(

@@ -88,6 +88,13 @@ class Settings(BaseSettings):
         description="IPN/notificações: ex. https://api.seudominio.com/mercado-pago/notifications",
     )
 
+    # Segredo para Lambda/serviços internos chamarem POST /internal/mercadopago/confirm-payment
+    mercadopago_internal_webhook_secret: str | None = Field(
+        default=None,
+        validation_alias="MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET",
+        description="Header X-Internal-Webhook-Secret obrigatório para confirmar pagamento no BD",
+    )
+
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 

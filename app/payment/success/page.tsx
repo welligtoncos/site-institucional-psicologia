@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { PaymentReturnDetails } from "@/app/components/payments/PaymentReturnDetails";
 import { PaymentReturnDisclaimer } from "@/app/components/payments/PaymentReturnDisclaimer";
+import { PaymentSuccessSync } from "@/app/components/payments/PaymentSuccessSync";
 import { Container, Section } from "@/app/components/ui/SitePrimitives";
 import { parseMercadoPagoReturnParamsFromRecord } from "@/app/lib/mercado-pago-return-params";
 
@@ -24,11 +25,14 @@ export default async function PaymentSuccessPage({ searchParams }: PageProps) {
     <Section className="py-12 sm:py-16">
       <Container className="max-w-2xl">
         <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Pagamento</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Pagamento aprovado com sucesso.</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+          Pronto! Seu pagamento já foi aprovado.
+        </h1>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
-          Obrigado. Se o Mercado Pago redirecionou você até aqui com status de aprovação, o fluxo de checkout foi
-          concluído do lado do gateway.
+          Obrigado. O Mercado Pago concluiu o checkout; abaixo registramos sua consulta no sistema quando você está
+          logado no portal (na mesma conta em que agendou).
         </p>
+        <PaymentSuccessSync initialParams={params} />
         <PaymentReturnDetails params={params} />
         <PaymentReturnDisclaimer />
         <p className="mt-8">

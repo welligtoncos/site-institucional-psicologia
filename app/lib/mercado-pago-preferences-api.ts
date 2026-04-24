@@ -7,7 +7,9 @@ import { getBackendApiUrl } from "@/app/lib/backend";
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
 
 export type MercadoPagoPreferenciaItem = {
-  /** ID do pedido no seu sistema (vai em `external_reference` na preferência). */
+  /** UUID da consulta — prioridade sobre `order_id`; mesmo valor usado pelo webhook para gravar no BD. */
+  consulta_id?: string;
+  /** ID numérico alternativo em `external_reference` se não houver `consulta_id`. */
   order_id?: number;
   title: string;
   quantity: number;

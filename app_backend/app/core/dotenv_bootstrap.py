@@ -14,3 +14,10 @@ def load_project_dotenv(project_root: Path | None = None) -> None:
     load_dotenv(env_path, override=True)
     if preserved and "@db:" in preserved:
         os.environ["DATABASE_URL"] = preserved
+    # Garante que Settings() releia os.environ após alterar o .env (evita segredo antigo em get_settings cacheado).
+    try:
+        from app.core.config import get_settings
+
+        get_settings.cache_clear()
+    except Exception:
+        pass

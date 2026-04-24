@@ -37,7 +37,9 @@ export type MercadoPagoCheckoutProduct = MercadoPagoPreferenciaItem;
 type MercadoPagoCheckoutProps = {
   /** Dados do item (no futuro: derivar do carrinho ou da consulta). */
   product: MercadoPagoCheckoutProduct;
-  /** Opcional: enviado ao backend como `order_id` / `external_reference`. */
+  /** UUID da consulta — vira `external_reference` e permite o webhook atualizar o BD com segurança. */
+  consultaId?: string | null;
+  /** Opcional: enviado como `external_reference` numérico se não houver `consultaId`. */
   orderId?: number;
 };
 
@@ -48,7 +50,7 @@ function getPublicKey(): string {
   return raw.trim().replace(/\s+/g, "");
 }
 
-export function MercadoPagoCheckout({ product, orderId }: MercadoPagoCheckoutProps) {
+export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPagoCheckoutProps) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
@@ -68,9 +70,14 @@ export function MercadoPagoCheckout({ product, orderId }: MercadoPagoCheckoutPro
     setLoadState("loading");
     setPreferenceId(null);
     setErrorDetail(null);
+    const trimmedConsulta = consultaId?.trim();
     const result = await createMercadoPagoPreferencia({
       ...product,
-      ...(orderId !== undefined ? { order_id: orderId } : {}),
+      ...(trimmedConsulta
+        ? { consulta_id: trimmedConsulta }
+        : orderId !== undefined
+          ? { order_id: orderId }
+          : {}),
     });
     if (!result.ok) {
       setErrorDetail(result.detail);
@@ -80,7 +87,7 @@ export function MercadoPagoCheckout({ product, orderId }: MercadoPagoCheckoutPro
     initMercadoPago(publicKey);
     setPreferenceId(result.data.preference_id);
     setLoadState("ready");
-  }, [product, orderId, publicKey]);
+  }, [product, consultaId, orderId, publicKey]);
 
   if (!publicKey) {
     return (

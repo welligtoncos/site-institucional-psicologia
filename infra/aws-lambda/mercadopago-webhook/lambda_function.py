@@ -1,15 +1,21 @@
 """
 Webhook Mercado Pago para AWS Lambda (API Gateway).
 
-Variável de ambiente na função: MERCADO_PAGO_ACCESS_TOKEN
+Variáveis na função:
+  MERCADO_PAGO_ACCESS_TOKEN — consultar pagamento na API MP
+  MERCADO_PAGO_CONFIRM_PAYMENT_URL — POST HTTPS no FastAPI (ex.: .../internal/mercadopago/confirm-payment)
+  MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET — mesmo valor do app_backend (header X-Internal-Webhook-Secret)
 """
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
+import uuid
 
 MERCADO_PAGO_ACCESS_TOKEN = os.environ.get("MERCADO_PAGO_ACCESS_TOKEN")
+CONFIRM_PAYMENT_URL = os.environ.get("MERCADO_PAGO_CONFIRM_PAYMENT_URL", "").strip()
+INTERNAL_WEBHOOK_SECRET = os.environ.get("MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET", "").strip()
 
 
 def lambda_handler(event, context):
@@ -66,13 +72,25 @@ def lambda_handler(event, context):
 
         status_interno = mapear_status(status)
 
-        return response(200, {
+        persistido = False
+        persist_erro = None
+        if status == "approved" and external_reference:
+            persistido, persist_erro = persistir_pagamento_no_backend(
+                external_reference, payment_id, status
+            )
+
+        body_ok = {
             "message": "Webhook Mercado Pago processado com sucesso",
             "payment_id": payment_id,
             "status_mercado_pago": status,
             "status_interno": status_interno,
-            "external_reference": external_reference
-        })
+            "external_reference": external_reference,
+            "persistido_bd": persistido,
+        }
+        if persist_erro:
+            body_ok["persist_erro"] = persist_erro
+
+        return response(200, body_ok)
 
     except Exception as erro:
         print("Erro ao processar webhook:", str(erro))
@@ -142,6 +160,53 @@ def mapear_status(status):
         return "PAGAMENTO_NAO_ENCONTRADO_TESTE"
 
     return "DESCONHECIDO"
+
+
+def persistir_pagamento_no_backend(external_reference, payment_id, status_mp):
+    """
+    Grava pagamento no PostgreSQL via FastAPI (somente se external_reference for UUID da consulta).
+    Retorna (sucesso_bool, mensagem_erro_ou_None).
+    """
+    if not CONFIRM_PAYMENT_URL or not INTERNAL_WEBHOOK_SECRET:
+        return False, (
+            "MERCADO_PAGO_CONFIRM_PAYMENT_URL ou MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET não configurados na Lambda"
+        )
+
+    try:
+        uuid.UUID(str(external_reference))
+    except (ValueError, TypeError):
+        return False, "external_reference não é UUID — use consulta_id na preferência"
+
+    payload = json.dumps(
+        {
+            "consulta_id": str(external_reference),
+            "payment_id": str(payment_id),
+            "status": str(status_mp),
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        CONFIRM_PAYMENT_URL,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-Internal-Webhook-Secret": INTERNAL_WEBHOOK_SECRET,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            raw = res.read().decode("utf-8")
+            code = getattr(res, "status", None) or res.getcode()
+            if code != 200:
+                return False, f"backend HTTP {code}: {raw[:500]}"
+            return True, None
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        return False, f"backend HTTP {e.code}: {err_body[:500]}"
+    except Exception as exc:
+        return False, str(exc)[:500]
 
 
 def response(status_code, body):
