@@ -15,14 +15,28 @@ export function HeroSection() {
             Clinica Harmonia Psicologia
           </h1>
           <p className="text-base leading-relaxed text-slate-600 sm:text-lg lg:text-xl">
-            Atendimento psicologico humanizado para adolescentes, adultos e casais, com escuta
-            profissional, plano terapeutico personalizado e foco em qualidade de vida.
+            Atendimento psicologico humanizado para adolescentes, adultos e casais, com escuta profissional, plano
+            terapeutico personalizado e foco em qualidade de vida.
+          </p>
+          <p className="text-sm font-medium text-sky-800 sm:text-base">
+            Agende online em poucos minutos: crie seu acesso ao portal e escolha o melhor horario.
           </p>
         </div>
 
-        <ActionLink href="/contato" className="text-base">
-          Agendar consulta
-        </ActionLink>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <ActionLink href="/register" className="text-base">
+            Criar conta e agendar
+          </ActionLink>
+          <ActionLink href="/login?next=/portal" variant="secondary" className="text-base">
+            Ja tenho conta
+          </ActionLink>
+        </div>
+
+        <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+          <li className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">Cadastro rapido</li>
+          <li className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">Agenda online 24h</li>
+          <li className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">Pagamento simples e seguro</li>
+        </ul>
       </Container>
     </section>
   );

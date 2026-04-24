@@ -72,9 +72,9 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/contato" className="text-sky-800 underline hover:text-sky-950">
+                  <a href={`mailto:${siteConfig.email}`} className="text-sky-800 underline hover:text-sky-950">
                     Dúvidas frequentes / contato
-                  </Link>
+                  </a>
                 </li>
               </ul>
             </div>
@@ -82,9 +82,9 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Privacidade</p>
               <p className="mt-2 text-sm leading-relaxed text-slate-600">
                 Tratamos seus dados com sigilo.{" "}
-                <Link href="/contato" className="font-semibold text-sky-800 underline hover:text-sky-950">
+                <a href={`mailto:${siteConfig.email}`} className="font-semibold text-sky-800 underline hover:text-sky-950">
                   Política e LGPD
-                </Link>{" "}
+                </a>{" "}
                 — solicite pelo canal oficial da clínica.
               </p>
             </div>

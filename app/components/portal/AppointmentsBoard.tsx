@@ -226,6 +226,8 @@ export function AppointmentsBoard() {
 
 function AppointmentRow({ a }: { a: MockAppointment }) {
   const upcoming = isAppointmentUpcoming(a);
+  const canOpenRoomFlow =
+    a.format === "Online" && upcoming && a.payment === "Pago" && (a.status === "confirmada" || a.status === "em_andamento");
 
   return (
     <article className="rounded-lg border border-slate-200/90 bg-white px-4 py-3">
@@ -255,15 +257,13 @@ function AppointmentRow({ a }: { a: MockAppointment }) {
 
       {a.format === "Online" && upcoming ? (
         <div className="mt-3 border-t border-slate-100 pt-3">
-          {a.videoCallLink ? (
-            <a
-              href={a.videoCallLink}
-              target="_blank"
-              rel="noopener noreferrer"
+          {canOpenRoomFlow ? (
+            <Link
+              href={`/portal/consultas/sala?appointmentId=${encodeURIComponent(a.id)}`}
               className="inline-flex text-sm font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
             >
-              Abrir sessão online
-            </a>
+              Entrar na sala online
+            </Link>
           ) : (
             <p className="text-xs text-slate-500">Link da sessão aparece após confirmação do pagamento.</p>
           )}

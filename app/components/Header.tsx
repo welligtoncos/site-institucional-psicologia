@@ -46,7 +46,7 @@ export function Header() {
           </nav>
 
           <Link
-            href="/contato"
+            href="/login?next=/portal"
             className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-sky-600/25 transition hover:bg-sky-700"
           >
             Agendar

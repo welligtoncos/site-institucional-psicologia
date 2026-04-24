@@ -160,11 +160,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             ) : null}
 
             <p className="mt-6 text-xs text-slate-500">
-              Dúvidas sobre credenciais? Fale com a recepção ou use o{" "}
-              <Link href="/contato" className="font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                contato
-              </Link>{" "}
-              do site.
+              Dúvidas sobre credenciais? Fale com a recepção da clínica por telefone ou e-mail.
             </p>
           </div>
 

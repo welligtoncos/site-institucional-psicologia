@@ -141,12 +141,7 @@ export function LoginForm() {
           {heading}
         </h2>
         <p className={`mt-2 text-sm leading-relaxed ${theme.sub}`}>{lead}</p>
-        {patientOnlyVisual ? (
-          <p className="mt-3 rounded-xl border border-sky-100/90 bg-sky-50/50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-            <strong className="font-semibold text-slate-800">Segurança:</strong> após entrar, você só acessa o painel do
-            paciente se o seu cadastro for de paciente — o servidor valida o perfil.
-          </p>
-        ) : psychologistOnlyVisual ? (
+        {psychologistOnlyVisual ? (
           <p className="mt-3 rounded-xl border border-emerald-100/90 bg-emerald-50/50 px-3 py-2 text-xs leading-relaxed text-slate-600">
             <strong className="font-semibold text-slate-800">Segurança:</strong> o acesso profissional só é liberado para
             contas de psicólogo ou administrador.
@@ -233,13 +228,6 @@ export function LoginForm() {
               className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
             >
               Cadastrar como paciente
-            </Link>
-            <span className="text-slate-400"> · </span>
-            <Link
-              href="/login?next=/psicologo"
-              className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
-            >
-              Acesso para psicólogos
             </Link>
           </>
         ) : (

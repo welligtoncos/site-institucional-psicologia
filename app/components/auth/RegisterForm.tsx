@@ -137,15 +137,7 @@ export function RegisterForm() {
       </div>
 
       <p className="text-xs leading-relaxed text-slate-500">
-        Ao concluir o cadastro, você declara ter lido e aceito os{" "}
-        <Link href="/contato" className="font-medium text-sky-800 underline hover:text-sky-950">
-          termos de uso
-        </Link>{" "}
-        e a{" "}
-        <Link href="/contato" className="font-medium text-sky-800 underline hover:text-sky-950">
-          política de privacidade
-        </Link>
-        .
+        Ao concluir o cadastro, você declara ter lido e aceito os termos de uso e a política de privacidade da clínica.
       </p>
 
       {errorMessage ? (

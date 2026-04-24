@@ -106,7 +106,11 @@ function isEligibleForLiveSession(a: LiveAppointment, todayIsoDate: string): boo
   return a.status === "confirmada" || a.status === "em_andamento";
 }
 
-export function PatientLiveSessionBoard() {
+type PatientLiveSessionBoardProps = {
+  autoOpenAppointmentId?: string;
+};
+
+export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSessionBoardProps) {
   const [today] = useState(() => todayIso());
   const [appointments, setAppointments] = useState<LiveAppointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +121,7 @@ export function PatientLiveSessionBoard() {
   const roomWsRef = useRef<WebSocket | null>(null);
   const roomWsAppointmentIdRef = useRef<string>("");
   const [roomRealtimeById, setRoomRealtimeById] = useState<Record<string, RealtimeRoomSnapshot>>({});
+  const autoOpenTriedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     const result = await listPatientAppointments(today);
@@ -361,6 +366,12 @@ export function PatientLiveSessionBoard() {
       });
   }, [appointments, today]);
 
+  const selectedAppointmentId = autoOpenAppointmentId?.trim() || "";
+  const visibleSessions = useMemo(() => {
+    if (!selectedAppointmentId) return eligibleSessions;
+    return eligibleSessions.filter((a) => a.id === selectedAppointmentId);
+  }, [eligibleSessions, selectedAppointmentId]);
+
   async function handleEnterWaiting(apt: LiveAppointment) {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
@@ -407,6 +418,18 @@ export function PatientLiveSessionBoard() {
     toast.success("Na sala de espera.");
   }
 
+  useEffect(() => {
+    const appointmentId = autoOpenAppointmentId?.trim();
+    if (!appointmentId || autoOpenTriedRef.current || loading) return;
+    const apt = eligibleSessions.find((item) => item.id === appointmentId);
+    autoOpenTriedRef.current = true;
+    if (!apt) {
+      toast.error("Consulta online não disponível para entrada agora.");
+      return;
+    }
+    void handleEnterWaiting(apt);
+  }, [autoOpenAppointmentId, eligibleSessions, loading]);
+
   /** Sai da sala de espera sem encerrar consulta no portal — pode entrar de novo quando quiser. */
   async function handleLeaveWaitingRoom(apt: LiveAppointment) {
     const ref = portalRef(apt.id);
@@ -440,13 +463,13 @@ export function PatientLiveSessionBoard() {
     shared?.phase === "live" && plannedMs > 0 ? Math.min(100, (elapsedMs / plannedMs) * 100) : 0;
 
   return (
-    <div className="space-y-8">
+    <div id="portal-live-room" className="space-y-8">
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-800">Atendimento ao vivo</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Atendimento online</h1>
         <p className="mt-2 max-w-xl text-sm text-slate-600">
-          Só consultas online, pagas e confirmadas (ou em andamento). O tempo da sessão segue o horário e a duração marcados na
-          agenda; após o fim do slot você pode entrar em outra consulta.
+          Aqui aparecem apenas consultas online com pagamento confirmado e status de confirmada ou em andamento. A sessão respeita o
+          horário e a duração definidos na agenda; quando esse período termina, você pode acessar normalmente a próxima consulta.
         </p>
       </section>
 
@@ -454,14 +477,25 @@ export function PatientLiveSessionBoard() {
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="text-sm text-slate-700">Carregando consultas…</p>
         </div>
-      ) : eligibleSessions.length === 0 ? (
+      ) : visibleSessions.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="text-sm text-slate-700">
-            Nenhuma consulta online paga e confirmada (ou em andamento) a partir de hoje.
+            {selectedAppointmentId
+              ? "A sessão selecionada não está disponível para entrada agora."
+              : "Nenhuma consulta online paga e confirmada (ou em andamento) a partir de hoje."}
           </p>
           <p className="mt-3 text-xs text-slate-500">
-            Regularize em <strong className="font-medium text-slate-700">Minhas consultas</strong> ou agende de novo. Presencial não
-            usa esta sala.
+            {selectedAppointmentId ? (
+              <>
+                Verifique pagamento, status da consulta e horário da sessão em{" "}
+                <strong className="font-medium text-slate-700">Minhas consultas</strong>.
+              </>
+            ) : (
+              <>
+                Regularize em <strong className="font-medium text-slate-700">Minhas consultas</strong> ou agende de novo. Presencial não
+                usa esta sala.
+              </>
+            )}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
@@ -480,7 +514,7 @@ export function PatientLiveSessionBoard() {
         </div>
       ) : (
         <div className="space-y-8">
-          {eligibleSessions.map((apt) => {
+          {visibleSessions.map((apt) => {
             const ref = portalRef(apt.id);
             const isThis = shared?.ref === ref;
             const phase = isThis ? shared?.phase : null;

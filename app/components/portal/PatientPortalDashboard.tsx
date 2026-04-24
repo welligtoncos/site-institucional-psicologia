@@ -101,10 +101,10 @@ export function PatientPortalDashboard() {
     }
     if (next.format === "Online" && (next.status === "confirmada" || next.status === "em_andamento")) {
       return {
-        label: "Entrar no atendimento online",
-        href: "/portal/atendimento",
+        label: "Entrar na sala online",
+        href: "/portal/consultas/sala",
         tone: "emerald" as const,
-        sub: "Sala de espera e link da videochamada quando o psicólogo enviar.",
+        sub: "A sala de espera e a videochamada ficam na Sala de atendimento.",
       };
     }
     return {
@@ -216,8 +216,8 @@ export function PatientPortalDashboard() {
             <h2 className="text-base font-semibold text-slate-900">Atendimento online</h2>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
               No dia da sessão online, use <strong className="font-medium text-slate-800">Entrar no atendimento online</strong> acima
-              (ou o menu) para abrir a sala de espera. O link da Meet ou Zoom aparece quando o psicólogo enviar; o cronômetro só
-              começa quando a sessão for iniciada no painel dele(a).
+              para abrir a sala de espera em <strong className="font-medium text-slate-800">Minhas consultas</strong>. O link da Meet
+              ou Zoom aparece quando o psicólogo enviar; o cronômetro só começa quando a sessão for iniciada no painel dele(a).
             </p>
             <ul className="mt-3 list-inside list-disc text-xs text-slate-600">
               <li>Entre alguns minutos antes, em lugar calmo e com internet estável.</li>
@@ -226,10 +226,10 @@ export function PatientPortalDashboard() {
           </div>
           <div className="flex shrink-0 flex-col gap-2 sm:items-end">
             <Link
-              href="/portal/atendimento"
+              href="/portal/consultas/sala"
               className="inline-flex rounded-full bg-emerald-700 px-4 py-2.5 text-center text-xs font-semibold text-white hover:bg-emerald-800"
             >
-              Ir para sala de espera
+              Ir para Sala de atendimento
             </Link>
             <a
               href="https://meet.google.com/landing"
@@ -247,7 +247,7 @@ export function PatientPortalDashboard() {
             <a href={next.videoCallLink} className="break-all text-emerald-800 underline" target="_blank" rel="noopener noreferrer">
               {next.videoCallLink}
             </a>{" "}
-            <span className="text-slate-500">(exemplo no cadastro; o link oficial segue o fluxo do atendimento ao vivo.)</span>
+            <span className="text-slate-500">(exemplo no cadastro; o link oficial segue o fluxo em Minhas consultas.)</span>
           </p>
         ) : null}
       </section>

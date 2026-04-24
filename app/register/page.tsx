@@ -27,30 +27,29 @@ export default function RegisterPage() {
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-600 sm:text-base">
               Este cadastro é para <strong className="font-semibold text-slate-800">pacientes</strong> que desejam
-              acompanhar informações pelo site da clínica. Pedimos nome, e-mail, telefone e uma senha — e a confirmação
-              de que você leu e aceita os termos de uso.
+              agendar consultas e acompanhar tudo pelo portal da clínica.
             </p>
             <p className="mt-3 max-w-xl text-sm text-slate-500">
-              Seus dados são tratados com cuidado e usados para identificar seu acesso de forma segura.
+              Leva menos de 2 minutos: informe e-mail, crie sua senha e pronto.
             </p>
             <ul className="mt-8 space-y-3 text-sm leading-relaxed text-slate-600">
               <li className="flex gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-800">
                   1
                 </span>
-                <span>Preencha o formulário ao lado com atenção.</span>
+                <span>Crie sua conta com e-mail e senha.</span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-800">
                   2
                 </span>
-                <span>Depois, na tela de entrada, use o mesmo e-mail e a mesma senha para entrar.</span>
+                <span>Entre no portal com os mesmos dados.</span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-800">
                   3
                 </span>
-                <span>Você será levado ao painel do paciente no portal.</span>
+                <span>Escolha profissional, horario e finalize seu agendamento.</span>
               </li>
             </ul>
             <p className="mt-8 text-sm text-slate-600">

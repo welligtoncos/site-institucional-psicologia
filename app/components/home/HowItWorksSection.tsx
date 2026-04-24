@@ -4,18 +4,18 @@ import { Container, Section } from "../ui/SitePrimitives";
 const steps = [
   {
     step: "1",
-    title: "Primeiro contato",
-    description: "Voce envia uma mensagem e nossa equipe orienta sobre modalidades, agenda e valores.",
+    title: "Cadastro e acesso ao portal",
+    description: "Voce cria sua conta de paciente e entra na plataforma em poucos minutos.",
   },
   {
     step: "2",
-    title: "Triagem inicial",
-    description: "Entendemos suas necessidades e indicamos o profissional mais adequado ao seu perfil.",
+    title: "Escolha do horario",
+    description: "No portal, voce escolhe profissional, data e horario disponivel para a consulta.",
   },
   {
     step: "3",
-    title: "Inicio da terapia",
-    description: "As sessoes sao conduzidas com plano terapeutico, acompanhamento e metas de evolucao.",
+    title: "Pagamento online e confirmacao",
+    description: "O pagamento e feito online pela propria plataforma e sua consulta fica confirmada automaticamente.",
   },
 ];
 
@@ -26,7 +26,7 @@ export function HowItWorksSection() {
         <SectionTitle
           eyebrow="Como funciona o atendimento"
           title="Um processo simples, humano e organizado"
-          subtitle="Da primeira conversa ao acompanhamento continuo, cada etapa e pensada para trazer clareza, seguranca e acolhimento."
+          subtitle="Do cadastro ao pagamento online, todo o agendamento acontece pela plataforma com rapidez e seguranca."
         />
 
         <div className="mt-8 grid gap-4 sm:mt-10 md:grid-cols-3">

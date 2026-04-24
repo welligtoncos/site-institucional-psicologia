@@ -263,9 +263,9 @@ export function BillingInvoicesBoard() {
 
       <p className="text-center text-xs text-slate-500">
         Dúvidas sobre valores?{" "}
-        <Link href="/contato" className="font-medium text-sky-700 underline">
+        <a href="mailto:contato@clinicaharmonia.com.br" className="font-medium text-sky-700 underline">
           Contato da clínica
-        </Link>
+        </a>
       </p>
     </div>
   );
