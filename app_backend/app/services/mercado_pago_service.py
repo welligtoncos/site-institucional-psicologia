@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import secrets
 from typing import Any
+from urllib.parse import urlparse
 
 import mercadopago
 
@@ -66,6 +67,10 @@ class MercadoPagoService:
             order_id = item.order_id if item.order_id is not None else _generate_order_id()
             external_reference = str(order_id)
 
+        parsed_base = urlparse(base)
+        is_https = parsed_base.scheme.lower() == "https"
+        is_local_http = parsed_base.scheme.lower() == "http" and parsed_base.hostname in {"localhost", "127.0.0.1"}
+
         preference_data: dict[str, Any] = {
             "items": [
                 {
@@ -75,16 +80,20 @@ class MercadoPagoService:
                     "currency_id": "BRL",
                 }
             ],
-            "back_urls": {
+            "external_reference": external_reference,
+        }
+        # Em produção, prefira HTTPS com back_urls configuradas.
+        # Em HTTP público (ex.: IP sem TLS), algumas políticas do MP podem negar a criação da preferência.
+        # Nesses casos, mantemos o checkout sem back_urls até habilitar domínio HTTPS.
+        if is_https or is_local_http:
+            preference_data["back_urls"] = {
                 "success": f"{base}/payment/success",
                 "failure": f"{base}/payment/failure",
                 "pending": f"{base}/payment/pending",
-            },
-            "external_reference": external_reference,
-        }
+            }
         # auto_return exige back_urls válidas; com http://localhost o MP costuma retornar
         # 400 invalid_auto_return. Com HTTPS em produção, o redirecionamento após aprovação é automático.
-        if base.lower().startswith("https://"):
+        if is_https:
             preference_data["auto_return"] = "approved"
 
         if notification_url and notification_url.strip():
