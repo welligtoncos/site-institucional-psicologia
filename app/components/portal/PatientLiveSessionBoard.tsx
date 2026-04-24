@@ -62,7 +62,7 @@ type LiveAppointment = {
   format: "Online" | "Presencial";
   price: number;
   durationMin: number;
-  payment: "Pago" | "Pendente";
+  payment: "Pago" | "Pendente" | "Pagamento expirado";
   status: "agendada" | "confirmada" | "em_andamento" | "realizada" | "cancelada" | "nao_compareceu";
   videoCallLink?: string;
   psychologistOnline: boolean;
