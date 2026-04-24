@@ -46,5 +46,32 @@ export async function PUT(request: Request) {
   });
 
   const data = await response.json().catch(() => ({ detail: "Resposta invalida do backend." }));
+  // #region agent log
+  if ("weekly" in body && Array.isArray((body as { weekly: unknown }).weekly)) {
+    const wk = (body as { weekly: { weekday: number; enabled?: boolean; start: string; end: string }[] }).weekly;
+    fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+      body: JSON.stringify({
+        sessionId: "6327f2",
+        hypothesisId: "H3",
+        location: "app/api/portal/psychologist/availability/route.ts:PUT",
+        message: "availability PUT proxied",
+        data: {
+          responseOk: response.ok,
+          status: response.status,
+          requestWeeklyCount: wk.length,
+          requestWeeklySample: wk.slice(0, 8).map((r) => ({
+            weekday: r.weekday,
+            enabled: r.enabled,
+            start: r.start,
+            end: r.end,
+          })),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
   return NextResponse.json(data, { status: response.status });
 }

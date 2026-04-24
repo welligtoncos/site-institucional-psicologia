@@ -181,7 +181,31 @@ export function PsychologistAvailabilityBoard() {
       return;
     }
     setSaveStatus("saving");
-    const result = await putPsychologistAvailability(mockToApiPayload(data));
+    const payload = mockToApiPayload(data);
+    // #region agent log
+    const wk = (payload.weekly as { weekday: number; enabled: boolean; start: string; end: string }[]) ?? [];
+    fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+      body: JSON.stringify({
+        sessionId: "6327f2",
+        hypothesisId: "H3",
+        location: "PsychologistAvailabilityBoard.tsx:saveAvailabilityConfirmed",
+        message: "client save availability",
+        data: {
+          weeklyCount: wk.length,
+          weeklySample: wk.slice(0, 10).map((r) => ({
+            weekday: r.weekday,
+            enabled: r.enabled,
+            start: r.start,
+            end: r.end,
+          })),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    const result = await putPsychologistAvailability(payload);
     if (result.ok && "weekly" in result.data) {
       const mapped = apiToMock(result.data as ApiPsychologistAvailability);
       setData(mapped);

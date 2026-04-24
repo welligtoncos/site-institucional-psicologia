@@ -34,5 +34,31 @@ export async function GET(request: Request) {
   );
 
   const data = await response.json().catch(() => ({ detail: "Resposta invalida do backend." }));
+  // #region agent log
+  if (response.ok && data && typeof data === "object" && "days" in data) {
+    const d = data as {
+      duracao_minutos?: number;
+      weekly_template?: { weekday: number; ativo: boolean; start: string; end: string }[];
+      days?: { date: string; slots: string[] }[];
+    };
+    fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
+      body: JSON.stringify({
+        sessionId: "6327f2",
+        hypothesisId: "H1-H4",
+        location: "app/api/portal/bookable-slots/route.ts:GET",
+        message: "proxy bookable-slots ok",
+        data: {
+          psychologistId,
+          duracao: d.duracao_minutos,
+          weeklyTplCount: d.weekly_template?.length ?? 0,
+          daySlotCounts: (d.days ?? []).map((x) => ({ date: x.date, n: x.slots?.length ?? 0 })),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
   return NextResponse.json(data, { status: response.status });
 }

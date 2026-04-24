@@ -8,6 +8,30 @@ from zoneinfo import ZoneInfo
 
 _BR = ZoneInfo("America/Sao_Paulo")
 
+# #region agent log
+def _agent_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    try:
+        import json
+        from pathlib import Path
+        from time import time as _agent_ts
+
+        path = Path(__file__).resolve().parents[3] / "debug-6327f2.log"
+        rec = {
+            "sessionId": "6327f2",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(_agent_ts() * 1000),
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+# #endregion
+
 _WEEKDAY_LABEL_PT_BR: tuple[str, ...] = (
     "Domingo",
     "Segunda-feira",
@@ -134,6 +158,21 @@ def slots_for_calendar_day(
         if we <= ws or duracao_minutos <= 0:
             continue
         if ws + duracao_minutos > we:
+            # #region agent log
+            _agent_log(
+                "H5",
+                "booking_availability.py:slots_for_calendar_day",
+                "weekly row window shorter than session duration",
+                {
+                    "calendar_day": day.isoformat(),
+                    "calendar_wd": wd,
+                    "row_dia_semana": int(row.dia_semana),
+                    "ws_min": ws,
+                    "we_min": we,
+                    "duracao_minutos": duracao_minutos,
+                },
+            )
+            # #endregion
             continue
         t = ws
         if day == today_br and t < now_minutes_br:
@@ -141,9 +180,34 @@ def slots_for_calendar_day(
         if _conflicts_busy(t, t + duracao_minutos, all_busy):
             continue
         label = _hhmm(_minutes_to_time(t))
+        appended_start: str | None = None
         if label not in seen:
             seen.add(label)
             out.append(label)
+            appended_start = label
+        # #region agent log
+        max_starts_no_busy = 0
+        tt = ws
+        while tt + duracao_minutos <= we:
+            max_starts_no_busy += 1
+            tt += duracao_minutos
+        if max_starts_no_busy > 1:
+            _agent_log(
+                "H1",
+                "booking_availability.py:slots_for_calendar_day",
+                "wide weekly row emits only first start",
+                {
+                    "calendar_day": day.isoformat(),
+                    "calendar_wd": wd,
+                    "row_dia_semana": int(row.dia_semana),
+                    "ws_min": ws,
+                    "we_min": we,
+                    "duracao_minutos": duracao_minutos,
+                    "appended_start": appended_start,
+                    "max_starts_if_no_busy_conflict": max_starts_no_busy,
+                },
+            )
+        # #endregion
 
     return sorted(out)
 
