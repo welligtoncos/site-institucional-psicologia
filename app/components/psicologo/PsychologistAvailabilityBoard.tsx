@@ -20,8 +20,9 @@ import {
 } from "@/app/lib/psychologist-availability-api";
 
 const EMPTY: PsychologistAvailabilityMock = { weekly: [], blocks: [] };
-const SLOT_INTERVAL_KEY = "psychologist_availability_interval_min";
-const DEFAULT_SLOT_INTERVAL_MIN = 50;
+const DEFAULT_SESSION_DURATION_MIN = 50;
+/** Passo do campo de horário em segundos (60 = qualquer minuto: 09:00, 09:15, …). */
+const TIME_INPUT_STEP_SEC = 60;
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
 type PsychologistProfileDurationResponse = {
@@ -51,6 +52,19 @@ function sortWeeklyRows(rows: DaySlot[]): DaySlot[] {
   });
 }
 
+function sessionEndFromStart(start: string, durationMin: number): string {
+  return toHHMM(toMinutes(start) + durationMin);
+}
+
+/** Intervalos semiabertos [a0,a1) e [b0,b1) em minutos desde meia-noite. */
+function sessionRangesOverlap(startA: string, startB: string, durationMin: number): boolean {
+  const a0 = toMinutes(startA);
+  const a1 = a0 + durationMin;
+  const b0 = toMinutes(startB);
+  const b1 = b0 + durationMin;
+  return !(a1 <= b0 || a0 >= b1);
+}
+
 export function PsychologistAvailabilityBoard() {
   const [data, setData] = useState<PsychologistAvailabilityMock>(EMPTY);
   const [savedData, setSavedData] = useState<PsychologistAvailabilityMock>(EMPTY);
@@ -59,7 +73,7 @@ export function PsychologistAvailabilityBoard() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [showBlocks, setShowBlocks] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [slotIntervalMin, setSlotIntervalMin] = useState(DEFAULT_SLOT_INTERVAL_MIN);
+  const [sessionDurationMin, setSessionDurationMin] = useState(DEFAULT_SESSION_DURATION_MIN);
   const [newSlotByDay, setNewSlotByDay] = useState<Record<Weekday, { start: string; end: string } | null>>({
     1: null,
     2: null,
@@ -95,22 +109,6 @@ export function PsychologistAvailabilityBoard() {
   }, [saveStatus]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(SLOT_INTERVAL_KEY);
-    if (!stored) {
-      window.localStorage.setItem(SLOT_INTERVAL_KEY, String(DEFAULT_SLOT_INTERVAL_MIN));
-      setSlotIntervalMin(DEFAULT_SLOT_INTERVAL_MIN);
-      return;
-    }
-    const parsed = Number(stored);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setSlotIntervalMin(DEFAULT_SLOT_INTERVAL_MIN);
-      return;
-    }
-    setSlotIntervalMin(parsed);
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
     (async () => {
       if (typeof window === "undefined") return;
@@ -124,9 +122,7 @@ export function PsychologistAvailabilityBoard() {
       const json = (await response.json().catch(() => null)) as PsychologistProfileDurationResponse | null;
       const duration = json?.psicologo?.duracao_minutos_padrao;
       if (cancelled || !Number.isFinite(duration) || (duration ?? 0) <= 0) return;
-      const minutes = Number(duration);
-      setSlotIntervalMin(minutes);
-      window.localStorage.setItem(SLOT_INTERVAL_KEY, String(minutes));
+      setSessionDurationMin(Number(duration));
     })().catch(() => {});
     return () => {
       cancelled = true;
@@ -161,18 +157,38 @@ export function PsychologistAvailabilityBoard() {
   }, []);
 
   async function saveAvailabilityConfirmed() {
-    const invalidWeekly = data.weekly.some((row) => toMinutes(row.end) <= toMinutes(row.start));
-    if (invalidWeekly) {
-      toast.error("Existem intervalos semanais com fim menor ou igual ao início.");
-      return;
-    }
-    const duplicateWeekly = data.weekly.some((row, index, list) =>
+    const duration = sessionDurationMin;
+    const normalizedWeekly = data.weekly.map((row) => ({
+      ...row,
+      end: sessionEndFromStart(row.start, duration),
+    }));
+
+    const duplicateWeekly = normalizedWeekly.some((row, index, list) =>
       list.some((other, otherIndex) => otherIndex !== index && other.weekday === row.weekday && other.start === row.start),
     );
     if (duplicateWeekly) {
-      toast.error("Existem horários iguais no mesmo dia da semana. Ajuste antes de confirmar.");
+      toast.error(
+        "No mesmo dia da semana não pode repetir o mesmo horário de início. Em outro dia, o mesmo horário é permitido.",
+      );
       return;
     }
+
+    for (const wd of WEEKDAY_ORDER) {
+      const rows = normalizedWeekly
+        .filter((r) => r.weekday === wd)
+        .sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
+      for (let i = 0; i < rows.length; i++) {
+        for (let j = i + 1; j < rows.length; j++) {
+          if (sessionRangesOverlap(rows[i].start, rows[j].start, duration)) {
+            toast.error(
+              `Em ${WEEKDAY_LONG[wd]}, os horários de início se sobrepõem considerando sessões de ${duration} min. Afaste os inícios ou remova um intervalo.`,
+            );
+            return;
+          }
+        }
+      }
+    }
+
     const invalidBlocks = data.blocks.some(
       (b) => !b.allDay && b.startTime && b.endTime && toMinutes(b.endTime) <= toMinutes(b.startTime),
     );
@@ -181,30 +197,7 @@ export function PsychologistAvailabilityBoard() {
       return;
     }
     setSaveStatus("saving");
-    const payload = mockToApiPayload(data);
-    // #region agent log
-    const wk = (payload.weekly as { weekday: number; enabled: boolean; start: string; end: string }[]) ?? [];
-    fetch("http://127.0.0.1:7934/ingest/ae301534-ea0d-4f7b-a7be-1472a98c06a7", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6327f2" },
-      body: JSON.stringify({
-        sessionId: "6327f2",
-        hypothesisId: "H3",
-        location: "PsychologistAvailabilityBoard.tsx:saveAvailabilityConfirmed",
-        message: "client save availability",
-        data: {
-          weeklyCount: wk.length,
-          weeklySample: wk.slice(0, 10).map((r) => ({
-            weekday: r.weekday,
-            enabled: r.enabled,
-            start: r.start,
-            end: r.end,
-          })),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
+    const payload = mockToApiPayload({ ...data, weekly: normalizedWeekly });
     const result = await putPsychologistAvailability(payload);
     if (result.ok && "weekly" in result.data) {
       const mapped = apiToMock(result.data as ApiPsychologistAvailability);
@@ -233,13 +226,27 @@ export function PsychologistAvailabilityBoard() {
       (row, i) => i !== index && row.weekday === current.weekday && row.start === nextStart,
     );
     if (hasDuplicate) {
-      toast.error(`Já existe esse horário em ${WEEKDAY_LONG[current.weekday]}.`);
+      toast.error(
+        `Já existe esse horário neste dia (${WEEKDAY_LONG[current.weekday]}). Em outro dia da semana você pode usar o mesmo horário.`,
+      );
+      return;
+    }
+    const hasOverlap = data.weekly.some(
+      (row, i) =>
+        i !== index &&
+        row.weekday === current.weekday &&
+        sessionRangesOverlap(row.start, nextStart, sessionDurationMin),
+    );
+    if (hasOverlap) {
+      toast.error(
+        `Esse início sobrepõe outro horário em ${WEEKDAY_LONG[current.weekday]} (sessões de ${sessionDurationMin} min).`,
+      );
       return;
     }
     setData((prev) => {
       const weekly = prev.weekly.map((row, i) => {
         if (i !== index) return row;
-        const autoEnd = toHHMM(toMinutes(nextStart) + slotIntervalMin);
+        const autoEnd = sessionEndFromStart(nextStart, sessionDurationMin);
         return { ...row, ...patch, start: nextStart, end: autoEnd, enabled: true };
       });
       return { ...prev, weekly };
@@ -252,7 +259,7 @@ export function PsychologistAvailabilityBoard() {
 
   function openNewSlotEditor(day: Weekday) {
     const start = "09:00";
-    const end = toHHMM(toMinutes(start) + slotIntervalMin);
+    const end = sessionEndFromStart(start, sessionDurationMin);
     setNewSlotByDay((prev) => ({ ...prev, [day]: { start, end } }));
   }
 
@@ -265,10 +272,19 @@ export function PsychologistAvailabilityBoard() {
     if (!draft) return;
     const hasDuplicate = data.weekly.some((row) => row.weekday === day && row.start === draft.start);
     if (hasDuplicate) {
-      toast.error(`Já existe esse horário em ${WEEKDAY_LONG[day]}.`);
+      toast.error(
+        `Já existe esse horário neste dia (${WEEKDAY_LONG[day]}). Em outro dia da semana você pode usar o mesmo horário.`,
+      );
       return;
     }
-    const autoEnd = toHHMM(toMinutes(draft.start) + slotIntervalMin);
+    const hasOverlap = data.weekly.some(
+      (row) => row.weekday === day && sessionRangesOverlap(row.start, draft.start, sessionDurationMin),
+    );
+    if (hasOverlap) {
+      toast.error(`Esse início sobrepõe outro horário em ${WEEKDAY_LONG[day]} (sessões de ${sessionDurationMin} min).`);
+      return;
+    }
+    const autoEnd = sessionEndFromStart(draft.start, sessionDurationMin);
     setData((prev) => ({
       ...prev,
       weekly: [...prev.weekly, { weekday: day, enabled: true, start: draft.start, end: autoEnd }],
@@ -327,9 +343,10 @@ export function PsychologistAvailabilityBoard() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Disponibilidade</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900">Horários e bloqueios</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Defina seus horários de atendimento e bloqueie datas ou períodos em que não poderá atender. Tudo fica salvo
-              na sua conta e sincronizado automaticamente. No portal do paciente, aparecem somente horários realmente
-              disponíveis, considerando sua agenda, bloqueios e consultas já marcadas.
+              Adicione vários inícios por dia (em qualquer minuto), sem repetir o mesmo início naquele dia e sem
+              sobrepor sessões conforme a duração padrão do perfil. O mesmo horário em outro dia da semana é permitido
+              (ex.: segunda 09:00 e terça 09:00). Cada linha vira um horário ofertado ao paciente. Você também pode
+              bloquear datas; o catálogo considera agenda e consultas já marcadas.
             </p>
             {loadError === "generic" ? (
               <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
@@ -353,7 +370,9 @@ export function PsychologistAvailabilityBoard() {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900">Horários por dia da semana</h2>
-        <p className="mt-1 text-xs text-slate-500">Escolha o dia e preencha os horários de atendimento.</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Um horário de início por linha; o fim é calculado com a duração padrão da sessão do seu perfil.
+        </p>
         <div className="mt-6 space-y-6">
           {WEEKDAY_ORDER.map((day) => {
             const indices = data.weekly
@@ -379,13 +398,14 @@ export function PsychologistAvailabilityBoard() {
                     <div className="flex flex-wrap items-center gap-2">
                       <input
                         type="time"
+                        step={TIME_INPUT_STEP_SEC}
                         value={newSlotByDay[day]?.start ?? "09:00"}
                         onChange={(e) =>
                           setNewSlotByDay((prev) => ({
                             ...prev,
                             [day]: {
                               start: e.target.value,
-                              end: toHHMM(toMinutes(e.target.value) + slotIntervalMin),
+                              end: sessionEndFromStart(e.target.value, sessionDurationMin),
                             },
                           }))
                         }
@@ -410,7 +430,7 @@ export function PsychologistAvailabilityBoard() {
                       </button>
                     </div>
                     <p className="mt-2 text-[11px] text-emerald-800/90">
-                      Duração automática: {slotIntervalMin} minutos.
+                      Cada linha é um início de sessão; o fim exibido segue a duração padrão do perfil ({sessionDurationMin} min).
                     </p>
                   </div>
                 ) : null}
@@ -425,6 +445,7 @@ export function PsychologistAvailabilityBoard() {
                       >
                         <input
                           type="time"
+                          step={TIME_INPUT_STEP_SEC}
                           value={row.start}
                           onChange={(e) => updateWeekly(i, { start: e.target.value })}
                           className="rounded-lg border border-slate-300 px-2 py-1 text-sm"

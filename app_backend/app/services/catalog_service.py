@@ -1,9 +1,6 @@
 """Catálogo de profissionais para o portal do paciente."""
 
 from datetime import timedelta, time
-import json
-from pathlib import Path
-from time import time as _agent_ts
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,27 +27,6 @@ from app.schemas.catalog_schema import (
 
 def _fmt_hhmm_time(t: time) -> str:
     return t.strftime("%H:%M")
-
-
-# #region agent log
-def _agent_log_catalog(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    try:
-        path = Path(__file__).resolve().parents[3] / "debug-6327f2.log"
-        rec = {
-            "sessionId": "6327f2",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(_agent_ts() * 1000),
-        }
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-
-
-# #endregion
 
 
 class CatalogService:
@@ -136,26 +112,6 @@ class CatalogService:
 
         u = ps.usuario
         nome = (u.name or "").strip() or "Profissional"
-        # #region agent log
-        total_slot_labels = sum(len(d.slots) for d in day_items)
-        _agent_log_catalog(
-            "H2-H4",
-            "catalog_service.py:get_psychologist_bookable_slots",
-            "bookable-slots aggregate",
-            {
-                "psychologist_id": str(psychologist_id),
-                "days_param": days,
-                "duracao_minutos": duracao,
-                "weekly_rows_db": len(weekly),
-                "weekly_ativo_true": sum(1 for r in weekly if bool(r.ativo)),
-                "slots_total_all_days": total_slot_labels,
-                "template_by_weekday": [
-                    {"wd": int(r.dia_semana), "ativo": bool(r.ativo), "hi": _fmt_hhmm_time(r.hora_inicio), "hf": _fmt_hhmm_time(r.hora_fim)}
-                    for r in sorted(weekly, key=lambda row: (int(row.dia_semana), row.hora_inicio))
-                ],
-            },
-        )
-        # #endregion
         return PsychologistBookableSlotsResponse(
             id=ps.id,
             nome=nome,

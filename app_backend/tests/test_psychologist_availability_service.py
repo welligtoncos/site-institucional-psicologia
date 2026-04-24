@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.models.user import UserRole
 from app.schemas.availability_schema import PsychologistAvailabilityPutRequest
 from app.services.psychologist_availability_service import PsychologistAvailabilityService
@@ -92,7 +92,9 @@ async def test_put_availability_replaces_and_returns_lists() -> None:
     after_blocks = [_block_row(uuid4(), date(2026, 8, 1), False, time(12, 0), time(13, 30), "Almoço")]
 
     mock_clinical = AsyncMock()
-    mock_clinical.get_psicologo_by_usuario_id = AsyncMock(return_value=SimpleNamespace(id=ps_id))
+    mock_clinical.get_psicologo_by_usuario_id = AsyncMock(
+        return_value=SimpleNamespace(id=ps_id, duracao_minutos_padrao=50),
+    )
     mock_clinical.replace_disponibilidade_semanal = AsyncMock()
     mock_clinical.replace_bloqueios_agenda = AsyncMock()
     mock_clinical.list_disponibilidade_semanal = AsyncMock(side_effect=[after_weekly])
@@ -131,6 +133,99 @@ async def test_put_availability_replaces_and_returns_lists() -> None:
     assert len(out.blocks) == 1
     assert out.blocks[0].all_day is False
     assert out.blocks[0].start_time == "12:00"
+
+
+@pytest.mark.asyncio
+async def test_put_availability_extends_end_to_cover_session_duration() -> None:
+    user = _psychologist_user()
+    ps_id = uuid4()
+    after_weekly = [_disp_row(uuid4(), 4, True, time(10, 0), time(10, 50))]
+
+    mock_clinical = AsyncMock()
+    mock_clinical.get_psicologo_by_usuario_id = AsyncMock(
+        return_value=SimpleNamespace(id=ps_id, duracao_minutos_padrao=50),
+    )
+    mock_clinical.replace_disponibilidade_semanal = AsyncMock()
+    mock_clinical.replace_bloqueios_agenda = AsyncMock()
+    mock_clinical.list_disponibilidade_semanal = AsyncMock(side_effect=[after_weekly])
+    mock_clinical.list_bloqueios_agenda = AsyncMock(side_effect=[[]])
+
+    svc = PsychologistAvailabilityService(AsyncMock())
+    svc._clinical = mock_clinical  # type: ignore[attr-defined]
+
+    payload = PsychologistAvailabilityPutRequest.model_validate(
+        {"weekly": [{"weekday": 4, "enabled": True, "start": "10:00", "end": "10:20"}], "blocks": []},
+    )
+    await svc.put_availability(user, payload)  # type: ignore[arg-type]
+
+    disp_call = mock_clinical.replace_disponibilidade_semanal.await_args
+    assert disp_call.kwargs["slots"] == [(4, True, time(10, 0), time(10, 50))]
+
+
+@pytest.mark.asyncio
+async def test_put_same_start_different_weekdays_allowed() -> None:
+    """O mesmo horário de início em dias da semana diferentes é permitido."""
+    user = _psychologist_user()
+    ps_id = uuid4()
+    after_weekly = [
+        _disp_row(uuid4(), 1, True, time(9, 0), time(9, 50)),
+        _disp_row(uuid4(), 2, True, time(9, 0), time(9, 50)),
+    ]
+
+    mock_clinical = AsyncMock()
+    mock_clinical.get_psicologo_by_usuario_id = AsyncMock(
+        return_value=SimpleNamespace(id=ps_id, duracao_minutos_padrao=50),
+    )
+    mock_clinical.replace_disponibilidade_semanal = AsyncMock()
+    mock_clinical.replace_bloqueios_agenda = AsyncMock()
+    mock_clinical.list_disponibilidade_semanal = AsyncMock(side_effect=[after_weekly])
+    mock_clinical.list_bloqueios_agenda = AsyncMock(side_effect=[[]])
+
+    svc = PsychologistAvailabilityService(AsyncMock())
+    svc._clinical = mock_clinical  # type: ignore[attr-defined]
+
+    payload = PsychologistAvailabilityPutRequest.model_validate(
+        {
+            "weekly": [
+                {"weekday": 1, "enabled": True, "start": "09:00", "end": "09:50"},
+                {"weekday": 2, "enabled": True, "start": "09:00", "end": "09:50"},
+            ],
+            "blocks": [],
+        },
+    )
+    await svc.put_availability(user, payload)  # type: ignore[arg-type]
+
+    disp_call = mock_clinical.replace_disponibilidade_semanal.await_args
+    assert len(disp_call.kwargs["slots"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_put_duplicate_start_same_weekday_conflict() -> None:
+    user = _psychologist_user()
+    ps_id = uuid4()
+
+    mock_clinical = AsyncMock()
+    mock_clinical.get_psicologo_by_usuario_id = AsyncMock(
+        return_value=SimpleNamespace(id=ps_id, duracao_minutos_padrao=50),
+    )
+    mock_clinical.replace_disponibilidade_semanal = AsyncMock()
+
+    svc = PsychologistAvailabilityService(AsyncMock())
+    svc._clinical = mock_clinical  # type: ignore[attr-defined]
+
+    payload = PsychologistAvailabilityPutRequest.model_validate(
+        {
+            "weekly": [
+                {"weekday": 1, "enabled": True, "start": "09:00", "end": "09:50"},
+                {"weekday": 1, "enabled": True, "start": "09:00", "end": "09:50"},
+            ],
+            "blocks": [],
+        },
+    )
+    with pytest.raises(ConflictError, match="duplicado"):
+        await svc.put_availability(user, payload)  # type: ignore[arg-type]
+
+    mock_clinical.replace_disponibilidade_semanal.assert_not_called()
 
 
 @pytest.mark.asyncio

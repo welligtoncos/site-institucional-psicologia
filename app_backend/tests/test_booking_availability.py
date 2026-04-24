@@ -77,8 +77,27 @@ def test_consulta_removes_overlapping_start() -> None:
     assert slots == ["09:00"]
 
 
+def test_two_rows_same_day_distinct_starts() -> None:
+    """Cada linha semanal é um início ofertado (ex.: 09:00 e 09:15 na segunda)."""
+    weekly = [
+        SimpleNamespace(dia_semana=1, ativo=True, hora_inicio=time(9, 0), hora_fim=time(9, 50)),
+        SimpleNamespace(dia_semana=1, ativo=True, hora_inicio=time(9, 15), hora_fim=time(10, 5)),
+    ]
+    day = date(2026, 4, 20)  # Monday
+    slots = slots_for_calendar_day(
+        day,
+        today_br=date(2026, 4, 19),
+        now_minutes_br=0,
+        weekly=weekly,
+        blocks=[],
+        consultas=[],
+        duracao_minutos=50,
+    )
+    assert slots == ["09:00", "09:15"]
+
+
 def test_past_times_hidden_on_same_day() -> None:
-    # Um início por intervalo cadastrado: intervalo 8–9 já passou; 10–11 ainda é elegível às 10:00.
+    # Linha 8–9: único início 08:00 já passou às 10:00; linha 10–11 ainda oferece 10:00.
     weekly = [
         SimpleNamespace(dia_semana=4, ativo=True, hora_inicio=time(8, 0), hora_fim=time(9, 0)),
         SimpleNamespace(dia_semana=4, ativo=True, hora_inicio=time(10, 0), hora_fim=time(11, 0)),

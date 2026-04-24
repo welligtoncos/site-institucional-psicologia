@@ -1,12 +1,12 @@
 """Leitura e substituição da disponibilidade semanal e bloqueios (perfil psicólogo)."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import logging
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.messaging.business_event_publisher import BusinessEventPublisher
 from app.models.clinical import BloqueioAgenda, DisponibilidadeSemanal
 from app.models.user import User, UserRole
@@ -26,6 +26,34 @@ def _fmt_hhmm(t: time) -> str:
     return t.strftime("%H:%M")
 
 
+def _hhmm_to_minutes(hhmm: str) -> int:
+    parts = hhmm.split(":")
+    return int(parts[0]) * 60 + int(parts[1])
+
+
+def _weekly_starts_overlap(start_a: str, start_b: str, dur_min: int) -> bool:
+    """Intervalos semiabertos [a0,a1) e [b0,b1) em minutos desde meia-noite."""
+    a0 = _hhmm_to_minutes(start_a)
+    a1 = a0 + dur_min
+    b0 = _hhmm_to_minutes(start_b)
+    b1 = b0 + dur_min
+    return not (a1 <= b0 or a0 >= b1)
+
+
+def _validate_weekly_same_day_rules(payload: PsychologistAvailabilityPutRequest, dur_min: int) -> None:
+    """Mesmo início só uma vez por dia da semana; sobreposição de sessões só é checada dentro do mesmo dia."""
+    by_weekday: dict[int, list[str]] = {}
+    for w in payload.weekly:
+        by_weekday.setdefault(w.weekday, []).append(w.start)
+    for starts in by_weekday.values():
+        if len(starts) != len(set(starts)):
+            raise ConflictError("Horário de início duplicado no mesmo dia da semana.")
+        for i in range(len(starts)):
+            for j in range(i + 1, len(starts)):
+                if _weekly_starts_overlap(starts[i], starts[j], dur_min):
+                    raise ConflictError("Horários de início sobrepostos no mesmo dia da semana.")
+
+
 class PsychologistAvailabilityService:
     def __init__(self, db: AsyncSession) -> None:
         self._clinical = ClinicalRepository(db)
@@ -35,12 +63,12 @@ class PsychologistAvailabilityService:
         if user.role != UserRole.psychologist:
             raise ForbiddenError("Este recurso é exclusivo para usuários com perfil de psicólogo.")
 
-    async def _get_psicologo_id(self, user: User) -> UUID:
+    async def _get_psicologo(self, user: User):
         self._ensure_psychologist(user)
         ps = await self._clinical.get_psicologo_by_usuario_id(user.id)
         if ps is None:
             raise NotFoundError("Perfil de psicólogo não encontrado. Conclua o cadastro ou contate o suporte.")
-        return ps.id
+        return ps
 
     def _weekly_to_response(self, rows: list[DisponibilidadeSemanal]) -> list[WeeklySlotResponse]:
         return [
@@ -72,7 +100,7 @@ class PsychologistAvailabilityService:
         return out
 
     async def get_availability(self, user: User) -> PsychologistAvailabilityResponse:
-        pid = await self._get_psicologo_id(user)
+        pid = (await self._get_psicologo(user)).id
         weekly = await self._clinical.list_disponibilidade_semanal(pid)
         blocks = await self._clinical.list_bloqueios_agenda(pid)
         return PsychologistAvailabilityResponse(
@@ -100,13 +128,23 @@ class PsychologistAvailabilityService:
             logger.exception("Evento de auditoria não publicado: %s", event_type)
 
     async def put_availability(self, user: User, payload: PsychologistAvailabilityPutRequest) -> PsychologistAvailabilityResponse:
-        pid = await self._get_psicologo_id(user)
+        ps = await self._get_psicologo(user)
+        pid = ps.id
+        dur_pad = int(ps.duracao_minutos_padrao or 50)
+        anchor = date(2000, 1, 1)
+
+        _validate_weekly_same_day_rules(payload, dur_pad)
 
         slots: list[tuple[int, bool, time, time]] = []
         for w in payload.weekly:
             hi = datetime.strptime(w.start, "%H:%M").time()
             hf = datetime.strptime(w.end, "%H:%M").time()
-            slots.append((w.weekday, w.enabled, hi, hf))
+            hi_dt = datetime.combine(anchor, hi)
+            hf_dt = datetime.combine(anchor, hf)
+            min_end = hi_dt + timedelta(minutes=dur_pad)
+            if hf_dt < min_end:
+                hf_dt = min_end
+            slots.append((w.weekday, w.enabled, hi, hf_dt.time()))
 
         block_rows: list[tuple[date, bool, time | None, time | None, str]] = []
         for b in payload.blocks:
