@@ -14,23 +14,9 @@
  * - `Wallet` é carregado com `next/dynamic` e `ssr: false` para o SDK não rodar no servidor (Next.js).
  */
 
-import dynamic from "next/dynamic";
-import { initMercadoPago } from "@mercadopago/sdk-react";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { createMercadoPagoPreferencia, type MercadoPagoPreferenciaItem } from "@/app/lib/mercado-pago-preferences-api";
-
-const Wallet = dynamic(
-  async () => (await import("@mercadopago/sdk-react")).Wallet,
-  {
-    ssr: false,
-    loading: () => (
-      <p className="py-3 text-center text-sm text-slate-600" aria-live="polite">
-        Carregando botão do Mercado Pago…
-      </p>
-    ),
-  },
-);
 
 export type MercadoPagoCheckoutProduct = MercadoPagoPreferenciaItem;
 
@@ -52,25 +38,14 @@ function getPublicKey(): string {
 
 export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPagoCheckoutProps) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
-  const [preferenceId, setPreferenceId] = useState<string | null>(null);
   /** URL direta do Checkout Pro (funciona melhor em Safari/iOS que `redirectMode: "blank"` no brick). */
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
-  const initOnce = useRef(false);
 
   const publicKey = getPublicKey();
 
-  useLayoutEffect(() => {
-    if (!publicKey) return;
-    if (!initOnce.current) {
-      initMercadoPago(publicKey);
-      initOnce.current = true;
-    }
-  }, [publicKey]);
-
   const handleComprarAgora = useCallback(async () => {
     setLoadState("loading");
-    setPreferenceId(null);
     setCheckoutUrl(null);
     setErrorDetail(null);
     const trimmedConsulta = consultaId?.trim();
@@ -87,15 +62,18 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
       setLoadState("error");
       return;
     }
-    initMercadoPago(publicKey);
-    setPreferenceId(result.data.preference_id);
     const direct =
       (result.data.sandbox_init_point && result.data.sandbox_init_point.trim()) ||
       (result.data.init_point && result.data.init_point.trim()) ||
       null;
+    if (!direct) {
+      setErrorDetail("Não foi possível gerar o link do checkout. Tente novamente.");
+      setLoadState("error");
+      return;
+    }
     setCheckoutUrl(direct);
     setLoadState("ready");
-  }, [product, consultaId, orderId, publicKey]);
+  }, [product, consultaId, orderId]);
 
   if (!publicKey) {
     return (
@@ -171,32 +149,19 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
         </p>
       ) : null}
 
-      {preferenceId && loadState === "ready" ? (
+      {checkoutUrl && loadState === "ready" ? (
         <div className="space-y-4 pt-1">
-          {checkoutUrl ? (
-            <a
-              href={checkoutUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex min-h-[3rem] w-full items-center justify-center rounded-xl bg-sky-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
-            >
-              Abrir checkout Mercado Pago (nova aba)
-            </a>
-          ) : null}
-          <div className="mx-auto flex w-full max-w-full flex-col items-center overflow-visible sm:max-w-[320px]">
-            <Wallet
-              initialization={{ preferenceId, redirectMode: "self" }}
-              locale="pt-BR"
-              onError={(err) => {
-                console.error("Mercado Pago Wallet:", err);
-              }}
-            />
-          </div>
-          {checkoutUrl ? (
-            <p className="text-center text-[11px] leading-relaxed text-slate-500">
-              Se você voltar para esta página após o pagamento, atualizamos o status da consulta automaticamente.
-            </p>
-          ) : null}
+          <a
+            href={checkoutUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-[3rem] w-full items-center justify-center rounded-xl bg-sky-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
+          >
+            Abrir checkout Mercado Pago (nova aba)
+          </a>
+          <p className="text-center text-[11px] leading-relaxed text-slate-500">
+            Se você voltar para esta página após o pagamento, atualizamos o status da consulta automaticamente.
+          </p>
         </div>
       ) : null}
     </div>
