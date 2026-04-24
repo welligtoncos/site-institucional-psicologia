@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -109,12 +109,17 @@ class ClinicalRepository:
             .where(Consulta.data_agendada >= data_inicio)
             .where(Consulta.data_agendada <= data_fim)
             .where(
-                Consulta.status.in_(
-                    [
-                        ConsultaStatus.agendada,
-                        ConsultaStatus.confirmada,
-                        ConsultaStatus.em_andamento,
-                    ],
+                or_(
+                    Consulta.status.in_(
+                        [
+                            ConsultaStatus.confirmada,
+                            ConsultaStatus.em_andamento,
+                        ],
+                    ),
+                    and_(
+                        Consulta.status == ConsultaStatus.agendada,
+                        Consulta.situacao_pagamento == ConsultaSituacaoPagamento.pago,
+                    ),
                 )
             )
         )
@@ -133,6 +138,7 @@ class ClinicalRepository:
             .where(Consulta.data_agendada >= data_inicio)
             .options(selectinload(Consulta.paciente).selectinload(Paciente.usuario))
             .options(selectinload(Consulta.sessao_ao_vivo))
+            .options(selectinload(Consulta.cobranca))
             .order_by(Consulta.data_agendada.asc(), Consulta.hora_inicio.asc())
         )
         result = await self._db.execute(stmt)
@@ -152,6 +158,25 @@ class ClinicalRepository:
         id_intent_gateway: str,
         provedor_gateway: str = "stripe_compatible_mock",
     ) -> tuple[Consulta, Cobranca]:
+        # Pagamento pendente não deve bloquear agenda:
+        # se já existe reserva "agendada + pendente" no mesmo slot, expiramos essa reserva antes de inserir.
+        stmt_pending_same_slot = (
+            select(Consulta)
+            .join(Cobranca, Cobranca.consulta_id == Consulta.id)
+            .where(Consulta.psicologo_id == psicologo_id)
+            .where(Consulta.data_agendada == data_agendada)
+            .where(Consulta.hora_inicio == hora_inicio)
+            .where(Consulta.status == ConsultaStatus.agendada)
+            .where(Consulta.situacao_pagamento == ConsultaSituacaoPagamento.pendente)
+            .where(Cobranca.status_gateway == CobrancaStatusGateway.awaiting_payment)
+            .options(selectinload(Consulta.cobranca))
+        )
+        pending_result = await self._db.execute(stmt_pending_same_slot)
+        for existing in list(pending_result.scalars().unique().all()):
+            existing.status = ConsultaStatus.cancelada
+            if existing.cobranca is not None:
+                existing.cobranca.status_gateway = CobrancaStatusGateway.failed
+
         consulta = Consulta(
             paciente_id=paciente_id,
             psicologo_id=psicologo_id,
@@ -355,6 +380,50 @@ class ClinicalRepository:
         if closed:
             await self._db.commit()
         return closed
+
+    async def auto_expire_unpaid_appointments(self, *, now: datetime | None = None) -> int:
+        """Expira consultas não pagas cujo início já passou.
+
+        Regra:
+        - consulta `agendada`
+        - pagamento da consulta ainda `pendente`
+        - cobrança no gateway em `awaiting_payment`
+        - data/hora de início menor ou igual ao momento atual
+        """
+        tz = ZoneInfo("America/Sao_Paulo")
+        if now is None:
+            now = datetime.now(tz)
+        elif now.tzinfo is None:
+            now = now.replace(tzinfo=tz)
+        else:
+            now = now.astimezone(tz)
+
+        stmt = (
+            select(Consulta)
+            .join(Cobranca, Cobranca.consulta_id == Consulta.id)
+            .where(
+                Consulta.status == ConsultaStatus.agendada,
+                Consulta.situacao_pagamento == ConsultaSituacaoPagamento.pendente,
+                Cobranca.status_gateway == CobrancaStatusGateway.awaiting_payment,
+            )
+            .options(selectinload(Consulta.cobranca))
+        )
+        result = await self._db.execute(stmt)
+        candidates = list(result.scalars().unique().all())
+
+        expired = 0
+        for consulta in candidates:
+            starts_at = datetime.combine(consulta.data_agendada, consulta.hora_inicio, tzinfo=tz)
+            if starts_at > now:
+                continue
+            consulta.status = ConsultaStatus.cancelada
+            if consulta.cobranca is not None:
+                consulta.cobranca.status_gateway = CobrancaStatusGateway.failed
+            expired += 1
+
+        if expired:
+            await self._db.commit()
+        return expired
 
     async def mark_payment_success_for_consulta(
         self,

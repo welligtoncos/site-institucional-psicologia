@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.messaging.business_event_publisher import BusinessEventPublisher
-from app.models.clinical import Consulta, ConsultaSituacaoPagamento, ConsultaStatus, SessaoAoVivoFase
+from app.models.clinical import CobrancaStatusGateway, Consulta, ConsultaSituacaoPagamento, ConsultaStatus, SessaoAoVivoFase
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
 from app.schemas.agenda_schema import (
@@ -73,6 +73,12 @@ class PsychologistAgendaService:
         video_link = c.link_videochamada_opcional
         if sessao is not None and getattr(sessao, "url_meet", None):
             video_link = sessao.url_meet
+        is_payment_expired = (
+            c.status == ConsultaStatus.cancelada
+            and c.situacao_pagamento == ConsultaSituacaoPagamento.pendente
+            and c.cobranca is not None
+            and c.cobranca.status_gateway == CobrancaStatusGateway.failed
+        )
         return PsychologistAgendaAppointmentResponse(
             id=c.id,
             patient_id=c.paciente_id,
@@ -80,8 +86,13 @@ class PsychologistAgendaService:
             iso_date=c.data_agendada.isoformat(),
             time=c.hora_inicio.strftime("%H:%M"),
             format=c.modalidade.value,
+            price=c.valor_acordado,
             status=self._agenda_status(c),
-            payment_pending=c.situacao_pagamento == ConsultaSituacaoPagamento.pendente,
+            payment_pending=(
+                c.situacao_pagamento == ConsultaSituacaoPagamento.pendente
+                and not is_payment_expired
+            ),
+            payment_expired=is_payment_expired,
             patient_online=self._is_patient_online(c),
             duration_min=c.duracao_minutos,
             video_call_link=video_link,
@@ -110,6 +121,9 @@ class PsychologistAgendaService:
         return start, end
 
     async def get_agenda(self, user: User, *, from_date: date) -> PsychologistAgendaResponse:
+        n_expired = await self._clinical.auto_expire_unpaid_appointments()
+        if n_expired:
+            logger.info("Expiração automática: %d consulta(s) sem pagamento até o horário marcado.", n_expired)
         n_closed = await self._clinical.auto_finish_live_sessions_past_duration()
         if n_closed:
             logger.info("Encerramento automático no backend: %d consulta(s) após fim do cronômetro.", n_closed)

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.messaging.business_event_publisher import BusinessEventPublisher
 from app.models.clinical import (
+    CobrancaStatusGateway,
     Consulta,
     ConsultaModalidade,
     ConsultaSituacaoPagamento,
@@ -65,6 +66,14 @@ class PatientAppointmentService:
         video_link = c.link_videochamada_opcional
         if sessao is not None and getattr(sessao, "url_meet", None):
             video_link = sessao.url_meet
+        payment_label = "Pago" if c.situacao_pagamento == ConsultaSituacaoPagamento.pago else "Pendente"
+        if (
+            c.status == ConsultaStatus.cancelada
+            and c.situacao_pagamento == ConsultaSituacaoPagamento.pendente
+            and c.cobranca is not None
+            and c.cobranca.status_gateway == CobrancaStatusGateway.failed
+        ):
+            payment_label = "Pagamento expirado"
         return PatientAppointmentSummary(
             id=c.id,
             psychologist_id=c.psicologo_id,
@@ -77,7 +86,7 @@ class PatientAppointmentService:
             format=c.modalidade.value,
             price=c.valor_acordado,
             duration_min=c.duracao_minutos,
-            payment="Pago" if c.situacao_pagamento == ConsultaSituacaoPagamento.pago else "Pendente",
+            payment=payment_label,
             status=c.status.value,
             video_call_link=video_link,
             psychologist_online=self._is_psychologist_online(c),
@@ -328,6 +337,7 @@ class PatientAppointmentService:
         from_date: date,
     ) -> PatientAppointmentListResponse:
         self._ensure_patient(user)
+        await self._clinical.auto_expire_unpaid_appointments()
         await self._clinical.auto_finish_live_sessions_past_duration()
         rows = await self._clinical.list_consultas_com_cobranca_do_paciente_desde(user.id, from_date)
         return PatientAppointmentListResponse(

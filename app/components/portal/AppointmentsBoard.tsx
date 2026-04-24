@@ -264,6 +264,16 @@ function AppointmentRow({ a }: { a: MockAppointment }) {
             >
               Entrar na sala online
             </Link>
+          ) : a.payment === "Pendente" ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs text-amber-700">Pagamento pendente. Conclua para liberar o link da sessão.</p>
+              <Link
+                href={`/portal/agendar?psych=${encodeURIComponent(a.psychId)}`}
+                className="inline-flex rounded-full bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                Pagar agora
+              </Link>
+            </div>
           ) : (
             <p className="text-xs text-slate-500">Link da sessão aparece após confirmação do pagamento.</p>
           )}

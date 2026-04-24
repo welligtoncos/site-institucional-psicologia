@@ -12,7 +12,7 @@ export type ApiPatientAppointmentSummary = {
   format: "Online" | "Presencial";
   price: string;
   duration_min: number;
-  payment: "Pago" | "Pendente";
+  payment: "Pago" | "Pendente" | "Pagamento expirado";
   status: "agendada" | "confirmada" | "em_andamento" | "realizada" | "cancelada" | "nao_compareceu";
   video_call_link?: string | null;
   psychologist_online?: boolean;

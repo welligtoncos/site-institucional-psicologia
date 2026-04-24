@@ -67,6 +67,7 @@ async def test_list_my_appointments_returns_items() -> None:
     rows = [_consulta(status=ConsultaStatus.confirmada), _consulta(status=ConsultaStatus.agendada)]
 
     mock_clinical = AsyncMock()
+    mock_clinical.auto_expire_unpaid_appointments = AsyncMock(return_value=0)
     mock_clinical.list_consultas_com_cobranca_do_paciente_desde = AsyncMock(return_value=rows)
 
     svc = PatientAppointmentService(AsyncMock())
@@ -77,6 +78,7 @@ async def test_list_my_appointments_returns_items() -> None:
 
     assert len(out.appointments) == 2
     assert out.appointments[0].psychologist_name == "Psicóloga Ana"
+    mock_clinical.auto_expire_unpaid_appointments.assert_awaited_once()
     mock_clinical.list_consultas_com_cobranca_do_paciente_desde.assert_awaited_once_with(user.id, date.today())
 
 

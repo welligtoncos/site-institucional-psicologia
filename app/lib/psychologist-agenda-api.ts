@@ -9,8 +9,10 @@ export type ApiPsychologistAgendaAppointment = {
   iso_date: string;
   time: string;
   format: "Online" | "Presencial";
+  price: string;
   status: "confirmada" | "pendente" | "cancelada" | "realizada" | "em_andamento";
   payment_pending: boolean;
+  payment_expired?: boolean;
   patient_online?: boolean;
   duration_min?: number;
   video_call_link?: string | null;

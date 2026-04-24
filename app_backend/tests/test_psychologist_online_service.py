@@ -52,6 +52,7 @@ async def test_get_agenda_calls_auto_finish_live_sessions() -> None:
     user = _psychologist_user()
     pid = uuid4()
     mock_clinical = AsyncMock()
+    mock_clinical.auto_expire_unpaid_appointments = AsyncMock(return_value=0)
     mock_clinical.auto_finish_live_sessions_past_duration = AsyncMock(return_value=0)
     mock_clinical.get_psicologo_by_usuario_id = AsyncMock(return_value=SimpleNamespace(id=pid))
     mock_clinical.list_consultas_psicologo_desde = AsyncMock(return_value=[])
@@ -63,6 +64,7 @@ async def test_get_agenda_calls_auto_finish_live_sessions() -> None:
 
     await svc.get_agenda(user, from_date=date.today())  # type: ignore[arg-type]
 
+    mock_clinical.auto_expire_unpaid_appointments.assert_awaited_once()
     mock_clinical.auto_finish_live_sessions_past_duration.assert_awaited_once()
 
 

@@ -53,6 +53,8 @@ function getPublicKey(): string {
 export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPagoCheckoutProps) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
+  /** URL direta do Checkout Pro (funciona melhor em Safari/iOS que `redirectMode: "blank"` no brick). */
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const initOnce = useRef(false);
 
@@ -69,6 +71,7 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
   const handleComprarAgora = useCallback(async () => {
     setLoadState("loading");
     setPreferenceId(null);
+    setCheckoutUrl(null);
     setErrorDetail(null);
     const trimmedConsulta = consultaId?.trim();
     const result = await createMercadoPagoPreferencia({
@@ -86,6 +89,11 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
     }
     initMercadoPago(publicKey);
     setPreferenceId(result.data.preference_id);
+    const direct =
+      (result.data.sandbox_init_point && result.data.sandbox_init_point.trim()) ||
+      (result.data.init_point && result.data.init_point.trim()) ||
+      null;
+    setCheckoutUrl(direct);
     setLoadState("ready");
   }, [product, consultaId, orderId, publicKey]);
 
@@ -134,8 +142,9 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
       <div>
         <p className="text-sm font-semibold text-slate-900">Pagar com Mercado Pago (sandbox)</p>
         <p className="mt-1 text-xs leading-relaxed text-slate-600">
-          Clique em <strong className="font-semibold text-slate-800">Comprar agora</strong> para criar a preferência no
-          servidor; em seguida aparece o botão do Mercado Pago para ir ao checkout.
+          1) Toque em <strong className="font-semibold text-slate-800">Comprar agora</strong>. 2) Toque em{" "}
+          <strong className="font-semibold text-slate-800">Abrir checkout Mercado Pago</strong> para abrir em uma nova aba
+          e concluir o pagamento com segurança.
         </p>
       </div>
 
@@ -163,14 +172,31 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
       ) : null}
 
       {preferenceId && loadState === "ready" ? (
-        <div className="mx-auto flex w-full max-w-[300px] flex-col items-center pt-1">
-          <Wallet
-            initialization={{ preferenceId, redirectMode: "blank" }}
-            locale="pt-BR"
-            onError={(err) => {
-              console.error("Mercado Pago Wallet:", err);
-            }}
-          />
+        <div className="space-y-4 pt-1">
+          {checkoutUrl ? (
+            <a
+              href={checkoutUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[3rem] w-full items-center justify-center rounded-xl bg-sky-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
+            >
+              Abrir checkout Mercado Pago (nova aba)
+            </a>
+          ) : null}
+          <div className="mx-auto flex w-full max-w-full flex-col items-center overflow-visible sm:max-w-[320px]">
+            <Wallet
+              initialization={{ preferenceId, redirectMode: "self" }}
+              locale="pt-BR"
+              onError={(err) => {
+                console.error("Mercado Pago Wallet:", err);
+              }}
+            />
+          </div>
+          {checkoutUrl ? (
+            <p className="text-center text-[11px] leading-relaxed text-slate-500">
+              Se você voltar para esta página após o pagamento, atualizamos o status da consulta automaticamente.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

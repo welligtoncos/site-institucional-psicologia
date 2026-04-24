@@ -1,6 +1,7 @@
 """Agenda do psicólogo autenticado (GET /profiles/psychologist/me/agenda)."""
 
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -18,8 +19,10 @@ class PsychologistAgendaAppointmentResponse(BaseModel):
     iso_date: str = Field(description="AAAA-MM-DD")
     time: str = Field(description="HH:MM")
     format: Literal["Online", "Presencial"]
+    price: Decimal
     status: Literal["confirmada", "pendente", "cancelada", "realizada", "em_andamento"]
     payment_pending: bool = False
+    payment_expired: bool = False
     patient_online: bool = False
     duration_min: int = 50
     video_call_link: str | None = None

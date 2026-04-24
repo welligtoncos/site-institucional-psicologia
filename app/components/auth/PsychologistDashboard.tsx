@@ -5,13 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { usePsychologistSession } from "@/app/components/auth/PsychologistAuthShell";
-import {
-  PSYCHOLOGIST_ALERTS_SEED,
-  formatIsoDatePt,
-  loadAgendaAppointments,
-  todayIso,
-  type PsychologistAgendaAppointment,
-} from "@/app/lib/psicologo-mocks";
+import { type PsychologistAgendaAppointment, todayIso } from "@/app/lib/psicologo-mocks";
+import { apiAgendaToMock, fetchPsychologistAgenda } from "@/app/lib/psychologist-agenda-api";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 const REFRESH_TOKEN_KEY = "portal_refresh_token";
@@ -28,29 +23,50 @@ export function PsychologistDashboard() {
   const router = useRouter();
   const { name: userName, email: userEmail } = usePsychologistSession();
   const [agenda, setAgenda] = useState<PsychologistAgendaAppointment[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    function refresh() {
-      setAgenda(loadAgendaAppointments());
+    async function refresh() {
+      const result = await fetchPsychologistAgenda(todayIso());
+      if (result.ok && "appointments" in result.data) {
+        const mapped = apiAgendaToMock(result.data);
+        setAgenda(mapped.appointments);
+        setLoadError("");
+        setHydrated(true);
+        return;
+      }
+      setAgenda([]);
+      setLoadError(
+        "Não foi possível carregar os dados do painel pela API. Verifique sua sessão e disponibilidade do backend.",
+      );
+      setHydrated(true);
     }
-    refresh();
-    setHydrated(true);
-    window.addEventListener("storage", refresh);
-    window.addEventListener("psychologist-agenda-changed", refresh);
+    void refresh();
+    const onAgendaChanged = () => {
+      void refresh();
+    };
+    window.addEventListener("psychologist-availability-changed", onAgendaChanged);
+    window.addEventListener("psychologist-agenda-changed", onAgendaChanged);
     return () => {
-      window.removeEventListener("storage", refresh);
-      window.removeEventListener("psychologist-agenda-changed", refresh);
+      window.removeEventListener("psychologist-availability-changed", onAgendaChanged);
+      window.removeEventListener("psychologist-agenda-changed", onAgendaChanged);
     };
   }, []);
 
   const today = todayIso();
+  const formatIsoDatePt = (isoDate: string): string => {
+    const [y, m, d] = isoDate.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("pt-BR", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+    });
+  };
 
   const {
     resumoHoje,
     proximos,
-    pacientesHoje,
-    pendentesCount,
     pagamentosAlerta,
   } = useMemo(() => {
     const sorted = sortByDateTime(agenda);
@@ -58,14 +74,10 @@ export function PsychologistDashboard() {
     const hoje = ativos.filter((a) => a.isoDate === today);
     const futuros = ativos.filter((a) => a.isoDate >= today);
     const proximosSlice = futuros.slice(0, 5);
-    const ids = new Set(hoje.map((a) => a.patientId));
-    const pendentes = ativos.filter((a) => a.status === "pendente").length;
     const pagPend = ativos.filter((a) => a.pagamentoPendente).length;
     return {
       resumoHoje: hoje,
       proximos: proximosSlice,
-      pacientesHoje: ids.size,
-      pendentesCount: pendentes,
       pagamentosAlerta: pagPend,
     };
   }, [agenda, today]);
@@ -88,33 +100,25 @@ export function PsychologistDashboard() {
     <div className="space-y-8">
       <section className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50/50 p-6 shadow-sm">
         <p className="text-sm font-medium text-emerald-900/80">Olá, {userName}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Painel inicial</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Sua agenda profissional</h1>
         <p className="mt-2 max-w-xl text-sm text-slate-600">
-          Resumo do dia, próximos atendimentos e alertas. Dados de demonstração — alterações na agenda são salvas neste
-          navegador.
+          Acompanhe seus atendimentos de hoje, próximos horários e pendências da agenda em tempo real.
         </p>
       </section>
+      {loadError ? (
+        <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{loadError}</section>
+      ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hoje</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{resumoHoje.length}</p>
-          <p className="mt-1 text-xs text-slate-600">sessões agendadas (não canceladas)</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pacientes (hoje)</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{pacientesHoje}</p>
-          <p className="mt-1 text-xs text-slate-600">pessoas distintas</p>
-        </div>
-        <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Pendências</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-950">{pendentesCount}</p>
-          <p className="mt-1 text-xs text-amber-900/80">confirmações pendentes na agenda</p>
+          <p className="mt-1 text-xs text-slate-600">sessões agendadas</p>
         </div>
         <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Pagamentos</p>
           <p className="mt-1 text-2xl font-semibold text-rose-950">{pagamentosAlerta}</p>
-          <p className="mt-1 text-xs text-rose-900/80">sessões com pagamento em aberto (mock)</p>
+          <p className="mt-1 text-xs text-rose-900/80">sessões com pagamento em aberto</p>
         </div>
       </section>
 
@@ -176,82 +180,22 @@ export function PsychologistDashboard() {
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-800">Alertas</h2>
-        <p className="mt-1 text-xs text-slate-500">Pagamentos, cancelamentos e mensagens (demonstração).</p>
-        <ul className="mt-4 space-y-3">
-          {PSYCHOLOGIST_ALERTS_SEED.map((al) => (
-            <li
-              key={al.id}
-              className={`flex gap-3 rounded-xl border px-3 py-3 text-sm ${
-                al.type === "pagamento"
-                  ? "border-rose-100 bg-rose-50/50"
-                  : al.type === "cancelamento"
-                    ? "border-amber-100 bg-amber-50/50"
-                    : "border-sky-100 bg-sky-50/50"
-              }`}
-            >
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                  al.type === "pagamento"
-                    ? "bg-rose-100 text-rose-900"
-                    : al.type === "cancelamento"
-                      ? "bg-amber-100 text-amber-900"
-                      : "bg-sky-100 text-sky-900"
-                }`}
-              >
-                {al.type === "pagamento" ? "Pagamento" : al.type === "cancelamento" ? "Cancelamento" : "Mensagem"}
-              </span>
-              <p className="text-slate-800">{al.message}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Link
-          href="/psicologo/perfil"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/50"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Perfil</p>
-          <p className="mt-2 text-sm font-medium text-slate-900">CRP, bio e valor</p>
-        </Link>
-        <Link
-          href="/psicologo/disponibilidade"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/50"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Disponibilidade</p>
-          <p className="mt-2 text-sm font-medium text-slate-900">Horários e bloqueios</p>
-        </Link>
-        <Link
-          href="/psicologo/agenda"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/50"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Agenda</p>
-          <p className="mt-2 text-sm font-medium text-slate-900">
-            {pendentesCount > 0 ? `${pendentesCount} pendente(s)` : "Consultas e ações"}
-          </p>
-        </Link>
-        <Link
-          href="/psicologo/sessao"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/50"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sessão ao vivo</p>
-          <p className="mt-2 text-sm font-medium text-slate-900">Cronômetro no horário</p>
-        </Link>
-        <Link
-          href="/psicologo/pacientes"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/50"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pacientes</p>
-          <p className="mt-2 text-sm font-medium text-slate-900">Lista e prontuário (demo)</p>
-        </Link>
-        <Link
-          href="/psicologo/faturas"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/50"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Minhas consultas</p>
-          <p className="mt-2 text-sm font-medium text-slate-900">Histórico, pagamento e fatura</p>
-        </Link>
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-800">Atalhos rápidos</h2>
+        <p className="mt-1 text-xs text-slate-500">Acesse as áreas principais com um clique.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Link
+            href="/psicologo/faturas"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:border-emerald-200 hover:bg-emerald-50/50"
+          >
+            Minhas consultas
+          </Link>
+          <Link
+            href="/psicologo/sessao"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:border-emerald-200 hover:bg-emerald-50/50"
+          >
+            Atendimento
+          </Link>
+        </div>
       </section>
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
