@@ -126,6 +126,10 @@ export function PaymentSuccessSync({ initialParams }: PaymentSuccessSyncProps) {
     );
   }
 
+  if (state.phase !== "done") {
+    return null;
+  }
+
   const { synced, alreadyRegistered, detail } = state;
 
   if (synced && !alreadyRegistered) {
