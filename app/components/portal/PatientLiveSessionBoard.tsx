@@ -128,7 +128,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
       const currentShared = getSharedLiveSession();
       const activeId = currentShared ? extractConsultaIdFromLiveRef(currentShared.ref) : null;
 
-      if (activeId) {
+      if (activeId && currentShared) {
         const activeAppointment = mapped.find((item) => item.id === activeId);
         if (!activeAppointment) {
           /* Só limpa se a API devolveu lista não vazia — lista vazia pode ser falha transitória e apagaria a sessão na sala. */
