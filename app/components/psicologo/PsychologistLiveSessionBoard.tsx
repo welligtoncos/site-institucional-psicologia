@@ -20,6 +20,7 @@ import { normalizePsychologistSalaSelectedRef, psychologistSessionRoomPath } fro
 import {
   apiAgendaToMock,
   fetchPsychologistAgenda,
+  finishPsychologistAppointment,
   joinPsychologistRoom,
   patchPsychologistAppointmentMeetingLink,
 } from "@/app/lib/psychologist-agenda-api";
@@ -158,6 +159,8 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
   const roomWsRef = useRef<WebSocket | null>(null);
   const roomWsAppointmentIdRef = useRef<string>("");
   const lastAutoEndNotifyKey = useRef<string>("");
+  /** Evita POST /finish duplicado quando o cronômetro local atinge a duração prevista. */
+  const autoFinishClientKeyRef = useRef<string>("");
   /** Confirmação visível após publicar link — some sozinha (evita depender só do toast). */
   const meetLinkAckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [meetLinkPatientAck, setMeetLinkPatientAck] = useState<string | null>(null);
@@ -206,20 +209,13 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
           const appt = mapped.find((a) => a.id === aid);
           if (appt) {
             if (appt.status === "realizada" || appt.sessionPhase === "ended") {
-              if (cur.phase !== "ended") {
-                setSharedLiveSession({
-                  ...cur,
-                  phase: "ended",
-                  endedAtMs: Date.now(),
-                  updatedAtMs: Date.now(),
-                });
+              const notifyKey = `${aid}|api-finalizada`;
+              if (lastAutoEndNotifyKey.current !== notifyKey) {
+                lastAutoEndNotifyKey.current = notifyKey;
                 sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
                 clearPsychologistRoomEntered(cur.ref);
-                const notifyKey = `${aid}|ended`;
-                if (lastAutoEndNotifyKey.current !== notifyKey) {
-                  lastAutoEndNotifyKey.current = notifyKey;
-                  toast.message("Consulta concluída no sistema — sessão encerrada automaticamente.");
-                }
+                clearSharedLiveSession();
+                toast.message("Consulta concluída no sistema — sessão encerrada automaticamente.");
               }
             } else if (appt.status === "em_andamento" && appt.sessionStartedAt && cur.phase !== "ended") {
               const parsed = Date.parse(appt.sessionStartedAt);
@@ -630,6 +626,39 @@ export function PsychologistLiveSessionBoard({ lockedRoomRef = null }: Psycholog
     shared?.phase === "live" && plannedMs > 0 ? Math.min(100, (elapsedMs / plannedMs) * 100) : 0;
   const remainingMs =
     shared?.phase === "live" ? Math.max(0, plannedMs - elapsedMs) : 0;
+
+  /** Ao esgotar o tempo previsto (cronômetro local), finaliza a consulta na API e limpa a sala — não depende só do poll da agenda. */
+  useEffect(() => {
+    const s = shared;
+    if (s?.phase !== "live" || !s.startedAtMs || !s.durationMin) return;
+    const planned = s.durationMin * 60 * 1000;
+    if (planned <= 0) return;
+    if (Date.now() - s.startedAtMs < planned) return;
+    const id = extractConsultaIdFromLiveRef(s.ref);
+    if (!id) return;
+    const key = `${id}|${s.startedAtMs}|client`;
+    if (autoFinishClientKeyRef.current === key) return;
+    autoFinishClientKeyRef.current = key;
+    void (async () => {
+      const out = await finishPsychologistAppointment(id);
+      if (!out.ok) {
+        const d = (out.detail || "").toLowerCase();
+        const already = d.includes("já encerr") || d.includes("ja encerr") || d.includes("novamente");
+        if (!already) {
+          toast.error(out.detail);
+          autoFinishClientKeyRef.current = "";
+          return;
+        }
+      }
+      await refreshSources();
+      const cur = getSharedLiveSession();
+      if (cur?.ref) clearPsychologistRoomEntered(cur.ref);
+      clearSharedLiveSession();
+      setShared(null);
+      sendRoomRealtimeEvent(roomWsRef.current, { type: "session_ended" });
+      toast.message("Tempo previsto da sessão concluído — consulta finalizada automaticamente.");
+    })();
+  }, [shared, tick, refreshSources]);
 
   useEffect(() => {
     if (!hydrated || shared?.phase === "live" || shared?.phase === "patient_waiting") return;

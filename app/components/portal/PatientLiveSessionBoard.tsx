@@ -15,9 +15,11 @@ import {
 } from "@/app/lib/portal-appointments-api";
 import {
   clearSharedLiveSession,
+  extractConsultaIdFromLiveRef,
   formatLiveElapsed,
   getSharedLiveSession,
   isPsychologistRoomEnteredActive,
+  liveSessionRefsSameConsulta,
   setSharedLiveSession,
   subscribeSharedLiveSession,
   type SharedLiveSessionState,
@@ -116,6 +118,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
   const autoOpenTriedRef = useRef(false);
   /** Evita toast repetido se o WebSocket reenviar `session_started` com o mesmo instante. */
   const wsSessionStartedToastKeyRef = useRef<string>("");
+  const apiLivePromotedToastKeyRef = useRef<string>("");
 
   const refresh = useCallback(async () => {
     const result = await listPatientAppointments(today);
@@ -123,12 +126,15 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
       const mapped = result.data.appointments.map(mapApiAppointment);
       setAppointments(mapped);
       const currentShared = getSharedLiveSession();
-      if (currentShared?.ref.startsWith("portal:")) {
-        const activeId = currentShared.ref.slice("portal:".length);
+      const activeId = currentShared ? extractConsultaIdFromLiveRef(currentShared.ref) : null;
+
+      if (activeId) {
         const activeAppointment = mapped.find((item) => item.id === activeId);
         if (!activeAppointment) {
-          /* Consulta sumiu da lista (ex.: from_date=hoje não retorna datas passadas) ou ID antigo — senão o paciente fica bloqueado em "outra sessão ativa". */
-          clearSharedLiveSession();
+          /* Só limpa se a API devolveu lista não vazia — lista vazia pode ser falha transitória e apagaria a sessão na sala. */
+          if (mapped.length > 0) {
+            clearSharedLiveSession();
+          }
         } else if (activeAppointment.status === "cancelada" || activeAppointment.status === "nao_compareceu") {
           clearSharedLiveSession();
         } else if (
@@ -144,12 +150,17 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
             setSharedLiveSession({
               ...currentShared,
               phase: "live",
+              ref: portalRef(activeId),
               meetUrl: activeAppointment.videoCallLink ?? currentShared.meetUrl,
               startedAtMs,
               updatedAtMs: Date.now(),
             });
           }
-          toast.success("Sessão iniciada — cronômetro sincronizado.");
+          const toastKey = `${activeId}|api-live`;
+          if (apiLivePromotedToastKeyRef.current !== toastKey) {
+            apiLivePromotedToastKeyRef.current = toastKey;
+            toast.success("Sessão iniciada — cronômetro sincronizado.");
+          }
         } else if (
           (activeAppointment.status === "realizada" || activeAppointment.sessionPhase === "ended") &&
           currentShared.phase !== "ended"
@@ -160,18 +171,20 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
             endedAtMs: Date.now(),
             updatedAtMs: Date.now(),
           });
-        } else if (
-          activeAppointment.videoCallLink &&
-          activeAppointment.videoCallLink !== currentShared.meetUrl
-        ) {
-          if (currentShared.phase === "live" && currentShared.meetUrl?.trim()) {
-            setNewLinkRef(currentShared.ref);
+        } else if (activeAppointment.videoCallLink?.trim()) {
+          const nextMeet = activeAppointment.videoCallLink.trim();
+          const curMeet = currentShared.meetUrl?.trim() ?? "";
+          if (nextMeet !== curMeet) {
+            if (currentShared.phase === "live" && currentShared.meetUrl?.trim()) {
+              setNewLinkRef(currentShared.ref);
+            }
+            setSharedLiveSession({
+              ...currentShared,
+              ref: portalRef(activeId),
+              meetUrl: nextMeet,
+              updatedAtMs: Date.now(),
+            });
           }
-          setSharedLiveSession({
-            ...currentShared,
-            meetUrl: activeAppointment.videoCallLink,
-            updatedAtMs: Date.now(),
-          });
         } else if (
           activeAppointment.status === "em_andamento" &&
           currentShared.phase === "live" &&
@@ -181,6 +194,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
           if (Number.isFinite(fromApi) && currentShared.startedAtMs !== fromApi) {
             setSharedLiveSession({
               ...currentShared,
+              ref: portalRef(activeId),
               startedAtMs: fromApi,
               updatedAtMs: Date.now(),
             });
@@ -200,20 +214,39 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
           const startedAtMs = Number.isFinite(parsedStartedAt) ? parsedStartedAt : Date.now();
           const phase: SharedLiveSessionState["phase"] =
             liveFromApi.sessionPhase === "patient_waiting" ? "patient_waiting" : "live";
-          setSharedLiveSession({
-            version: 1,
-            ref: portalRef(liveFromApi.id),
-            phase,
-            patientName: liveFromApi.patientName?.trim() || `Paciente (consulta ${liveFromApi.id})`,
-            psychologistName: liveFromApi.psychologist,
-            isoDate: liveFromApi.isoDate,
-            time: liveFromApi.time,
-            durationMin: liveFromApi.durationMin,
-            format: liveFromApi.format,
-            meetUrl: liveFromApi.videoCallLink?.trim() || undefined,
-            startedAtMs: phase === "live" ? startedAtMs : undefined,
-            updatedAtMs: Date.now(),
-          });
+          const nextRef = portalRef(liveFromApi.id);
+          const nextMeet = liveFromApi.videoCallLink?.trim() || undefined;
+          const cur = getSharedLiveSession();
+          if (
+            cur &&
+            liveSessionRefsSameConsulta(cur.ref, nextRef) &&
+            cur.phase === phase &&
+            (phase !== "live" || cur.startedAtMs === startedAtMs) &&
+            (cur.meetUrl?.trim() || "") === (nextMeet ?? "") &&
+            cur.isoDate === liveFromApi.isoDate &&
+            cur.time === liveFromApi.time &&
+            cur.durationMin === liveFromApi.durationMin &&
+            cur.format === liveFromApi.format &&
+            (cur.patientName?.trim() || "") === (liveFromApi.patientName?.trim() || `Paciente (consulta ${liveFromApi.id})`) &&
+            (cur.psychologistName?.trim() || "") === (liveFromApi.psychologist?.trim() || "")
+          ) {
+            /* já alinhado — evita regravar a cada poll e o layout “piscar” na sala */
+          } else {
+            setSharedLiveSession({
+              version: 1,
+              ref: nextRef,
+              phase,
+              patientName: liveFromApi.patientName?.trim() || `Paciente (consulta ${liveFromApi.id})`,
+              psychologistName: liveFromApi.psychologist,
+              isoDate: liveFromApi.isoDate,
+              time: liveFromApi.time,
+              durationMin: liveFromApi.durationMin,
+              format: liveFromApi.format,
+              meetUrl: nextMeet,
+              startedAtMs: phase === "live" ? startedAtMs : undefined,
+              updatedAtMs: Date.now(),
+            });
+          }
         }
       }
     } else {
@@ -270,7 +303,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
         }
       }
       const current = getSharedLiveSession();
-      if (current?.ref === `portal:${appointmentId}`) {
+      if (current && liveSessionRefsSameConsulta(current.ref, portalRef(appointmentId))) {
         if (snapshot.meeting_link && snapshot.meeting_link !== current.meetUrl) {
           if (current.phase === "live" && current.meetUrl?.trim()) {
             setNewLinkRef(current.ref);
@@ -375,14 +408,14 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
     const now = Date.now();
-    if (cur && cur.ref !== ref) {
+    if (cur && !liveSessionRefsSameConsulta(cur.ref, ref)) {
       if (scheduledSlotStillBlocks(cur.phase, cur.isoDate, cur.time, cur.durationMin, now)) {
         toast.error("Outra sessão ativa no horário marcado. Aguarde o fim do slot ou saia da fila.");
         return;
       }
       clearSharedLiveSession();
     }
-    if (cur && cur.ref === ref && cur.phase === "patient_waiting") {
+    if (cur && liveSessionRefsSameConsulta(cur.ref, ref) && cur.phase === "patient_waiting") {
       toast.message("Você já está na fila.");
       return;
     }
@@ -421,19 +454,22 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
     const appointmentId = autoOpenAppointmentId?.trim();
     if (!appointmentId || autoOpenTriedRef.current || loading) return;
     const apt = eligibleSessions.find((item) => item.id === appointmentId);
-    autoOpenTriedRef.current = true;
     if (!apt) {
-      toast.error("Consulta online não disponível para entrada agora.");
+      if (appointments.length > 0) {
+        autoOpenTriedRef.current = true;
+        toast.error("Consulta online não disponível para entrada agora.");
+      }
       return;
     }
+    autoOpenTriedRef.current = true;
     void handleEnterWaiting(apt);
-  }, [autoOpenAppointmentId, eligibleSessions, loading]);
+  }, [autoOpenAppointmentId, eligibleSessions, loading, appointments.length]);
 
   /** Sai da sala de espera sem encerrar consulta no portal — pode entrar de novo quando quiser. */
   async function handleLeaveWaitingRoom(apt: LiveAppointment) {
     const ref = portalRef(apt.id);
     const cur = getSharedLiveSession();
-    if (!cur || cur.ref !== ref || cur.phase !== "patient_waiting") {
+    if (!cur || !liveSessionRefsSameConsulta(cur.ref, ref) || cur.phase !== "patient_waiting") {
       toast.message("Nada para sair nesta consulta.");
       return;
     }
@@ -515,7 +551,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
         <div className="space-y-8">
           {visibleSessions.map((apt) => {
             const ref = portalRef(apt.id);
-            const isThis = shared?.ref === ref;
+            const isThis = shared ? liveSessionRefsSameConsulta(shared.ref, ref) : false;
             const phase = isThis ? shared?.phase : null;
 
             return (
@@ -557,7 +593,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
                             onClick={() => handleEnterWaiting(apt)}
                             disabled={Boolean(
                               shared &&
-                                shared.ref !== ref &&
+                                !liveSessionRefsSameConsulta(shared.ref, ref) &&
                                 scheduledSlotStillBlocks(shared.phase, shared.isoDate, shared.time, shared.durationMin, Date.now()),
                             )}
                             className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-sky-900/10 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -565,7 +601,7 @@ export function PatientLiveSessionBoard({ autoOpenAppointmentId }: PatientLiveSe
                             {apt.status === "em_andamento" ? "Voltar para sala" : "Entrar na fila"}
                           </button>
                           {shared &&
-                          shared.ref !== ref &&
+                          !liveSessionRefsSameConsulta(shared.ref, ref) &&
                           scheduledSlotStillBlocks(shared.phase, shared.isoDate, shared.time, shared.durationMin, Date.now()) ? (
                             <p className="text-xs text-amber-800">
                               Há outra sessão dentro do horário marcado na agenda — aguarde o fim do slot ou saia da fila.
