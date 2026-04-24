@@ -77,6 +77,8 @@ export function LiveSessionHomeBanner({ role }: LiveSessionHomeBannerProps) {
   }
 
   const href = role === "patient" ? salaHrefForPatient(shared) : salaHrefForPsychologist(shared);
+  const backToSalaLabel =
+    role === "patient" ? "Voltar à sala de atendimento" : "Voltar à sala com cronômetro";
 
   return (
     <section
@@ -87,16 +89,12 @@ export function LiveSessionHomeBanner({ role }: LiveSessionHomeBannerProps) {
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-900">Sessão em andamento</p>
           <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-slate-900">{formatLiveElapsed(elapsedMs)}</p>
-          <p className="mt-1 text-xs text-slate-600">
-            Estado alinhado ao servidor (JWT + consulta em andamento). O cronômetro usa o horário de início gravado no
-            backend; ao voltar ao navegador, recarregamos da API.
-          </p>
         </div>
         <Link
           href={href}
           className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-center text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700"
         >
-          Voltar à sala com cronômetro
+          {backToSalaLabel}
         </Link>
       </div>
     </section>
