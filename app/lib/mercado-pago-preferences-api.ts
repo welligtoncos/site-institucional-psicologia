@@ -3,7 +3,6 @@
  * Credenciais sensíveis ficam só no servidor; aqui só public key no brick.
  */
 
-import { getBackendApiUrl } from "@/app/lib/backend";
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
 
 export type MercadoPagoPreferenciaItem = {
@@ -25,8 +24,7 @@ export type MercadoPagoPreferenciaResult = {
 export async function createMercadoPagoPreferencia(
   item: MercadoPagoPreferenciaItem,
 ): Promise<{ ok: true; data: MercadoPagoPreferenciaResult } | { ok: false; detail: string }> {
-  const base = getBackendApiUrl().replace(/\/$/, "");
-  const response = await fetch(`${base}/mercado-pago/preferencia`, {
+  const response = await fetch("/api/portal/mercado-pago/preferencia", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(item),
