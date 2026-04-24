@@ -104,7 +104,7 @@ export type MockAppointment = {
   format: "Online" | "Presencial";
   price: number;
   durationMin: number;
-  payment: "Pago" | "Pendente";
+  payment: "Pago" | "Pendente" | "Pagamento expirado";
   status: MockAppointmentStatus;
   /** RF-009: vínculo com registro financeiro / cobrança (gateway). */
   chargeId?: string;
