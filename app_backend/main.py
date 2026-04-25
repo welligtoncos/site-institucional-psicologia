@@ -1,6 +1,8 @@
 """Aplicação FastAPI: CORS, erros de domínio, rotas e healthchecks."""
 
+import json
 import logging
+import time
 
 from app.core.dotenv_bootstrap import load_project_dotenv
 
@@ -9,6 +11,7 @@ load_project_dotenv()
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
@@ -19,6 +22,31 @@ from app.routes import api_router
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
+# region agent log
+def _agent_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    try:
+        with open("debug-0d85e0.log", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "sessionId": "0d85e0",
+                        "runId": "pre-fix",
+                        "hypothesisId": hypothesis_id,
+                        "location": location,
+                        "message": message,
+                        "data": data,
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    ensure_ascii=True,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+
+
+# endregion
 _cors_origins = settings.cors_origin_list() if not settings.debug else ["*"]
 if not settings.debug and not _cors_origins:
     raise RuntimeError(
@@ -93,6 +121,31 @@ async def _connection_refused(_: Request, exc: ConnectionRefusedError) -> JSONRe
     if settings.debug:
         payload["debug"] = str(exc)
     return JSONResponse(status_code=503, content=payload)
+
+
+@app.exception_handler(RequestValidationError)
+async def _request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    body_preview = ""
+    try:
+        raw = await request.body()
+        body_preview = raw.decode("utf-8", errors="replace")[:500]
+    except Exception:
+        body_preview = "<unavailable>"
+    # region agent log
+    _agent_log(
+        "H5",
+        "main.py:_request_validation_error",
+        "request_validation_error",
+        {
+            "path": str(request.url.path),
+            "method": request.method,
+            "errors": exc.errors(),
+            "body_preview": body_preview,
+        },
+    )
+    # endregion
+    logger.error("422 validation error on %s: %s | body=%s", request.url.path, exc.errors(), body_preview)
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 app.include_router(api_router)

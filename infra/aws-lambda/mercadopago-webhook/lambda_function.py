@@ -128,20 +128,24 @@ def buscar_pagamento_mercado_pago(payment_id):
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8")
-        print("Erro Mercado Pago:", error_body)
 
-        # No teste do Mercado Pago, ele pode enviar um ID fictício.
-        # Então, se for Payment not found, respondemos 200 para provar que o endpoint recebeu.
+        # No teste do painel do Mercado Pago, costuma vir `data.id=123456` e a API retorna 404.
+        # Respondemos com payload sintético para o handler devolver 200 e o MP não ficar em retry.
         if e.code == 404:
+            print(
+                "Mercado Pago 404 (pagamento inexistente ou ID de simulação do painel). "
+                f"payment_id={payment_id} body={error_body[:500]}"
+            )
             return {
                 "id": payment_id,
                 "status": "not_found",
                 "status_detail": "payment_not_found",
                 "external_reference": None,
                 "transaction_amount": None,
-                "payment_type_id": None
+                "payment_type_id": None,
             }
 
+        print("Erro HTTP Mercado Pago:", e.code, error_body)
         raise Exception(f"Erro ao consultar pagamento no Mercado Pago: {error_body}")
 
 

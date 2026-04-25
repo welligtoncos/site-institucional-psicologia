@@ -1,6 +1,8 @@
 """
 Rotas internas do Mercado Pago — só para Lambda ou serviços com segredo compartilhado.
 """
+import json
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -14,6 +16,30 @@ from app.schemas.mercado_pago_schema import MercadoPagoConfirmPaymentRequest
 
 router = APIRouter(prefix="/internal/mercadopago", tags=["mercadopago-internal"])
 
+# region agent log
+def _agent_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    try:
+        with open("debug-0d85e0.log", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "sessionId": "0d85e0",
+                        "runId": "pre-fix",
+                        "hypothesisId": hypothesis_id,
+                        "location": location,
+                        "message": message,
+                        "data": data,
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    ensure_ascii=True,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+
+
+# endregion
 
 @router.get(
     "/confirm-payment",
@@ -56,6 +82,18 @@ async def confirm_mercadopago_payment(
     _: None = Depends(verify_internal_webhook_secret),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    # region agent log
+    _agent_log(
+        "H6",
+        "internal_mercado_pago.py:confirm_mercadopago_payment",
+        "confirm_payment_request_received",
+        {
+            "consulta_id": str(body.consulta_id),
+            "payment_id": body.payment_id,
+            "status": body.status,
+        },
+    )
+    # endregion
     if body.status.lower() != "approved":
         return {"ok": True, "skipped": True, "reason": "status_not_approved"}
 
