@@ -32,7 +32,7 @@ services:
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     env_file:
-      - .env
+      - .env.example
     environment:
       # Sobrescreve DATABASE_URL para apontar para o serviço `db` na rede Docker
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-appdb}
@@ -61,7 +61,7 @@ services:
   audit_consumer:
     build: .
     env_file:
-      - .env
+      - .env.example
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-app}:${RABBITMQ_DEFAULT_PASS:-app}@rabbitmq:5672/%2f
       MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
@@ -85,7 +85,7 @@ services:
   business_audit_consumer:
     build: .
     env_file:
-      - .env
+      - .env.example
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-app}:${RABBITMQ_DEFAULT_PASS:-app}@rabbitmq:5672/%2f
       MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-app}:${MONGO_INITDB_ROOT_PASSWORD:-app}@mongo:27017
