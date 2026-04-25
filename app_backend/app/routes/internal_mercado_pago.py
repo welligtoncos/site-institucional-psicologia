@@ -1,7 +1,6 @@
 """
 Rotas internas do Mercado Pago — só para Lambda ou serviços com segredo compartilhado.
 """
-
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException

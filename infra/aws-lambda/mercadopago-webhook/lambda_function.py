@@ -1,21 +1,20 @@
 """
-Webhook Mercado Pago para AWS Lambda (API Gateway).
+Webhook Mercado Pago para AWS Lambda (API Gateway -> SQS).
 
 Variáveis na função:
   MERCADO_PAGO_ACCESS_TOKEN — consultar pagamento na API MP
-  MERCADO_PAGO_CONFIRM_PAYMENT_URL — POST HTTPS no FastAPI (ex.: .../internal/mercadopago/confirm-payment)
-  MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET — mesmo valor do app_backend (header X-Internal-Webhook-Secret)
+  MERCADO_PAGO_SQS_QUEUE_URL — URL da fila SQS mp-webhook-inbound
 """
 
+import boto3
 import json
 import os
 import urllib.error
 import urllib.request
-import uuid
 
 MERCADO_PAGO_ACCESS_TOKEN = os.environ.get("MERCADO_PAGO_ACCESS_TOKEN")
-CONFIRM_PAYMENT_URL = os.environ.get("MERCADO_PAGO_CONFIRM_PAYMENT_URL", "").strip()
-INTERNAL_WEBHOOK_SECRET = os.environ.get("MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET", "").strip()
+SQS_QUEUE_URL = os.environ.get("MERCADO_PAGO_SQS_QUEUE_URL", "").strip()
+SQS_CLIENT = boto3.client("sqs")
 
 
 def lambda_handler(event, context):
@@ -70,25 +69,31 @@ def lambda_handler(event, context):
         print("Valor:", transaction_amount)
         print("Tipo de pagamento:", payment_type_id)
 
-        status_interno = mapear_status(status)
+        if not external_reference:
+            return response(200, {
+                "message": "Evento sem external_reference, ignorado",
+                "payment_id": str(payment_id),
+                "status_mercado_pago": str(status),
+            })
 
-        persistido = False
-        persist_erro = None
-        if status == "approved" and external_reference:
-            persistido, persist_erro = persistir_pagamento_no_backend(
-                external_reference, payment_id, status
-            )
+        queue_payload = {
+            "consulta_id": str(external_reference),
+            "payment_id": str(payment_id),
+            "status": str(status or ""),
+            "status_detail": str(status_detail or ""),
+            "transaction_amount": transaction_amount,
+            "payment_type_id": str(payment_type_id or ""),
+            "source": "mercadopago-webhook",
+        }
+        _enqueue_payment(queue_payload)
 
         body_ok = {
-            "message": "Webhook Mercado Pago processado com sucesso",
+            "message": "Webhook Mercado Pago enfileirado com sucesso",
             "payment_id": payment_id,
             "status_mercado_pago": status,
-            "status_interno": status_interno,
             "external_reference": external_reference,
-            "persistido_bd": persistido,
+            "queue_url": SQS_QUEUE_URL,
         }
-        if persist_erro:
-            body_ok["persist_erro"] = persist_erro
 
         return response(200, body_ok)
 
@@ -140,73 +145,14 @@ def buscar_pagamento_mercado_pago(payment_id):
         raise Exception(f"Erro ao consultar pagamento no Mercado Pago: {error_body}")
 
 
-def mapear_status(status):
-    if status == "approved":
-        return "PAGO"
+def _enqueue_payment(payload):
+    if not SQS_QUEUE_URL:
+        raise RuntimeError("MERCADO_PAGO_SQS_QUEUE_URL nao configurada")
 
-    if status == "pending":
-        return "PENDENTE"
-
-    if status == "rejected":
-        return "RECUSADO"
-
-    if status == "cancelled":
-        return "CANCELADO"
-
-    if status == "refunded":
-        return "REEMBOLSADO"
-
-    if status == "not_found":
-        return "PAGAMENTO_NAO_ENCONTRADO_TESTE"
-
-    return "DESCONHECIDO"
-
-
-def persistir_pagamento_no_backend(external_reference, payment_id, status_mp):
-    """
-    Grava pagamento no PostgreSQL via FastAPI (somente se external_reference for UUID da consulta).
-    Retorna (sucesso_bool, mensagem_erro_ou_None).
-    """
-    if not CONFIRM_PAYMENT_URL or not INTERNAL_WEBHOOK_SECRET:
-        return False, (
-            "MERCADO_PAGO_CONFIRM_PAYMENT_URL ou MERCADO_PAGO_INTERNAL_WEBHOOK_SECRET não configurados na Lambda"
-        )
-
-    try:
-        uuid.UUID(str(external_reference))
-    except (ValueError, TypeError):
-        return False, "external_reference não é UUID — use consulta_id na preferência"
-
-    payload = json.dumps(
-        {
-            "consulta_id": str(external_reference),
-            "payment_id": str(payment_id),
-            "status": str(status_mp),
-        }
-    ).encode("utf-8")
-
-    req = urllib.request.Request(
-        CONFIRM_PAYMENT_URL,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "X-Internal-Webhook-Secret": INTERNAL_WEBHOOK_SECRET,
-        },
-        method="POST",
+    SQS_CLIENT.send_message(
+        QueueUrl=SQS_QUEUE_URL,
+        MessageBody=json.dumps(payload, ensure_ascii=False),
     )
-
-    try:
-        with urllib.request.urlopen(req, timeout=15) as res:
-            raw = res.read().decode("utf-8")
-            code = getattr(res, "status", None) or res.getcode()
-            if code != 200:
-                return False, f"backend HTTP {code}: {raw[:500]}"
-            return True, None
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")
-        return False, f"backend HTTP {e.code}: {err_body[:500]}"
-    except Exception as exc:
-        return False, str(exc)[:500]
 
 
 def response(status_code, body):
