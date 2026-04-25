@@ -55,7 +55,8 @@ services:
     working_dir: /app
     # Desenvolvimento: hot reload + migrações na subida
     command: >
-      sh -c "alembic upgrade head &&
+      sh -c "python scripts/wait_for_db.py &&
+      alembic upgrade head &&
       uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
   audit_consumer:
