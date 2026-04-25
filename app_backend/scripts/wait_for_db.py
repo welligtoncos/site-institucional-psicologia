@@ -12,8 +12,9 @@ from sqlalchemy.engine.url import make_url
 def _sync_url_from_env() -> str:
     raw = os.environ["DATABASE_URL"].strip()
     url = make_url(raw)
-    if url.drivername != "postgresql+psycopg":
-        url = url.set(drivername="postgresql+psycopg")
+    # psycopg.connect() accepts libpq conninfo/URI, not SQLAlchemy dialect+driver.
+    if url.drivername != "postgresql":
+        url = url.set(drivername="postgresql")
     return url.render_as_string(hide_password=False)
 
 
