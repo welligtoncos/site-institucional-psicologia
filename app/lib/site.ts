@@ -1,7 +1,7 @@
 export const siteConfig = {
   name: "Clinica Harmonia",
   fullName: "Clinica Harmonia Psicologia",
-  siteUrl: "https://www.clinicaharmonia.com.br",
+  siteUrl: "https://psicologoonlineja.com",
   phoneDisplay: "(11) 99999-9999",
   email: "contato@clinicaharmonia.com.br",
   address: "Rua do Acolhimento, 245 - Centro",
