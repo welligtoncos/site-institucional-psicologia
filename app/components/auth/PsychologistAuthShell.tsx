@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
@@ -13,6 +13,13 @@ export const PSYCHOLOGIST_LOGIN_NEXT = "/login?next=/psicologo";
 function buildPsychologistLoginUrl(pathname: string | null): string {
   const nextPath = pathname && pathname.startsWith("/psicologo") ? pathname : "/psicologo";
   return `/login?next=${encodeURIComponent(nextPath)}`;
+}
+
+function buildPsychologistLoginUrlWithQuery(pathname: string | null, searchParams: URLSearchParams): string {
+  const nextPath = pathname && pathname.startsWith("/psicologo") ? pathname : "/psicologo";
+  const qs = searchParams.toString();
+  const next = qs ? `${nextPath}?${qs}` : nextPath;
+  return `/login?next=${encodeURIComponent(next)}`;
 }
 
 type MeResponse = {
@@ -62,6 +69,7 @@ type PsychologistAuthShellProps = {
 export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
   const [loading, setLoading] = useState(true);
@@ -90,11 +98,12 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
     }
 
     async function validateSession() {
+      const loginUrl = buildPsychologistLoginUrlWithQuery(pathnameRef.current, new URLSearchParams(searchParams.toString()));
       const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
       const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
 
       if (!accessToken) {
-        router.push(buildPsychologistLoginUrl(pathnameRef.current));
+        router.push(loginUrl);
         return;
       }
 
@@ -116,7 +125,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
 
       if (!refreshToken) {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-        router.push(buildPsychologistLoginUrl(pathnameRef.current));
+        router.push(loginUrl);
         return;
       }
 
@@ -128,7 +137,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
       ) {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
         window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-        router.push(buildPsychologistLoginUrl(pathnameRef.current));
+        router.push(loginUrl);
         return;
       }
 
@@ -137,11 +146,9 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
 
       const retriedMe = await fetchMeWithToken(refreshAttempt.data.access_token);
       if (!retriedMe.response.ok) {
-        if (!mounted) return;
-        setErrorMessage(
-          typeof retriedMe.data.detail === "string" ? retriedMe.data.detail : "Não foi possível validar a sessão.",
-        );
-        setLoading(false);
+        window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+        window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+        router.push(loginUrl);
         return;
       }
 
@@ -161,14 +168,17 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
 
     validateSession().catch((error) => {
       if (!mounted) return;
-      setErrorMessage(error instanceof Error ? error.message : "Erro ao carregar o portal.");
-      setLoading(false);
+      const loginUrl = buildPsychologistLoginUrlWithQuery(pathnameRef.current, new URLSearchParams(searchParams.toString()));
+      window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+      window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+      setErrorMessage(error instanceof Error ? error.message : "");
+      router.push(loginUrl);
     });
 
     return () => {
       mounted = false;
     };
-  }, [router]);
+  }, [router, searchParams]);
 
   if (loading) {
     return (
@@ -183,7 +193,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
       <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
         <p className="text-sm text-rose-800">{errorMessage}</p>
         <Link
-          href={buildPsychologistLoginUrl(pathname)}
+          href={buildPsychologistLoginUrlWithQuery(pathname, new URLSearchParams(searchParams.toString()))}
           className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
         >
           Voltar ao login

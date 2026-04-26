@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { clearPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
@@ -39,6 +39,13 @@ export type PortalPatientSessionValue = {
 
 export const PortalPatientSessionContext = createContext<PortalPatientSessionValue | null>(null);
 
+function buildPortalLoginUrl(pathname: string | null, searchParams: URLSearchParams): string {
+  const nextPath = pathname && pathname.startsWith("/portal") ? pathname : "/portal";
+  const qs = searchParams.toString();
+  const next = qs ? `${nextPath}?${qs}` : nextPath;
+  return `/login?next=${encodeURIComponent(next)}`;
+}
+
 export function usePortalPatientSession(): PortalPatientSessionValue {
   const ctx = useContext(PortalPatientSessionContext);
   if (!ctx) {
@@ -49,6 +56,8 @@ export function usePortalPatientSession(): PortalPatientSessionValue {
 
 export function PortalGate({ children }: PortalGateProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -78,11 +87,12 @@ export function PortalGate({ children }: PortalGateProps) {
     }
 
     async function validateSession() {
+      const loginUrl = buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()));
       const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
       const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
 
       if (!accessToken) {
-        router.push("/login?next=/portal");
+        router.push(loginUrl);
         return;
       }
 
@@ -102,7 +112,7 @@ export function PortalGate({ children }: PortalGateProps) {
 
       if (!refreshToken) {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-        router.push("/login?next=/portal");
+        router.push(loginUrl);
         return;
       }
 
@@ -114,7 +124,7 @@ export function PortalGate({ children }: PortalGateProps) {
       ) {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
         window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-        router.push("/login?next=/portal");
+        router.push(loginUrl);
         return;
       }
 
@@ -123,9 +133,9 @@ export function PortalGate({ children }: PortalGateProps) {
 
       const retriedMe = await fetchMeWithToken(refreshAttempt.data.access_token);
       if (!retriedMe.response.ok) {
-        if (!mounted) return;
-        setErrorMessage(retriedMe.data.detail || "Nao foi possivel validar a sessao.");
-        setLoading(false);
+        window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+        window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+        router.push(loginUrl);
         return;
       }
 
@@ -143,20 +153,25 @@ export function PortalGate({ children }: PortalGateProps) {
 
     validateSession().catch((error) => {
       if (!mounted) return;
-      setErrorMessage(error instanceof Error ? error.message : "Erro ao carregar portal.");
-      setLoading(false);
+      const loginUrl = buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()));
+      window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+      window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+      clearPortalPatientSnapshot();
+      setErrorMessage(error instanceof Error ? error.message : "");
+      router.push(loginUrl);
     });
 
     return () => {
       mounted = false;
     };
-  }, [router]);
+  }, [router, pathname, searchParams]);
 
   function handleLogout() {
+    const loginUrl = buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()));
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     clearPortalPatientSnapshot();
-    router.push("/login?next=/portal");
+    router.push(loginUrl);
   }
 
   if (loading) {
@@ -172,7 +187,7 @@ export function PortalGate({ children }: PortalGateProps) {
       <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
         <p className="text-sm text-rose-700">{errorMessage}</p>
         <Link
-          href="/login?next=/portal"
+          href={buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()))}
           className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
         >
           Voltar para login
