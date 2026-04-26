@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AppointmentCta } from "../components/internal/AppointmentCta";
 import { PageHero } from "../components/internal/PageHero";
 import { Container, Section } from "../components/ui/SitePrimitives";
@@ -8,31 +9,37 @@ const specialties = [
     title: "Ansiedade e estresse",
     description:
       "Acompanhamento para sintomas de ansiedade, sobrecarga emocional, preocupacao excessiva e dificuldade de relaxamento.",
+    href: "/ansiedade",
   },
   {
     title: "Depressao e luto",
     description:
       "Atendimento cuidadoso para momentos de tristeza profunda, perdas significativas e reconstrucao de sentido.",
+    href: "/depressao",
   },
   {
     title: "Relacionamentos",
     description:
       "Suporte para conflitos afetivos, comunicacao assertiva, limites saudaveis e fortalecimento de vinculos.",
+    href: "/terapia-de-casal",
   },
   {
     title: "Terapia de casal",
     description:
       "Espaco neutro e mediado para melhorar o dialogo, reduzir conflitos recorrentes e recuperar a parceria.",
+    href: "/terapia-de-casal",
   },
   {
     title: "Atendimento para adolescentes",
     description:
       "Apoio emocional para desafios escolares, sociais e familiares, com escuta especializada para essa fase.",
+    href: "/especialidades",
   },
   {
     title: "Autoconhecimento",
     description:
       "Processo terapeutico para ampliar consciencia emocional, fortalecer autoestima e desenvolver repertorio interno.",
+    href: "/autoestima",
   },
 ];
 
@@ -60,6 +67,12 @@ export default function EspecialidadesPage() {
             <article key={item.title} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900">{item.title}</h2>
               <p className="mt-3 text-sm leading-relaxed text-slate-600">{item.description}</p>
+              <Link
+                href={item.href}
+                className="mt-4 inline-flex text-sm font-semibold text-sky-700 underline underline-offset-2"
+              >
+                Saiba mais
+              </Link>
             </article>
           ))}
         </Container>

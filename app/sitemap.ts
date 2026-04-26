@@ -8,6 +8,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/sobre",
     "/especialidades",
     "/equipe",
+    "/ansiedade",
+    "/depressao",
+    "/terapia-de-casal",
+    "/autoestima",
   ] as const;
 
   const now = new Date();

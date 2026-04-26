@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
+import dynamic from "next/dynamic";
 import { AppShell } from "./components/AppShell";
-import { ToasterProvider } from "./components/ToasterProvider";
 import { siteConfig } from "./lib/site";
 import "./globals.css";
 
@@ -10,10 +10,10 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const ToasterProvider = dynamic(
+  () => import("./components/ToasterProvider").then((module) => module.ToasterProvider),
+  { ssr: false }
+);
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.siteUrl),
@@ -56,12 +56,21 @@ export const metadata: Metadata = {
     url: "/",
     locale: "pt_BR",
     siteName: "Psicologo Online Ja",
+    images: [
+      {
+        url: siteConfig.defaultOgImage,
+        width: 1200,
+        height: 630,
+        alt: "Psicologo Online Ja",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Psicologo Online Ja",
     description:
       "Terapia online com atendimento humanizado e agendamento rapido.",
+    images: [siteConfig.defaultOgImage],
   },
 };
 
@@ -80,8 +89,12 @@ export default function RootLayout({
     address: {
       "@type": "PostalAddress",
       streetAddress: siteConfig.address,
-      addressCountry: "BR",
+      addressLocality: siteConfig.city,
+      postalCode: siteConfig.postalCode,
+      addressCountry: siteConfig.countryCode,
     },
+    image: `${siteConfig.siteUrl}${siteConfig.defaultOgImage}`,
+    priceRange: siteConfig.priceRange,
     areaServed: "Brasil",
     serviceType: ["Psicologia", "Terapia Online", "Terapia de Casal"],
   };
@@ -89,7 +102,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-slate-50 text-slate-800">
         <script
