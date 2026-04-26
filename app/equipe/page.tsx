@@ -5,35 +5,22 @@ import { Container, Section } from "../components/ui/SitePrimitives";
 
 const team = [
   {
-    name: "Dra. Mariana Alves",
-    role: "Psicologa clinica - CRP 00/00000",
+    name: "Barbara Reis Monteiro",
+    role: "Psicologa Clinica - CRP 05/72363",
+    photoSrc: "/barbara.jpg",
+    photoAlt: "Foto de perfil da psicologa Barbara Reis Monteiro",
+    summary:
+      "Atendimento para criancas, adolescentes e adultos com foco em TDAH, neuroaprendizagem, autoestima e organizacao da rotina.",
     description:
-      "Atua com ansiedade, autoestima e processos de autoconhecimento, com abordagem centrada na pessoa.",
-  },
-  {
-    name: "Dr. Rafael Monteiro",
-    role: "Psicologo clinico - CRP 00/00000",
-    description:
-      "Especialista em terapia de casal e relacionamentos, com foco em comunicacao e reconstrucao de vinculos.",
-  },
-  {
-    name: "Dra. Camila Nunes",
-    role: "Psicologa clinica - CRP 00/00000",
-    description:
-      "Atendimento para adolescentes e orientacao familiar, com experiencia em demandas escolares e emocionais.",
-  },
-  {
-    name: "Dra. Patricia Lima",
-    role: "Psicologa clinica - CRP 00/00000",
-    description:
-      "Trabalha com depressao, luto e reorganizacao de rotina, priorizando acolhimento e plano terapeutico claro.",
+      "Com escuta acolhedora e direcionamento pratico, Barbara ajuda voce a transformar sobrecarga em clareza e acao no dia a dia.",
+    connectionPillars: ["Escuta acolhedora", "Direcionamento pratico", "Evolucao com consistencia"],
   },
 ];
 
 export const metadata: Metadata = {
-  title: "Equipe de Psicologos",
+  title: "Sobre a Psicologa",
   description:
-    "Conheca a equipe de psicologos do Psicologo Online Ja e encontre o profissional ideal para seu momento.",
+    "Conheca Barbara Reis Monteiro, psicologa clinica que atua no Psicologo Online Ja.",
   alternates: {
     canonical: "/equipe",
   },
@@ -44,25 +31,54 @@ export default function EquipePage() {
     <>
       <PageHero
         eyebrow="Equipe"
-        title="Conheca os psicologos do Psicologo Online Ja"
-        description="Profissionais qualificados, atualizados e comprometidos com um atendimento humano, etico e eficaz."
+        title="Nossa equipe de psicologia"
+        description="Hoje, a equipe e formada por Barbara Reis Monteiro, com atendimento acolhedor, etico e focado em resultados reais para o seu momento."
       />
 
       <Section>
-        <Container className="grid gap-4 md:grid-cols-2">
+        <Container className="grid gap-4">
           {team.map((member) => (
             <article key={member.name} className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
-              <h2 className="text-xl font-semibold text-slate-900">{member.name}</h2>
-              <p className="mt-1 text-sm font-medium text-sky-700">{member.role}</p>
-              <p className="mt-4 leading-relaxed text-slate-600">{member.description}</p>
+              <div className="flex flex-col gap-6 md:flex-row md:items-start">
+                <div className="mx-auto w-full max-w-[220px] md:mx-0">
+                  <div className="group aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                    <img
+                      src={member.photoSrc}
+                      alt={member.photoAlt}
+                      className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+                      loading="lazy"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1">
+                  <h2 className="text-xl font-semibold text-slate-900">{member.name}</h2>
+                  <p className="mt-1 text-sm font-medium text-sky-700">{member.role}</p>
+                  <p className="mt-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                    Atendimento direto com a psicologa, com escuta proxima e plano terapeutico personalizado para voce.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {member.connectionPillars.map((pillar) => (
+                      <span
+                        key={pillar}
+                        className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-800"
+                      >
+                        {pillar}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-4 leading-relaxed text-slate-700">{member.summary}</p>
+                  <p className="mt-4 leading-relaxed text-slate-600">{member.description}</p>
+                </div>
+              </div>
             </article>
           ))}
         </Container>
       </Section>
 
       <AppointmentCta
-        title="Escolha um atendimento alinhado ao seu momento"
-        description="Nossa equipe esta preparada para receber voce com respeito, escuta e uma proposta terapeutica personalizada."
+        title="Agende seu atendimento com Barbara"
+        description="Um espaco seguro, humano e profissional para voce cuidar da sua saude emocional com acompanhamento de perto."
       />
     </>
   );
