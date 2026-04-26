@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { AppShell } from "./components/AppShell";
-import { ToasterProvider } from "./components/ToasterProvider";
 import { siteConfig } from "./lib/site";
 import "./globals.css";
 
@@ -105,7 +104,6 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
         />
         <AppShell>{children}</AppShell>
-        <ToasterProvider />
       </body>
     </html>
   );
