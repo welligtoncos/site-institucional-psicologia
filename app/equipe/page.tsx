@@ -31,9 +31,12 @@ const team = [
 ];
 
 export const metadata: Metadata = {
-  title: "Equipe",
+  title: "Equipe de Psicologos",
   description:
-    "Conheca a equipe de psicologos da Clinica Harmonia e encontre o profissional ideal para seu momento.",
+    "Conheca a equipe de psicologos do Psicologo Online Ja e encontre o profissional ideal para seu momento.",
+  alternates: {
+    canonical: "/equipe",
+  },
 };
 
 export default function EquipePage() {
@@ -41,7 +44,7 @@ export default function EquipePage() {
     <>
       <PageHero
         eyebrow="Equipe"
-        title="Conheca os psicologos da Clinica Harmonia"
+        title="Conheca os psicologos do Psicologo Online Ja"
         description="Profissionais qualificados, atualizados e comprometidos com um atendimento humano, etico e eficaz."
       />
 

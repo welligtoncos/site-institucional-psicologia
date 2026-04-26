@@ -6,7 +6,10 @@ import { Container, Section } from "../components/ui/SitePrimitives";
 export const metadata: Metadata = {
   title: "Sobre",
   description:
-    "Conheca a Clinica Harmonia, nossos valores, missao e compromisso com um atendimento psicologico acolhedor e etico.",
+    "Conheca o Psicologo Online Ja, nossos valores, missao e compromisso com atendimento psicologico online acolhedor e etico.",
+  alternates: {
+    canonical: "/sobre",
+  },
 };
 
 export default function SobrePage() {
@@ -15,7 +18,7 @@ export default function SobrePage() {
       <PageHero
         eyebrow="Sobre a clinica"
         title="Cuidado psicologico com acolhimento, etica e excelencia"
-        description="A Clinica Harmonia nasceu para oferecer um espaco seguro de escuta e transformacao, com atendimentos baseados em ciencia, empatia e respeito a historia de cada pessoa."
+        description="O Psicologo Online Ja nasceu para oferecer um espaco seguro de escuta e transformacao, com atendimentos baseados em ciencia, empatia e respeito a historia de cada pessoa."
       />
 
       <Section>

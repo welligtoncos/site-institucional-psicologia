@@ -151,7 +151,7 @@ export async function submitAppointmentRequest(
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const to = process.env.CLINIC_CONTACT_EMAIL || siteConfig.email;
-  const from = process.env.RESEND_FROM_EMAIL || "Clinica Harmonia <onboarding@resend.dev>";
+  const from = process.env.RESEND_FROM_EMAIL || "Psicologo Online Ja <onboarding@resend.dev>";
   const emailPayload = buildAppointmentEmail(parsed.data);
 
   try {

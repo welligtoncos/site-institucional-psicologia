@@ -22,7 +22,7 @@ export function DifferentialsSection() {
       <Container>
         <SectionTitle
           eyebrow="Diferenciais"
-          title="Por que escolher a Clinica Harmonia"
+          title="Por que escolher o Psicologo Online Ja"
           subtitle="Combinamos ciencia, acolhimento e experiencia clinica para oferecer um cuidado emocional consistente e confiavel."
           align="center"
         />

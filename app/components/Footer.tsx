@@ -35,7 +35,7 @@ export function Footer() {
         </div>
       </div>
       <div className="mx-auto mt-8 w-full max-w-6xl border-t border-slate-200 px-5 pt-5 text-xs text-slate-500 sm:px-6 lg:px-8">
-        <p>(c) 2026 Clinica Harmonia. Todos os direitos reservados.</p>
+        <p>(c) 2026 Psicologo Online Ja. Todos os direitos reservados.</p>
       </div>
     </footer>
   );

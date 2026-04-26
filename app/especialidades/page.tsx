@@ -37,9 +37,12 @@ const specialties = [
 ];
 
 export const metadata: Metadata = {
-  title: "Especialidades",
+  title: "Especialidades | Psicoterapia Online",
   description:
-    "Veja as especialidades atendidas pela Clinica Harmonia: ansiedade, depressao, relacionamentos, terapia de casal e mais.",
+    "Veja as especialidades atendidas pelo Psicologo Online Ja: ansiedade, depressao, relacionamentos, terapia de casal e mais.",
+  alternates: {
+    canonical: "/especialidades",
+  },
 };
 
 export default function EspecialidadesPage() {
@@ -47,7 +50,7 @@ export default function EspecialidadesPage() {
     <>
       <PageHero
         eyebrow="Especialidades"
-        title="Areas de atendimento da Clinica Harmonia"
+        title="Areas de atendimento do Psicologo Online Ja"
         description="Oferecemos suporte psicologico para diferentes demandas emocionais e relacionais, sempre com plano terapeutico individualizado."
       />
 

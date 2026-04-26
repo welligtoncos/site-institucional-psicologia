@@ -18,36 +18,50 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.siteUrl),
   title: {
-    default: `${siteConfig.fullName}`,
-    template: `%s | ${siteConfig.name}`,
+    default: "Psicologo Online Ja | Terapia Online com Psicologos",
+    template: `%s | Psicologo Online Ja`,
   },
   description:
-    "Clinica de psicologia com atendimento humanizado, presencial e online, focado em acolhimento, confianca e desenvolvimento emocional.",
+    "Psicologo online com atendimento para ansiedade, relacionamentos, autoestima e terapia de casal. Agende sua consulta com praticidade e sigilo.",
   keywords: [
-    "clinica de psicologia",
-    "psicologa",
-    "terapia",
-    "saude mental",
+    "psicologo online",
     "terapia online",
+    "psicoterapia online",
+    "psicologo",
+    "terapia",
+    "ansiedade",
     "terapia de casal",
+    "saude mental",
   ],
+  category: "health",
   alternates: {
     canonical: "/",
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   openGraph: {
-    title: siteConfig.fullName,
+    title: "Psicologo Online Ja",
     description:
-      "Atendimento psicologico profissional para adolescentes, adultos e casais, com cuidado acolhedor e etico.",
+      "Atendimento psicologico online com psicologos qualificados, escuta acolhedora e agendamento simples.",
     type: "website",
     url: "/",
     locale: "pt_BR",
-    siteName: siteConfig.name,
+    siteName: "Psicologo Online Ja",
   },
   twitter: {
     card: "summary_large_image",
-    title: siteConfig.fullName,
+    title: "Psicologo Online Ja",
     description:
-      "Cuidado emocional com escuta qualificada, etica profissional e plano terapeutico personalizado.",
+      "Terapia online com atendimento humanizado e agendamento rapido.",
   },
 };
 
@@ -56,12 +70,32 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const localBusinessSchema = {
+    "@context": "https://schema.org",
+    "@type": "ProfessionalService",
+    name: "Psicologo Online Ja",
+    url: siteConfig.siteUrl,
+    telephone: siteConfig.phoneDisplay,
+    email: siteConfig.email,
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: siteConfig.address,
+      addressCountry: "BR",
+    },
+    areaServed: "Brasil",
+    serviceType: ["Psicologia", "Terapia Online", "Terapia de Casal"],
+  };
+
   return (
     <html
       lang="pt-BR"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-slate-50 text-slate-800">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+        />
         <AppShell>{children}</AppShell>
         <ToasterProvider />
       </body>

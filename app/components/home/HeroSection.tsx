@@ -12,7 +12,7 @@ export function HeroSection() {
 
         <div className="max-w-3xl space-y-4 sm:space-y-5">
           <h1 className="text-3xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
-            Clinica Harmonia Psicologia
+            Psicologo Online Ja
           </h1>
           <p className="text-base leading-relaxed text-slate-600 sm:text-lg lg:text-xl">
             Atendimento psicologico humanizado para adolescentes, adultos e casais, com escuta profissional, plano

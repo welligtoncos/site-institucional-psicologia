@@ -60,7 +60,7 @@ export function buildAppointmentEmail(data: AppointmentInput) {
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0f172a;">
       <h2 style="margin: 0 0 12px;">Novo pedido de agendamento</h2>
-      <p style="margin: 0 0 24px; color: #334155;">Formulario enviado pelo site da Clinica Harmonia.</p>
+      <p style="margin: 0 0 24px; color: #334155;">Formulario enviado pelo site Psicologo Online Ja.</p>
 
       <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
         <tbody>

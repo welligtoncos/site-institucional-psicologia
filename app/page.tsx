@@ -8,9 +8,12 @@ import { SpecialtiesSection } from "./components/home/SpecialtiesSection";
 import { TeamSection } from "./components/home/TeamSection";
 
 export const metadata: Metadata = {
-  title: "Home",
+  title: "Psicologo Online | Terapia Online com Sigilo",
   description:
-    "Clinica de psicologia com atendimento humanizado, equipe qualificada e suporte emocional para diferentes fases da vida.",
+    "Psicologo online para ansiedade, estresse, relacionamentos e terapia de casal. Atendimento humanizado e agendamento rapido.",
+  alternates: {
+    canonical: "/",
+  },
 };
 
 export default function Home() {
