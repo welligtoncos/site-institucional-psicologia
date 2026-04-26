@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import dynamic from "next/dynamic";
 import { AppShell } from "./components/AppShell";
+import { ToasterProvider } from "./components/ToasterProvider";
 import { siteConfig } from "./lib/site";
 import "./globals.css";
 
@@ -9,11 +9,6 @@ const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
 });
-
-const ToasterProvider = dynamic(
-  () => import("./components/ToasterProvider").then((module) => module.ToasterProvider),
-  { ssr: false }
-);
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.siteUrl),
