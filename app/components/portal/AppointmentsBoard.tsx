@@ -36,6 +36,24 @@ function statusStyles(s: MockAppointmentStatus): string {
 type MainTab = "proximas" | "historico";
 
 type HistoryFilter = "todos" | "realizada" | "cancelada" | "falta";
+type DatePreset = "todos" | "hoje" | "proximos7" | "mes" | "data";
+
+function toLocalDateFromIso(isoDate: string): Date {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0);
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function isWithinNextDays(target: Date, daysAhead: number): boolean {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + daysAhead);
+  return target >= start && target <= end;
+}
 
 function mapApiAppointment(a: ApiPatientAppointmentSummary): MockAppointment {
   return {
@@ -63,6 +81,8 @@ export function AppointmentsBoard() {
   const [loadingError, setLoadingError] = useState("");
   const [mainTab, setMainTab] = useState<MainTab>("proximas");
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("todos");
+  const [dateFilter, setDateFilter] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("todos");
 
   const loadAppointments = useCallback(async () => {
     const out = await listPatientAppointments("2000-01-01");
@@ -95,6 +115,20 @@ export function AppointmentsBoard() {
     };
   }, [loadAppointments]);
 
+  const matchesDateFilter = useCallback(
+    (isoDate: string) => {
+      const target = toLocalDateFromIso(isoDate);
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+      if (datePreset === "todos") return true;
+      if (datePreset === "data") return dateFilter ? isoDate === dateFilter : true;
+      if (datePreset === "hoje") return isSameDay(target, todayStart);
+      if (datePreset === "proximos7") return isWithinNextDays(target, 7);
+      return target.getFullYear() === todayStart.getFullYear() && target.getMonth() === todayStart.getMonth();
+    },
+    [dateFilter, datePreset],
+  );
+
   const upcoming = useMemo(() => rows.filter(isAppointmentUpcoming), [rows]);
   const upcomingSorted = useMemo(() => {
     return [...upcoming].sort((a, b) => {
@@ -103,16 +137,20 @@ export function AppointmentsBoard() {
       return a.time.localeCompare(b.time);
     });
   }, [upcoming]);
+  const upcomingVisible = useMemo(() => {
+    return upcomingSorted.filter((a) => matchesDateFilter(a.isoDate));
+  }, [upcomingSorted, matchesDateFilter]);
 
   const history = useMemo(() => rows.filter(isAppointmentHistory), [rows]);
   const historyVisible = useMemo(() => {
-    return history.filter((a) => {
+    const statusFiltered = history.filter((a) => {
       if (historyFilter === "todos") return true;
       if (historyFilter === "realizada") return a.status === "realizada";
       if (historyFilter === "cancelada") return a.status === "cancelada";
       return a.status === "nao_compareceu";
     });
-  }, [history, historyFilter]);
+    return statusFiltered.filter((a) => matchesDateFilter(a.isoDate));
+  }, [history, historyFilter, matchesDateFilter]);
 
   const nextSlot = useMemo(() => upcomingSorted[0] ?? null, [upcomingSorted]);
 
@@ -177,9 +215,69 @@ export function AppointmentsBoard() {
         </button>
       </div>
 
+      <section className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                ["todos", "Todas as datas"],
+                ["hoje", "Hoje"],
+                ["proximos7", "Próximos 7 dias"],
+                ["mes", "Este mês"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setDatePreset(id);
+                  if (id !== "data") setDateFilter("");
+                }}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                  datePreset === id ? "bg-sky-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1">
+            <label htmlFor="appointments-date-filter" className="text-xs font-medium uppercase tracking-wide text-slate-600">
+              Filtrar por data
+            </label>
+            <input
+              id="appointments-date-filter"
+              type="date"
+              value={dateFilter}
+              onChange={(e) => {
+                const value = e.target.value;
+                setDateFilter(value);
+                setDatePreset(value ? "data" : "todos");
+              }}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 sm:w-auto"
+            />
+            </div>
+            {datePreset !== "todos" || dateFilter ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilter("");
+                  setDatePreset("todos");
+                }}
+                className="self-start rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:self-auto"
+              >
+                Limpar filtro
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
       {mainTab === "proximas" ? (
         <section className="space-y-3">
-          {upcomingSorted.length === 0 ? (
+          {upcomingVisible.length === 0 ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-6 text-center text-sm text-slate-600">
               Nenhuma consulta futura.{" "}
               <Link href="/portal/agendar" className="font-medium text-sky-700 underline">
@@ -187,7 +285,7 @@ export function AppointmentsBoard() {
               </Link>
             </p>
           ) : (
-            upcomingSorted.map((a) => <AppointmentRow key={a.id} a={a} />)
+            upcomingVisible.map((a) => <AppointmentRow key={a.id} a={a} />)
           )}
         </section>
       ) : (

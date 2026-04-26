@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { BillingInvoicesBoard } from "@/app/components/portal/BillingInvoicesBoard";
 
 export const metadata: Metadata = {
-  title: "Faturamento e notas fiscais",
-  description: "Cobranças, pagamentos e documentos fiscais (área do paciente).",
+  title: "Histórico de pagamentos",
+  description: "Acompanhe o histórico e o status dos pagamentos das suas consultas.",
   robots: { index: false, follow: false },
 };
 

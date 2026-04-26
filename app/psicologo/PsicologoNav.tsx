@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/psicologo", label: "Painel", exact: true },
   { href: "/psicologo/perfil", label: "Perfil" },
-  { href: "/psicologo/disponibilidade", label: "Disponibilidade" },
+  { href: "/psicologo/disponibilidade", label: "Abrir agenda" },
   { href: "/psicologo/agenda", label: "Agenda" },
   { href: "/psicologo/sessao", label: "Iniciar sessão" },
   { href: "/psicologo/pacientes", label: "Pacientes" },

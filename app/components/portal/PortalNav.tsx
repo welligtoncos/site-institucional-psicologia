@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/portal", label: "Início", exact: true },
   { href: "/portal/consultas", label: "Minhas consultas" },
-  { href: "/portal/faturamento", label: "Financeiro" },
+  { href: "/portal/faturamento", label: "Pagamentos" },
   { href: "/portal/perfil", label: "Meu cadastro" },
   { href: "/portal/agendar", label: "Agendar" },
 ];

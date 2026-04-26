@@ -340,13 +340,10 @@ export function PsychologistAvailabilityBoard() {
       <section className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Disponibilidade</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900">Horários e bloqueios</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Abrir agenda</p>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900">Abrir agenda: horários e bloqueios</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Adicione vários inícios por dia (em qualquer minuto), sem repetir o mesmo início naquele dia e sem
-              sobrepor sessões conforme a duração padrão do perfil. O mesmo horário em outro dia da semana é permitido
-              (ex.: segunda 09:00 e terça 09:00). Cada linha vira um horário ofertado ao paciente. Você também pode
-              bloquear datas; o catálogo considera agenda e consultas já marcadas.
+              Defina seus horários de atendimento, publique sua agenda para os pacientes e bloqueie datas quando necessário.
             </p>
             {loadError === "generic" ? (
               <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">

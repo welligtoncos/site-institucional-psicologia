@@ -4,8 +4,8 @@ import { PsychologistAuthShell } from "@/app/components/auth/PsychologistAuthShe
 import { PsychologistAvailabilityBoard } from "@/app/components/psicologo/PsychologistAvailabilityBoard";
 
 export const metadata: Metadata = {
-  title: "Disponibilidade",
-  description: "Horários semanais e bloqueios (área do psicólogo).",
+  title: "Abrir agenda",
+  description: "Defina horários de atendimento e bloqueios da agenda (área do psicólogo).",
   robots: { index: false, follow: false },
 };
 

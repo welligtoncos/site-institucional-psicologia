@@ -44,6 +44,25 @@ type ConsultationRow = {
   priceLabel: string;
 };
 
+type DatePreset = "todos" | "hoje" | "proximos7" | "mes" | "data";
+
+function toLocalDateFromIso(isoDate: string): Date {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0);
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function isWithinNextDays(target: Date, daysAhead: number): boolean {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + daysAhead);
+  return target >= start && target <= end;
+}
+
 function buildConsultationRows(agenda: ApiPsychologistAgendaAppointment[]): ConsultationRow[] {
   return agenda
     .map((s) => ({
@@ -83,8 +102,8 @@ function buildConsultationRows(agenda: ApiPsychologistAgendaAppointment[]): Cons
 export function PsychologistInvoicesBoard() {
   const [agendaSessions, setAgendaSessions] = useState<ApiPsychologistAgendaAppointment[]>([]);
   const [patientFilter, setPatientFilter] = useState("");
-  const [dateFromFilter, setDateFromFilter] = useState("");
-  const [dateToFilter, setDateToFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("todos");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -131,11 +150,22 @@ export function PsychologistInvoicesBoard() {
     const q = patientFilter.trim().toLowerCase();
     return unified.filter((r) => {
       const patientOk = !q || r.patientName.trim().toLowerCase() === q;
-      const fromOk = !dateFromFilter || r.isoDate >= dateFromFilter;
-      const toOk = !dateToFilter || r.isoDate <= dateToFilter;
-      return patientOk && fromOk && toOk;
+      const target = toLocalDateFromIso(r.isoDate);
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+      const dateOk =
+        datePreset === "todos"
+          ? true
+          : datePreset === "data"
+            ? (dateFilter ? r.isoDate === dateFilter : true)
+            : datePreset === "hoje"
+              ? isSameDay(target, todayStart)
+              : datePreset === "proximos7"
+                ? isWithinNextDays(target, 7)
+                : target.getFullYear() === todayStart.getFullYear() && target.getMonth() === todayStart.getMonth();
+      return patientOk && dateOk;
     });
-  }, [unified, patientFilter, dateFromFilter, dateToFilter]);
+  }, [unified, patientFilter, dateFilter, datePreset]);
 
   const totalPendente = useMemo(() => {
     return filteredUnified
@@ -190,7 +220,32 @@ export function PsychologistInvoicesBoard() {
       {patientNames.length > 0 ? (
         <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
           <p className="block text-sm font-semibold text-slate-900">Filtros</p>
-          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+          <div className="mt-3 space-y-3">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["todos", "Todas as datas"],
+                  ["hoje", "Hoje"],
+                  ["proximos7", "Próximos 7 dias"],
+                  ["mes", "Este mês"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setDatePreset(id);
+                    if (id !== "data") setDateFilter("");
+                  }}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                    datePreset === id ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          <div className="grid gap-3 lg:grid-cols-2">
             <label className="block">
               <span className="text-xs text-slate-600">Paciente</span>
               <select
@@ -211,23 +266,33 @@ export function PsychologistInvoicesBoard() {
               </select>
             </label>
             <label className="block">
-              <span className="text-xs text-slate-600">De</span>
+              <span className="text-xs text-slate-600">Data específica</span>
               <input
                 type="date"
-                value={dateFromFilter}
-                onChange={(e) => setDateFromFilter(e.target.value)}
+                value={dateFilter}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setDateFilter(value);
+                  setDatePreset(value ? "data" : "todos");
+                }}
                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
               />
             </label>
-            <label className="block">
-              <span className="text-xs text-slate-600">Até</span>
-              <input
-                type="date"
-                value={dateToFilter}
-                onChange={(e) => setDateToFilter(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
-              />
-            </label>
+          </div>
+          {(datePreset !== "todos" || dateFilter) && (
+            <div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilter("");
+                  setDatePreset("todos");
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Limpar filtro de data
+              </button>
+            </div>
+          )}
           </div>
         </div>
       ) : null}

@@ -1,20 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { listPatientAppointments, type ApiPatientAppointmentSummary } from "@/app/lib/portal-appointments-api";
-
-function formatDateShort(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 function formatAppointmentDatePt(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -74,32 +62,6 @@ export function BillingInvoicesBoard() {
     };
   }, [refresh]);
 
-  const monthCtx = useMemo(() => {
-    const start = new Date();
-    const end = new Date(start);
-    end.setMonth(end.getMonth() + 1);
-    return {
-      label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`,
-      monthKey: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`,
-    };
-  }, []);
-
-  const consultasNoMes = useMemo(() => {
-    const prefix = monthCtx.monthKey.slice(0, 7);
-    return appointments.filter((a) => a.iso_date.startsWith(prefix));
-  }, [appointments, monthCtx.monthKey]);
-
-  const sessoesRealizadas = useMemo(
-    () => appointments.filter((a) => a.status === "realizada").length,
-    [appointments],
-  );
-
-  const totalPendente = useMemo(() => {
-    return appointments
-      .filter((a) => a.payment === "Pendente")
-      .reduce((sum, a) => sum + (Number.parseFloat(a.price) || 0), 0);
-  }, [appointments]);
-
   if (loading) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
@@ -115,16 +77,18 @@ export function BillingInvoicesBoard() {
       ) : null}
 
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Faturamento e notas fiscais</h1>
-        <p className="mt-1 text-sm text-slate-600">Resumo de pagamentos e situação das suas consultas.</p>
+        <h1 className="text-xl font-semibold text-slate-900">Histórico de pagamentos</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Nesta página você acompanha somente o status dos pagamentos das suas consultas.
+        </p>
       </div>
 
       {/* Faturas */}
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-slate-900">Consultas e pagamentos</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Pagamentos das consultas</h2>
           <p className="text-xs text-slate-500">
-            Histórico de pagamentos · {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+            Últimos registros · {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
           </p>
         </div>
         {appointments.length === 0 ? (
@@ -139,11 +103,9 @@ export function BillingInvoicesBoard() {
             <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs text-slate-500">
-                  <th className="px-4 py-2 font-medium">Data</th>
-                  <th className="px-4 py-2 font-medium">Consulta</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">Data da consulta</th>
+                  <th className="px-4 py-2 font-medium">Status do pagamento</th>
                   <th className="px-4 py-2 font-medium">Valor</th>
-                  <th className="px-4 py-2 font-medium">Profissional</th>
                 </tr>
               </thead>
               <tbody className="text-slate-800">
@@ -154,13 +116,11 @@ export function BillingInvoicesBoard() {
                     const desc = `${formatAppointmentDatePt(apt.iso_date)} · ${apt.time}`;
                     return (
                       <tr key={apt.id} className="border-b border-slate-50">
-                        <td className="whitespace-nowrap px-4 py-3 text-xs">{formatDateShort(apt.iso_date)}</td>
-                        <td className="max-w-[180px] px-4 py-3 text-xs">{desc}</td>
+                        <td className="max-w-[220px] px-4 py-3 text-xs">{desc}</td>
                         <td className="px-4 py-3">
                           <span className={paymentStatusClass(apt.payment)}>{apt.payment.toLowerCase()}</span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">R$ {formatPriceBrl(apt.price)}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600">{apt.psychologist_name}</td>
                       </tr>
                     );
                   })}

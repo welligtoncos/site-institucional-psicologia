@@ -74,13 +74,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                     <p className="relative text-xs font-bold uppercase tracking-[0.15em] text-sky-700">No portal</p>
                     <ul className="relative mt-4 space-y-2.5 text-sm leading-relaxed text-slate-600">
                       <li className="flex gap-2">
-                        <span className="text-sky-500">✓</span> Agendar e gerenciar consultas
+                        <span className="text-sky-500">✓</span> Agende consultas e acompanhe seus horários
                       </li>
                       <li className="flex gap-2">
-                        <span className="text-sky-500">✓</span> Pagamentos e faturamento
+                        <span className="text-sky-500">✓</span> Consulte pagamentos, recibos e faturas
                       </li>
                       <li className="flex gap-2">
-                        <span className="text-sky-500">✓</span> Acompanhar seu histórico
+                        <span className="text-sky-500">✓</span> Veja seu histórico de atendimentos em um só lugar
                       </li>
                     </ul>
                   </div>
