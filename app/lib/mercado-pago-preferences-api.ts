@@ -48,7 +48,7 @@ export async function createMercadoPagoPreferencia(
       ok: false,
       detail: formatApiErrorDetail(
         data,
-        "Resposta sem preference_id. Confira MERCADO_PAGO_ACCESS_TOKEN (teste) e os logs do uvicorn.",
+        "Resposta sem preference_id. Confira MERCADO_PAGO_ACCESS_TOKEN e os logs do backend.",
       ),
     };
   }

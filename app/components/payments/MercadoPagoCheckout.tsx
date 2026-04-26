@@ -1,19 +1,5 @@
 "use client";
 
-/**
- * Mesmo fluxo da documentação do Mercado Pago (@mercadopago/sdk-react):
- *
- * ```tsx
- * initMercadoPago('YOUR_PUBLIC_KEY');
- * <Wallet initialization={{ preferenceId: 'YOUR_PREFERENCE_ID' }} />
- * ```
- *
- * Aqui:
- * - Public Key → `process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` (nunca commitar valor real).
- * - `preferenceId` → retornado pelo backend (`POST /mercado-pago/preferencia`), não fixo no código.
- * - `Wallet` é carregado com `next/dynamic` e `ssr: false` para o SDK não rodar no servidor (Next.js).
- */
-
 import { useCallback, useState } from "react";
 
 import { createMercadoPagoPreferencia, type MercadoPagoPreferenciaItem } from "@/app/lib/mercado-pago-preferences-api";
@@ -62,8 +48,6 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
       setLoadState("error");
       return;
     }
-    // Preferimos init_point: evita inconsistências de ambiente
-    // quando o SDK retorna sandbox_init_point com challenge inválido.
     const direct =
       (result.data.init_point && result.data.init_point.trim()) ||
       (result.data.sandbox_init_point && result.data.sandbox_init_point.trim()) ||
@@ -109,7 +93,7 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
             rel="noopener noreferrer"
             className="font-semibold text-amber-950 underline underline-offset-2 hover:text-amber-900"
           >
-            Mercado Pago → Suas integrações → Credenciais de teste
+            Mercado Pago → Suas integrações → Credenciais de produção
           </a>
           .
         </p>
@@ -120,7 +104,7 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
   return (
     <div className="space-y-4 rounded-xl border border-sky-200/80 bg-white/90 p-4 ring-1 ring-sky-100">
       <div>
-        <p className="text-sm font-semibold text-slate-900">Pagar com Mercado Pago (sandbox)</p>
+        <p className="text-sm font-semibold text-slate-900">Pagar com Mercado Pago</p>
         <p className="mt-1 text-xs leading-relaxed text-slate-600">
           1) Toque em <strong className="font-semibold text-slate-800">Comprar agora</strong>. 2) Toque em{" "}
           <strong className="font-semibold text-slate-800">Abrir checkout Mercado Pago</strong> para abrir em uma nova aba
