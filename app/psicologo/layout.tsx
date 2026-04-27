@@ -1,9 +1,21 @@
+import type { Metadata } from "next";
 import { PsicologoBottomNav } from "@/app/components/psicologo/PsicologoBottomNav";
 import { PsicologoNav } from "@/app/psicologo/PsicologoNav";
 import { siteConfig } from "@/app/lib/site";
 
 type LayoutProps = {
   children: React.ReactNode;
+};
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 };
 
 export default function PsicologoLayout({ children }: LayoutProps) {

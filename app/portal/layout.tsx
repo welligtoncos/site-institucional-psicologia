@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { PortalBottomNav } from "@/app/components/portal/PortalBottomNav";
 import { PortalLogoutButton } from "@/app/components/portal/PortalLogoutButton";
@@ -7,6 +8,17 @@ import { siteConfig } from "@/app/lib/site";
 
 type PortalLayoutProps = {
   children: React.ReactNode;
+};
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 };
 
 export default function PortalLayout({ children }: PortalLayoutProps) {
@@ -57,7 +69,11 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
                   </a>
                 </li>
                 <li>
-                  <a href={siteConfig.whatsappHref} className="font-medium text-emerald-800 underline hover:text-emerald-950">
+                  <a
+                    href={siteConfig.whatsappHref}
+                    rel="nofollow"
+                    className="font-medium text-emerald-800 underline hover:text-emerald-950"
+                  >
                     WhatsApp
                   </a>
                 </li>

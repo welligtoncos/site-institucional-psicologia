@@ -11,7 +11,7 @@ import { TeamSection } from "./components/home/TeamSection";
 export const metadata: Metadata = {
   title: "Psicologo Online | Terapia Online com Sigilo",
   description:
-    "Psicologo online para ansiedade, estresse, relacionamentos e terapia de casal. Atendimento humanizado e agendamento rapido.",
+    "Psicologo online para ansiedade, estresse, relacionamentos e terapia de casal. Atendimento humanizado, sigiloso e agendamento rapido.",
   alternates: {
     canonical: "/",
   },

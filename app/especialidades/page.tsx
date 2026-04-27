@@ -53,8 +53,21 @@ export const metadata: Metadata = {
 };
 
 export default function EspecialidadesPage() {
+  const specialtiesSchema = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: "Especialidades atendidas",
+    itemListElement: specialties.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.title,
+      url: `https://psicologoonlineja.com${item.href}`,
+    })),
+  };
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(specialtiesSchema) }} />
       <PageHero
         eyebrow="Especialidades"
         title="Areas de atendimento do Psicologo Online Ja"

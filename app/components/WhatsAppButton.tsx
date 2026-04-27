@@ -5,7 +5,7 @@ export function WhatsAppButton() {
     <a
       href={siteConfig.whatsappHref}
       target="_blank"
-      rel="noreferrer"
+      rel="nofollow noopener noreferrer"
       aria-label="Falar no WhatsApp"
       className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 sm:bottom-6 sm:right-6"
     >

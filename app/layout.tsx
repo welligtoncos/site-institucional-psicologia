@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { AppShell } from "./components/AppShell";
 import { siteConfig } from "./lib/site";
@@ -28,9 +28,6 @@ export const metadata: Metadata = {
     "saude mental",
   ],
   category: "health",
-  alternates: {
-    canonical: "/",
-  },
   robots: {
     index: true,
     follow: true,
@@ -66,6 +63,15 @@ export const metadata: Metadata = {
       "Terapia online com atendimento humanizado e agendamento rapido.",
     images: [siteConfig.defaultOgImage],
   },
+  other: {
+    googlebot: "notranslate",
+    google: "nopagereadaloud",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

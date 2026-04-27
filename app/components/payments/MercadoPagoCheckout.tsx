@@ -90,7 +90,7 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
           <a
             href="https://www.mercadopago.com.br/developers/panel/app"
             target="_blank"
-            rel="noopener noreferrer"
+            rel="nofollow noopener noreferrer"
             className="font-semibold text-amber-950 underline underline-offset-2 hover:text-amber-900"
           >
             Mercado Pago → Suas integrações → Credenciais de produção
@@ -140,7 +140,7 @@ export function MercadoPagoCheckout({ product, consultaId, orderId }: MercadoPag
           <a
             href={checkoutUrl}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="nofollow noopener noreferrer"
             className="flex min-h-[3rem] w-full items-center justify-center rounded-xl bg-sky-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 active:bg-sky-800"
           >
             Abrir checkout Mercado Pago (nova aba)

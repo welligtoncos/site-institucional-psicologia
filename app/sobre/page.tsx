@@ -4,9 +4,9 @@ import { PageHero } from "../components/internal/PageHero";
 import { Container, Section } from "../components/ui/SitePrimitives";
 
 export const metadata: Metadata = {
-  title: "Sobre",
+  title: "Sobre a Clinica | Psicologo Online Ja",
   description:
-    "Conheca o Psicologo Online Ja, nossos valores, missao e compromisso com atendimento psicologico online acolhedor e etico.",
+    "Conheca o Psicologo Online Ja, nossa missao, visao e valores no atendimento psicologico online acolhedor, etico e baseado em evidencia.",
   alternates: {
     canonical: "/sobre",
   },

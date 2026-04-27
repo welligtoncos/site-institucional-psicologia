@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { AppointmentCta } from "../components/internal/AppointmentCta";
 import { PageHero } from "../components/internal/PageHero";
 import { Container, Section } from "../components/ui/SitePrimitives";
@@ -42,11 +43,13 @@ export default function EquipePage() {
               <div className="flex flex-col gap-6 md:flex-row md:items-start">
                 <div className="mx-auto w-full max-w-[220px] md:mx-0">
                   <div className="group aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                    <img
+                    <Image
                       src={member.photoSrc}
                       alt={member.photoAlt}
+                      width={440}
+                      height={440}
+                      sizes="(max-width: 768px) 220px, 220px"
                       className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
-                      loading="lazy"
                     />
                   </div>
                 </div>
