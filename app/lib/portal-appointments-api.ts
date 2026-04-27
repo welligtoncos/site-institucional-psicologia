@@ -1,3 +1,4 @@
+import { normalizeEndedLiveSessionStatus } from "@/app/lib/appointment-status-normalizer";
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
 export type ApiPatientAppointmentSummary = {
@@ -123,7 +124,19 @@ export async function listPatientAppointments(
     const detail = typeof data === "object" && data && "detail" in data ? String(data.detail ?? "") : "";
     return { ok: false, detail: detail || "Não foi possível listar as consultas." };
   }
-  return { ok: true, data: data as ApiPatientAppointmentListResponse };
+  const normalized: ApiPatientAppointmentListResponse = {
+    appointments: data.appointments.map((appointment) => ({
+      ...appointment,
+      status: normalizeEndedLiveSessionStatus({
+        status: appointment.status,
+        isoDate: appointment.iso_date,
+        time: appointment.time,
+        durationMin: appointment.duration_min,
+        format: appointment.format,
+      }) as ApiPatientAppointmentSummary["status"],
+    })),
+  };
+  return { ok: true, data: normalized };
 }
 
 export async function joinPatientAppointmentRoom(

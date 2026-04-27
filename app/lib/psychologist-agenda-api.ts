@@ -1,4 +1,5 @@
 import { todayIso, type PsychologistAgendaAppointment, type TimeBlock } from "@/app/lib/psicologo-mocks";
+import { normalizeEndedLiveSessionStatus } from "@/app/lib/appointment-status-normalizer";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
@@ -53,7 +54,13 @@ export function apiAgendaToMock(data: ApiPsychologistAgendaResponse): {
       isoDate: a.iso_date,
       time: a.time,
       format: a.format,
-      status: a.status,
+      status: normalizeEndedLiveSessionStatus({
+        status: a.status,
+        isoDate: a.iso_date,
+        time: a.time,
+        durationMin: a.duration_min,
+        format: a.format,
+      }) as PsychologistAgendaAppointment["status"],
       pagamentoPendente: a.payment_pending,
       patientOnline: Boolean(a.patient_online),
       durationMin: a.duration_min ?? 50,
@@ -85,6 +92,22 @@ export async function fetchPsychologistAgenda(
   const data = (await response.json().catch(() => null)) as ApiPsychologistAgendaResponse | { detail?: string } | null;
   if (!data || typeof data !== "object") {
     return { ok: false, status: response.status, data: { detail: "Resposta inválida do servidor." } };
+  }
+  if ("appointments" in data && Array.isArray(data.appointments)) {
+    const normalized: ApiPsychologistAgendaResponse = {
+      ...data,
+      appointments: data.appointments.map((appointment) => ({
+        ...appointment,
+        status: normalizeEndedLiveSessionStatus({
+          status: appointment.status,
+          isoDate: appointment.iso_date,
+          time: appointment.time,
+          durationMin: appointment.duration_min,
+          format: appointment.format,
+        }) as ApiPsychologistAgendaAppointment["status"],
+      })),
+    };
+    return { ok: response.ok, status: response.status, data: normalized };
   }
   return { ok: response.ok, status: response.status, data };
 }

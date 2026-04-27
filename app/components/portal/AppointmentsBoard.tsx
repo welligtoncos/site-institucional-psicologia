@@ -190,6 +190,16 @@ export function AppointmentsBoard() {
         ) : null}
       </div>
 
+      {mainTab === "proximas" && upcomingVisible.some((appointment) => appointment.format === "Online") ? (
+        <section className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <p className="text-sm font-semibold text-sky-900">Atendimento ao vivo</p>
+          <p className="mt-1 text-sm text-sky-800">
+            Para iniciar sua consulta online, clique em <span className="font-semibold">Entrar na sala online</span> no horário da
+            sessão.
+          </p>
+        </section>
+      ) : null}
+
       <div className="flex gap-1 border-b border-slate-200">
         <button
           type="button"
@@ -356,13 +366,16 @@ function AppointmentRow({ a }: { a: MockAppointment }) {
       {a.format === "Online" && upcoming ? (
         <div className="mt-3 border-t border-slate-100 pt-3">
           {canOpenRoomFlow ? (
-            <Link
-              href={`/portal/consultas/sala?appointmentId=${encodeURIComponent(a.id)}`}
-              prefetch={false}
-              className="inline-flex text-sm font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
-            >
-              Entrar na sala online
-            </Link>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-700">Seu atendimento ao vivo começa ao entrar na sala.</p>
+              <Link
+                href={`/portal/consultas/sala?appointmentId=${encodeURIComponent(a.id)}`}
+                prefetch={false}
+                className="inline-flex items-center rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              >
+                Entrar na sala online
+              </Link>
+            </div>
           ) : a.payment === "Pendente" ? (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-amber-700">Pagamento pendente. Conclua para liberar o link da sessão.</p>
