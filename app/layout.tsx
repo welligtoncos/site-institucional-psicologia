@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import Script from "next/script";
 import { AppShell } from "./components/AppShell";
 import { siteConfig } from "./lib/site";
 import "./globals.css";
@@ -105,6 +106,18 @@ export default function RootLayout({
       className={`${geistSans.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-slate-50 text-slate-800">
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${siteConfig.googleMeasurementId}`}
+          strategy="afterInteractive"
+        />
+        <Script id="google-tag" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${siteConfig.googleMeasurementId}');
+          `}
+        </Script>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}

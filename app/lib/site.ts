@@ -1,6 +1,8 @@
 export const siteConfig = {
   name: "Psicologo Online Ja",
   fullName: "Psicologo Online Ja",
+  /** Google Analytics 4 / Google tag (gtag.js) */
+  googleMeasurementId: "G-RPKY3KW599",
   siteUrl: "https://psicologoonlineja.com",
   defaultOgImage: "/og-psicologo-online-ja.svg",
   phoneDisplay: "(11) 99999-9999",
