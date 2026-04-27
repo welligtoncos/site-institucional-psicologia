@@ -153,7 +153,7 @@ export function PsychologistDashboard() {
           forma simples.
         </p>
         <p className="mt-2 text-xs leading-relaxed text-slate-600">
-          Os dados dos pacientes e o conteúdo clínico são sigilosos. Em caso de dúvida, fale com a recepção.
+          Os dados dos pacientes e o conteúdo clínico são sigilosos. Em caso de dúvida, use os canais de suporte da clínica.
         </p>
 
         <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-stretch lg:justify-between">

@@ -119,7 +119,7 @@ export function PatientPortalDashboard() {
           Olá, <span className="font-semibold text-slate-900">{firstName}</span>. Aqui você acompanha suas consultas de forma simples.
         </p>
         <p className="mt-2 text-xs leading-relaxed text-slate-600">
-          Seus dados são sigilosos. Em caso de dúvida, fale com a recepção.
+          Seus dados são sigilosos. Em caso de dúvida, use os canais de suporte da clínica.
         </p>
 
         <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-stretch lg:justify-between">

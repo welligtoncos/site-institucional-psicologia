@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBackendApiUrl } from "@/app/lib/backend";
+import { toNextResponse } from "@/app/api/portal/_utils/backend-proxy";
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -15,6 +16,5 @@ export async function GET(request: Request) {
     cache: "no-store",
   });
 
-  const data = await response.json().catch(() => ({ detail: "Resposta invalida do backend." }));
-  return NextResponse.json(data, { status: response.status });
+  return toNextResponse(response);
 }

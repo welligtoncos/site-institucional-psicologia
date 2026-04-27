@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server";
-
 import { getBackendApiUrl } from "@/app/lib/backend";
-
-function forwardAuth(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) {
-    return { error: NextResponse.json({ detail: "Token de acesso ausente." }, { status: 401 }) };
-  }
-  return { authHeader };
-}
+import { requirePortalRole, toNextResponse } from "@/app/api/portal/_utils/backend-proxy";
 
 export async function POST(request: Request) {
-  const auth = forwardAuth(request);
-  if ("error" in auth) return auth.error;
+  const auth = await requirePortalRole(request, ["patient"]);
+  if (!auth.ok) return auth.response;
 
   const body = await request.json().catch(() => null);
   if (body === null || typeof body !== "object") {
@@ -29,13 +21,12 @@ export async function POST(request: Request) {
     cache: "no-store",
   });
 
-  const data = await response.json().catch(() => ({ detail: "Resposta inválida do backend." }));
-  return NextResponse.json(data, { status: response.status });
+  return toNextResponse(response);
 }
 
 export async function GET(request: Request) {
-  const auth = forwardAuth(request);
-  if ("error" in auth) return auth.error;
+  const auth = await requirePortalRole(request, ["patient"]);
+  if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
   const fromDate = url.searchParams.get("from_date");
@@ -49,6 +40,5 @@ export async function GET(request: Request) {
     cache: "no-store",
   });
 
-  const data = await response.json().catch(() => ({ detail: "Resposta inválida do backend." }));
-  return NextResponse.json(data, { status: response.status });
+  return toNextResponse(response);
 }

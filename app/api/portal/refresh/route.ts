@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBackendApiUrl } from "@/app/lib/backend";
+import { toNextResponse } from "@/app/api/portal/_utils/backend-proxy";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -16,6 +17,5 @@ export async function POST(request: Request) {
     cache: "no-store",
   });
 
-  const data = await response.json().catch(() => ({ detail: "Resposta invalida do backend." }));
-  return NextResponse.json(data, { status: response.status });
+  return toNextResponse(response);
 }
