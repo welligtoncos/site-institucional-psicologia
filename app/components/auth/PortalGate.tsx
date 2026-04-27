@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { clearPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
@@ -54,10 +54,14 @@ export function usePortalPatientSession(): PortalPatientSessionValue {
   return ctx;
 }
 
+function getCurrentSearchParams(): URLSearchParams {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
+}
+
 export function PortalGate({ children }: PortalGateProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -87,7 +91,7 @@ export function PortalGate({ children }: PortalGateProps) {
     }
 
     async function validateSession() {
-      const loginUrl = buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()));
+      const loginUrl = buildPortalLoginUrl(pathname, getCurrentSearchParams());
       const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
       const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
 
@@ -153,7 +157,7 @@ export function PortalGate({ children }: PortalGateProps) {
 
     validateSession().catch((error) => {
       if (!mounted) return;
-      const loginUrl = buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()));
+      const loginUrl = buildPortalLoginUrl(pathname, getCurrentSearchParams());
       window.localStorage.removeItem(ACCESS_TOKEN_KEY);
       window.localStorage.removeItem(REFRESH_TOKEN_KEY);
       clearPortalPatientSnapshot();
@@ -164,10 +168,10 @@ export function PortalGate({ children }: PortalGateProps) {
     return () => {
       mounted = false;
     };
-  }, [router, pathname, searchParams]);
+  }, [router, pathname]);
 
   function handleLogout() {
-    const loginUrl = buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()));
+    const loginUrl = buildPortalLoginUrl(pathname, getCurrentSearchParams());
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     clearPortalPatientSnapshot();
@@ -187,7 +191,7 @@ export function PortalGate({ children }: PortalGateProps) {
       <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
         <p className="text-sm text-rose-700">{errorMessage}</p>
         <Link
-          href={buildPortalLoginUrl(pathname, new URLSearchParams(searchParams.toString()))}
+          href={buildPortalLoginUrl(pathname, getCurrentSearchParams())}
           className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
         >
           Voltar para login
