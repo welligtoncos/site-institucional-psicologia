@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
@@ -20,6 +20,11 @@ function buildPsychologistLoginUrlWithQuery(pathname: string | null, searchParam
   const qs = searchParams.toString();
   const next = qs ? `${nextPath}?${qs}` : nextPath;
   return `/login?next=${encodeURIComponent(next)}`;
+}
+
+function getCurrentSearchParams(): URLSearchParams {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
 }
 
 type MeResponse = {
@@ -69,7 +74,6 @@ type PsychologistAuthShellProps = {
 export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
   const [loading, setLoading] = useState(true);
@@ -98,7 +102,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
     }
 
     async function validateSession() {
-      const loginUrl = buildPsychologistLoginUrlWithQuery(pathnameRef.current, new URLSearchParams(searchParams.toString()));
+      const loginUrl = buildPsychologistLoginUrlWithQuery(pathnameRef.current, getCurrentSearchParams());
       const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
       const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
 
@@ -168,7 +172,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
 
     validateSession().catch((error) => {
       if (!mounted) return;
-      const loginUrl = buildPsychologistLoginUrlWithQuery(pathnameRef.current, new URLSearchParams(searchParams.toString()));
+      const loginUrl = buildPsychologistLoginUrlWithQuery(pathnameRef.current, getCurrentSearchParams());
       window.localStorage.removeItem(ACCESS_TOKEN_KEY);
       window.localStorage.removeItem(REFRESH_TOKEN_KEY);
       setErrorMessage(error instanceof Error ? error.message : "");
@@ -178,7 +182,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
     return () => {
       mounted = false;
     };
-  }, [router, searchParams]);
+  }, [router]);
 
   if (loading) {
     return (
@@ -193,7 +197,7 @@ export function PsychologistAuthShell({ children }: PsychologistAuthShellProps) 
       <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
         <p className="text-sm text-rose-800">{errorMessage}</p>
         <Link
-          href={buildPsychologistLoginUrlWithQuery(pathname, new URLSearchParams(searchParams.toString()))}
+          href={buildPsychologistLoginUrlWithQuery(pathname, getCurrentSearchParams())}
           className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
         >
           Voltar ao login
