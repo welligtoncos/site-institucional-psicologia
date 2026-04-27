@@ -778,28 +778,63 @@ export function ScheduleConsultationBoard() {
               <p className="mt-4 text-sm text-rose-700">Não foi possível carregar os dados para o checkout. Atualize a página.</p>
             )
           ) : (
-            <div className="mt-4 space-y-3 text-sm font-medium text-slate-700">
-              <p>
-                Consulta <strong className="text-slate-900">confirmada</strong> com pagamento registrado.
-              </p>
-              <p>
-                <Link
-                  href="/portal/consultas"
-                  className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
+            <div className="mt-5 overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50 via-white to-white shadow-sm">
+              <div className="border-b border-emerald-100 bg-emerald-50/70 px-5 py-5 text-center">
+                <span
+                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-2xl text-white shadow-md shadow-emerald-900/20"
+                  aria-hidden
                 >
-                  Ver minhas consultas
-                </Link>
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setLastCharge(null);
-                  setLastAppointmentId(null);
-                }}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-              >
-                Agendar outro horário
-              </button>
+                  ✓
+                </span>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Pagamento concluído</p>
+                <h3 className="mt-1 text-xl font-semibold tracking-tight text-emerald-950">Consulta confirmada com sucesso</h3>
+              </div>
+
+              <div className="space-y-4 px-5 py-5">
+                <p className="text-sm text-slate-700">
+                  Tudo certo! Sua consulta foi confirmada e já está disponível em <strong className="text-slate-900">Minhas consultas</strong>.
+                </p>
+
+                <dl className="space-y-2 rounded-xl border border-emerald-100 bg-white p-4 text-sm text-slate-800">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Profissional</dt>
+                    <dd className="text-right font-semibold text-slate-900">{bookable.nome}</dd>
+                  </div>
+                  {selectedDate && selectedTime ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Data e horário</dt>
+                      <dd className="text-right font-semibold text-slate-900">
+                        {formatLongDatePt(selectedDate)} · {formatClockPt(selectedTime)}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Valor pago</dt>
+                    <dd className="text-right font-semibold text-slate-900">
+                      R$ {(lastCharge.amount_cents / 100).toFixed(2).replace(".", ",")}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href="/portal/consultas"
+                    className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    Ver minhas consultas
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLastCharge(null);
+                      setLastAppointmentId(null);
+                    }}
+                    className="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                  >
+                    Agendar outro horário
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </section>

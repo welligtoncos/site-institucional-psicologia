@@ -33,6 +33,26 @@ function toWsBaseUrl(httpUrl: string): string {
   return httpUrl;
 }
 
+function resolveWsBaseUrl(): string {
+  const explicitWs = process.env.NEXT_PUBLIC_BACKEND_WS_URL?.trim();
+  if (explicitWs) return explicitWs.replace(/\/$/, "");
+
+  const backendBase = getBackendApiUrl().trim();
+  if (typeof window === "undefined") return toWsBaseUrl(backendBase).replace(/\/$/, "");
+
+  const pageIsHttps = window.location.protocol === "https:";
+  if (!pageIsHttps) return toWsBaseUrl(backendBase).replace(/\/$/, "");
+
+  const secureBackend =
+    backendBase.startsWith("https://") ||
+    backendBase.startsWith("wss://");
+
+  if (secureBackend) return toWsBaseUrl(backendBase).replace(/\/$/, "");
+
+  // Evita mixed-content em produção HTTPS usando o mesmo host público.
+  return `wss://${window.location.host}`;
+}
+
 export function openRoomRealtimeSocket(
   appointmentId: string,
   onRoomStatus: (event: RoomStatusEvent) => void,
@@ -40,9 +60,14 @@ export function openRoomRealtimeSocket(
   const token = readToken();
   if (!token) return null;
   if (!isBackendAppointmentId(appointmentId)) return null;
-  const base = toWsBaseUrl(getBackendApiUrl()).replace(/\/$/, "");
+  const base = resolveWsBaseUrl();
   const url = `${base}/ws/appointments/${encodeURIComponent(appointmentId)}?token=${encodeURIComponent(token)}`;
-  const ws = new WebSocket(url);
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(url);
+  } catch {
+    return null;
+  }
   ws.onmessage = (evt) => {
     try {
       const data = JSON.parse(evt.data) as RoomStatusEvent;
