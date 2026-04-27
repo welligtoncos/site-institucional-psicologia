@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7fafc;
-  --foreground: #1e293b;
+  --brand-blue: #2563eb;
+  --brand-mint: #34c38f;
+  --brand-navy: #0f172a;
+  --brand-slate: #64748b;
+  --brand-bg: #f8fafc;
+  --brand-white: #ffffff;
+  --brand-blue-soft: #eff6ff;
+  --brand-mint-soft: #ecfdf5;
+  --brand-border: #e2e8f0;
+  --brand-dark-bg: #0b1224;
+  --background: var(--brand-bg);
+  --foreground: var(--brand-navy);
 }
 
 @theme inline {
@@ -23,7 +33,7 @@ html {
 }
 
 * {
-  border-color: rgb(226 232 240);
+  border-color: var(--brand-border);
 }
 
 a,
@@ -35,6 +45,6 @@ textarea {
 }
 
 ::selection {
-  background: rgb(186 230 253);
-  color: rgb(15 23 42);
+  background: var(--brand-blue-soft);
+  color: var(--brand-navy);
 }

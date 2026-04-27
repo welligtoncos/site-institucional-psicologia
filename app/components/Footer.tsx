@@ -1,12 +1,13 @@
 import Link from "next/link";
+import Image from "next/image";
 import { navItems, siteConfig } from "../lib/site";
 
 export function Footer() {
   return (
-    <footer className="mt-auto border-t border-slate-200/80 bg-white py-10 text-slate-600">
+    <footer className="mt-auto border-t border-[#0B1224] bg-[#0B1224] py-10 text-slate-300">
       <div className="mx-auto grid w-full max-w-6xl gap-8 px-5 sm:px-6 md:grid-cols-3 lg:px-8">
         <div>
-          <p className="text-base font-semibold text-slate-800">{siteConfig.fullName}</p>
+          <Image src={siteConfig.logoLight} alt={siteConfig.fullName} width={228} height={44} className="h-10 w-auto" />
           <p className="mt-3 text-sm leading-relaxed">
             Atendimento psicologico humanizado para adolescentes, adultos e casais, com foco em
             saude emocional e qualidade de vida.
@@ -14,10 +15,10 @@ export function Footer() {
         </div>
 
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-700">Navegacao</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-100">Navegacao</p>
           <nav className="mt-3 flex flex-col gap-2 text-sm">
             {navItems.map((item) => (
-              <Link key={item.href} href={item.href} className="transition hover:text-slate-900">
+              <Link key={item.href} href={item.href} className="transition hover:text-white">
                 {item.label}
               </Link>
             ))}
@@ -25,7 +26,7 @@ export function Footer() {
         </div>
 
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-700">Contato</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-100">Contato</p>
           <div className="mt-3 space-y-2 text-sm">
             <p>{siteConfig.address}</p>
             <p>{siteConfig.phoneDisplay}</p>
@@ -34,7 +35,7 @@ export function Footer() {
           </div>
         </div>
       </div>
-      <div className="mx-auto mt-8 w-full max-w-6xl border-t border-slate-200 px-5 pt-5 text-xs text-slate-500 sm:px-6 lg:px-8">
+      <div className="mx-auto mt-8 w-full max-w-6xl border-t border-slate-700 px-5 pt-5 text-xs text-slate-400 sm:px-6 lg:px-8">
         <p>(c) 2026 Psicologo Online Ja. Todos os direitos reservados.</p>
       </div>
     </footer>

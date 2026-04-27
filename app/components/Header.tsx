@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { navItems, siteConfig } from "../lib/site";
 
 export function Header() {
@@ -6,8 +7,15 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
       <div className="mx-auto w-full max-w-6xl px-5 py-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4">
-          <Link href="/" className="text-lg font-semibold tracking-tight text-slate-800">
-            {siteConfig.name}
+          <Link href="/" className="inline-flex items-center">
+            <Image
+              src={siteConfig.logoDark}
+              alt={siteConfig.fullName}
+              width={228}
+              height={44}
+              priority
+              className="h-9 w-auto sm:h-10"
+            />
           </Link>
 
           <nav className="hidden items-center gap-2 md:flex">
@@ -26,7 +34,7 @@ export function Header() {
 
           <Link
             href="/login?next=/portal"
-            className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-sky-600/25 transition hover:bg-sky-700"
+            className="rounded-full bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#2563EB]/25 transition hover:bg-[#1E4FD6]"
           >
             Agendar
           </Link>
