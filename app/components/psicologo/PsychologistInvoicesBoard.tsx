@@ -235,7 +235,7 @@ export function PsychologistInvoicesBoard() {
                   type="button"
                   onClick={() => {
                     setDatePreset(id);
-                    if (id !== "data") setDateFilter("");
+                    setDateFilter("");
                   }}
                   className={`rounded-md px-2.5 py-1 text-xs font-medium ${
                     datePreset === id ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
