@@ -3,8 +3,6 @@ export const siteConfig = {
   fullName: "Psicologo Online Ja",
   siteUrl: "https://psicologoonlineja.com",
   defaultOgImage: "/og-psicologo-online-ja.svg",
-  logoDark: "/icon-logo-escura.png",
-  logoLight: "/icon-logo-clara.png",
   phoneDisplay: "(11) 99999-9999",
   email: "contato@psicologoonlineja.com",
   address: "Rua do Acolhimento, 245 - Centro",
