@@ -23,14 +23,14 @@ export function PortalNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="space-y-1.5">
+    <nav className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-1 lg:gap-1.5">
       {items.map((item) => {
         const isOn = isNavActive(pathname, item.href, item.exact);
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`block rounded-xl border px-3 py-2 text-sm font-medium transition ${
+            className={`block rounded-lg border px-2.5 py-1.5 text-xs font-medium leading-tight transition sm:rounded-xl sm:px-3 sm:py-2 sm:text-sm ${
               isOn
                 ? "border-sky-300 bg-sky-50 text-sky-900"
                 : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50"

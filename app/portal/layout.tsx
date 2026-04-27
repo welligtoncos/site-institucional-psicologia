@@ -22,16 +22,18 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-6 px-5 py-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
-        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-6">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Menu</p>
+      <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
+        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4 lg:sticky lg:top-6">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:mb-3 sm:text-xs sm:tracking-[0.2em]">
+            Menu
+          </p>
           <PortalNav />
         </aside>
 
         <main className="min-w-0">{children}</main>
       </div>
 
-      <footer className="mt-4 border-t border-slate-200 bg-white/80">
+      <footer className="mt-4 hidden border-t border-slate-200 bg-white/80 md:block">
         <div className="mx-auto max-w-6xl px-5 py-8 sm:px-6 lg:px-8">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div>

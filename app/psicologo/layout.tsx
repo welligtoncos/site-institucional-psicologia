@@ -33,9 +33,11 @@ export default function PsicologoLayout({ children }: LayoutProps) {
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-6 px-5 py-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
-        <aside className="h-fit rounded-2xl border border-emerald-100/80 bg-white p-4 shadow-sm">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Menu</p>
+      <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
+        <aside className="h-fit rounded-2xl border border-emerald-100/80 bg-white p-3 shadow-sm sm:p-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 sm:mb-3 sm:text-xs sm:tracking-[0.18em]">
+            Menu
+          </p>
           <PsicologoNav />
         </aside>
 
