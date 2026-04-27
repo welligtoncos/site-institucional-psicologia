@@ -121,6 +121,7 @@ export function LiveSessionHomeBanner({ role }: LiveSessionHomeBannerProps) {
         </div>
         <Link
           href={href}
+          prefetch={false}
           className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-center text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700"
         >
           {backToSalaLabel}

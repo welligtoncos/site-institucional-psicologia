@@ -358,6 +358,7 @@ function AppointmentRow({ a }: { a: MockAppointment }) {
           {canOpenRoomFlow ? (
             <Link
               href={`/portal/consultas/sala?appointmentId=${encodeURIComponent(a.id)}`}
+              prefetch={false}
               className="inline-flex text-sm font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
             >
               Entrar na sala online
