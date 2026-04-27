@@ -31,6 +31,16 @@ const items: NavItem[] = [
     ),
   },
   {
+    href: "/psicologo/perfil",
+    label: "Perfil",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-[1.8]">
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 20c.6-3.2 3.4-5.5 7-5.5s6.4 2.3 7 5.5" />
+      </svg>
+    ),
+  },
+  {
     href: "/psicologo/agenda",
     label: "Agenda",
     icon: (
@@ -67,7 +77,7 @@ export function PsicologoBottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-emerald-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85 md:hidden">
-      <ul className="mx-auto grid max-w-2xl grid-cols-4">
+      <ul className="mx-auto grid max-w-2xl grid-cols-5">
         {items.map((item) => {
           const active = isActivePath(pathname, item.href, item.exact);
           return (

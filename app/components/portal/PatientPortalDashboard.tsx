@@ -68,9 +68,6 @@ export function PatientPortalDashboard() {
   }, [rows]);
 
   const next = upcoming[0] ?? null;
-  const confirmedCount = useMemo(() => rows.filter((a) => a.status === "confirmada").length, [rows]);
-  const pendingPaymentCount = useMemo(() => rows.filter((a) => a.payment === "Pendente").length, [rows]);
-
   const primaryAction = useMemo(() => {
     if (!next) {
       return { label: "Agendar consulta", href: "/portal/agendar", tone: "sky" as const, sub: "Escolha data e horário com a clínica." };
@@ -170,21 +167,6 @@ export function PatientPortalDashboard() {
                 </Link>
               ) : null}
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="text-base font-semibold text-slate-900">Resumo</h2>
-        <p className="mt-1 text-sm text-slate-600">Quantidade de consultas confirmadas e pendentes de pagamento.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-3 text-center">
-            <p className="text-2xl font-bold text-emerald-900">{confirmedCount}</p>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-800">Consultas confirmadas</p>
-          </div>
-          <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-3 text-center">
-            <p className="text-2xl font-bold text-amber-900">{pendingPaymentCount}</p>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800">Pagamentos pendentes</p>
           </div>
         </div>
       </section>

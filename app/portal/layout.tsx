@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { PortalBottomNav } from "@/app/components/portal/PortalBottomNav";
+import { PortalLogoutButton } from "@/app/components/portal/PortalLogoutButton";
 import { PortalNav } from "@/app/components/portal/PortalNav";
 import { siteConfig } from "@/app/lib/site";
 
@@ -14,12 +15,7 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4 sm:px-6 lg:px-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Portal do paciente</p>
-          <Link
-            href="/"
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            Voltar para o site
-          </Link>
+          <PortalLogoutButton />
         </div>
       </header>
 
