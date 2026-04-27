@@ -44,6 +44,14 @@ function sortByDateTime(list: PsychologistAgendaAppointment[]): PsychologistAgen
   });
 }
 
+function sortByDateTimeDesc(list: PsychologistAgendaAppointment[]): PsychologistAgendaAppointment[] {
+  return [...list].sort((a, b) => {
+    const c = b.isoDate.localeCompare(a.isoDate);
+    if (c !== 0) return c;
+    return b.time.localeCompare(a.time);
+  });
+}
+
 export function PsychologistDashboard() {
   const router = useRouter();
   const { name: userName } = usePsychologistSession();
@@ -79,14 +87,17 @@ export function PsychologistDashboard() {
     };
   }, [reload]);
 
-  const upcoming = useMemo(() => {
-    const visiveis = agenda.filter(
-      (a) => a.status === "confirmada" || a.status === "pendente" || a.status === "em_andamento",
-    );
-    return sortByDateTime(visiveis.filter(isPsychAppointmentUpcoming));
-  }, [agenda]);
+  const next = useMemo(() => {
+    const visible = agenda.filter((a) => a.status === "confirmada" || a.status === "pendente" || a.status === "em_andamento");
+    const inProgress = sortByDateTimeDesc(visible.filter((a) => a.status === "em_andamento"));
+    if (inProgress.length > 0) return inProgress[0] ?? null;
 
-  const next = upcoming[0] ?? null;
+    const upcoming = sortByDateTime(visible.filter(isPsychAppointmentUpcoming));
+    if (upcoming.length > 0) return upcoming[0] ?? null;
+
+    const recent = sortByDateTimeDesc(visible);
+    return recent[0] ?? null;
+  }, [agenda]);
 
   const primaryAction = useMemo(() => {
     if (!next) {
