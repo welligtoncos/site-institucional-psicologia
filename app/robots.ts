@@ -7,6 +7,5 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
     },
     sitemap: "https://psicologoonlineja.com/sitemap.xml",
-    host: "https://psicologoonlineja.com",
   };
 }
