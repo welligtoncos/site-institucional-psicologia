@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useMemo, useState } from "react";
 
 import type { EquipeCardModel } from "@/app/lib/equipe-types";
@@ -14,6 +13,32 @@ type TeamQuickDirectoryProps = {
   registerUrl: string;
   bookUrl: string;
 };
+
+const AVATAR_GRADIENTS = [
+  "from-violet-500 to-fuchsia-600",
+  "from-sky-500 to-indigo-600",
+  "from-emerald-500 to-teal-600",
+  "from-amber-500 to-orange-600",
+  "from-rose-500 to-pink-600",
+];
+
+function gradientForId(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = (h + id.charCodeAt(i)) % 997;
+  }
+  return AVATAR_GRADIENTS[h % AVATAR_GRADIENTS.length] ?? AVATAR_GRADIENTS[0];
+}
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  const a = parts[0][0];
+  const b = parts[parts.length - 1][0];
+  if (!a || !b) return "?";
+  return (a + b).toUpperCase();
+}
 
 function norm(s: string) {
   return s
@@ -39,8 +64,6 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
       psychologists.reduce((acc, p) => acc + p.agendaDays.reduce((a, d) => a + d.slots.length, 0), 0),
     [psychologists],
   );
-
-  const placeholderSrc = "/barbara.jpg";
 
   return (
     <div className="space-y-10">
@@ -124,14 +147,12 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
                         loading="lazy"
                       />
                     ) : (
-                      <Image
-                        src={placeholderSrc}
-                        alt={member.nome}
-                        width={440}
-                        height={440}
-                        sizes="(max-width: 768px) 200px, 200px"
-                        className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-                      />
+                      <div
+                        className={`flex h-full w-full items-center justify-center bg-gradient-to-br text-2xl font-bold text-white ${gradientForId(member.id)}`}
+                        aria-hidden
+                      >
+                        {initialsFromName(member.nome)}
+                      </div>
                     )}
                   </div>
                 </div>

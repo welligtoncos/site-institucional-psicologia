@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { formatApiErrorDetail } from "@/app/lib/portal-errors";
+import { resolveBackendAssetUrl } from "@/app/lib/resolve-backend-asset-url";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
@@ -141,15 +142,16 @@ export function OffersBoard() {
       <ul className="space-y-6">
         {items.map((psych) => {
           const grad = gradientForId(psych.id);
+          const fotoSrc = resolveBackendAssetUrl(psych.foto_url);
           const specs = psych.especialidades?.length ? psych.especialidades.join(" · ") : "Especialidades a definir";
           return (
             <li key={psych.id}>
               <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex gap-4 p-5">
-                  {psych.foto_url ? (
+                  {fotoSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={psych.foto_url}
+                      src={fotoSrc}
                       alt=""
                       className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-inner"
                     />

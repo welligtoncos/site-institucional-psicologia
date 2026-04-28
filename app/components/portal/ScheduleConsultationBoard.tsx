@@ -13,6 +13,7 @@ import {
   type ApiPatientChargeSummary,
 } from "@/app/lib/portal-appointments-api";
 import { readPortalPatientSnapshot, savePortalPatientSnapshot } from "@/app/lib/portal-patient-snapshot";
+import { resolveBackendAssetUrl } from "@/app/lib/resolve-backend-asset-url";
 
 const ACCESS_TOKEN_KEY = "portal_access_token";
 
@@ -448,12 +449,13 @@ export function ScheduleConsultationBoard() {
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {visibleCatalog.map((p) => {
                 const specs = p.especialidades?.length ? p.especialidades.join(" · ") : "Especialidades a definir";
+                const fotoSrc = resolveBackendAssetUrl(p.foto_url);
                 return (
                   <article key={p.id} className="rounded-xl border border-slate-200 bg-white p-3 transition hover:border-slate-300">
                     <div className="flex items-start gap-3">
-                      {p.foto_url ? (
+                      {fotoSrc ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.foto_url} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+                        <img src={fotoSrc} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
                       ) : (
                         <div
                           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-xs font-bold text-white ${gradientForId(p.id)}`}

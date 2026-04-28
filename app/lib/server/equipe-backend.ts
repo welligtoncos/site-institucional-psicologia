@@ -2,6 +2,8 @@ import "server-only";
 
 import { getBackendApiUrl } from "@/app/lib/backend";
 
+export { resolveBackendAssetUrl } from "@/app/lib/resolve-backend-asset-url";
+
 /** Resposta de GET /public/catalog/psychologists */
 export type PsychologistCatalogApi = {
   id: string;
@@ -28,17 +30,6 @@ export type EquipePsychologist = PsychologistCatalogApi & {
 
 function stripTrailingSlash(url: string) {
   return url.replace(/\/+$/, "");
-}
-
-/** Monta URL absoluta para foto quando o backend devolve caminho relativo. */
-export function resolveBackendAssetUrl(fotoUrl: string | null): string | null {
-  if (!fotoUrl) return null;
-  if (fotoUrl.startsWith("http://") || fotoUrl.startsWith("https://")) {
-    return fotoUrl;
-  }
-  const base = stripTrailingSlash(getBackendApiUrl());
-  const path = fotoUrl.startsWith("/") ? fotoUrl : `/${fotoUrl}`;
-  return `${base}${path}`;
 }
 
 export function formatBrlFromApi(value: string): string {
