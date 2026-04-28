@@ -11,11 +11,6 @@ const ToasterProvider = dynamic(
   { ssr: false }
 );
 
-const WhatsAppButton = dynamic(
-  () => import("./WhatsAppButton").then((module) => module.WhatsAppButton),
-  { ssr: false }
-);
-
 type AppShellProps = {
   children: React.ReactNode;
 };
@@ -40,7 +35,6 @@ export function AppShell({ children }: AppShellProps) {
       <main className="flex-1 pb-[calc(5.75rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
       <Footer />
       <SiteBottomNav />
-      <WhatsAppButton />
     </div>
   );
 }

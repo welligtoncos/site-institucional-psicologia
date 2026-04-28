@@ -46,14 +46,14 @@ const DEFAULT_DAYS = 14;
 
 /**
  * Carrega catálogo + horários livres por profissional a partir da API FastAPI.
- * Usa `BACKEND_API_URL` / `NEXT_PUBLIC_BACKEND_API_URL` (mesmo host do portal).
+ * Sem cache HTTP do Next — valores e agenda devem espelhar o backend após cada alteração.
  */
 export async function loadEquipePsychologists(days: number = DEFAULT_DAYS): Promise<LoadEquipeResult> {
   const base = stripTrailingSlash(getBackendApiUrl());
 
   try {
     const listRes = await fetch(`${base}/public/catalog/psychologists?skip=0&limit=50`, {
-      next: { revalidate: 120 },
+      cache: "no-store",
       headers: { Accept: "application/json" },
     });
 
@@ -75,7 +75,7 @@ export async function loadEquipePsychologists(days: number = DEFAULT_DAYS): Prom
       try {
         const slotsRes = await fetch(
           `${base}/public/catalog/psychologists/${encodeURIComponent(p.id)}/bookable-slots?days=${encodeURIComponent(String(days))}`,
-          { next: { revalidate: 60 }, headers: { Accept: "application/json" } },
+          { cache: "no-store", headers: { Accept: "application/json" } },
         );
         if (slotsRes.ok) {
           const payload = (await slotsRes.json()) as { days?: BookableDayApi[] };

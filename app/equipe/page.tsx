@@ -7,8 +7,8 @@ import { Container, Section } from "../components/ui/SitePrimitives";
 import type { EquipeCardModel } from "../lib/equipe-types";
 import { formatBrlFromApi, loadEquipePsychologists } from "../lib/server/equipe-backend";
 
-/** Alinhado ao cache das chamadas fetch em `loadEquipePsychologists`. */
-export const revalidate = 120;
+/** Sempre dados atuais da API (sem ISR) — ver `loadEquipePsychologists`. */
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Agenda e valores da equipe",
