@@ -54,7 +54,7 @@ export function LoginForm() {
   useEffect(() => {
     const raw = searchParams.get("focus");
     if (raw !== "email" && raw !== "1") return;
-    let t2: ReturnType<typeof setTimeout> | undefined;
+    let t2: ReturnType<typeof window.setTimeout> | undefined;
     const t1 = window.setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       t2 = window.setTimeout(() => {
