@@ -3,7 +3,9 @@
 from datetime import timedelta, time
 from uuid import UUID
 
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from app.core.booking_availability import (
     iter_dates,
@@ -13,6 +15,7 @@ from app.core.booking_availability import (
     weekday_js,
     weekday_label_pt,
 )
+from app.core.data_url_image import parse_data_url_image
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.user import User, UserRole
 from app.repositories.clinical_repository import ClinicalRepository
@@ -142,3 +145,29 @@ class CatalogService:
     ) -> PsychologistBookableSlotsResponse:
         """Grade de horários para exibição no site institucional (sem JWT)."""
         return await self._build_bookable_slots_response(psychologist_id, days=days)
+
+    async def psychologist_foto_http_response(
+        self, psychologist_id: UUID, request: Request
+    ) -> Response | RedirectResponse:
+        """Serve bytes (data URL no banco), redireciona URL http(s) ou caminho sob a própria API."""
+        ps = await self._clinical.get_psicologo_ativo_by_id(psychologist_id)
+        if ps is None:
+            raise NotFoundError("Profissional não encontrado.")
+        raw_foto = (ps.foto_url or "").strip()
+        if not raw_foto:
+            raise NotFoundError("Foto não cadastrada.")
+
+        parsed = parse_data_url_image(raw_foto)
+        if parsed is not None:
+            content, mime = parsed
+            return Response(content=content, media_type=mime)
+
+        if raw_foto.startswith("data:"):
+            raise NotFoundError("Formato de imagem não suportado.")
+
+        if raw_foto.startswith(("http://", "https://")):
+            return RedirectResponse(url=raw_foto)
+
+        path = raw_foto if raw_foto.startswith("/") else f"/{raw_foto}"
+        base = str(request.base_url).rstrip("/")
+        return RedirectResponse(url=f"{base}{path}")

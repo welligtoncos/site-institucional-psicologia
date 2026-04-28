@@ -5,11 +5,7 @@ import { AppointmentCta } from "../components/internal/AppointmentCta";
 import { PageHero } from "../components/internal/PageHero";
 import { Container, Section } from "../components/ui/SitePrimitives";
 import type { EquipeCardModel } from "../lib/equipe-types";
-import {
-  formatBrlFromApi,
-  loadEquipePsychologists,
-  resolveBackendAssetUrl,
-} from "../lib/server/equipe-backend";
+import { formatBrlFromApi, loadEquipePsychologists } from "../lib/server/equipe-backend";
 
 /** Alinhado ao cache das chamadas fetch em `loadEquipePsychologists`. */
 export const revalidate = 120;
@@ -57,7 +53,7 @@ export default async function EquipePage() {
     bio: p.bio,
     valorConsultaLabel: formatBrlFromApi(String(p.valor_consulta)),
     duracaoMinutos: p.duracao_minutos,
-    fotoSrc: resolveBackendAssetUrl(p.foto_url),
+    fotoSrc: p.foto_url ? `/api/public/psychologist/${p.id}/foto` : null,
     especialidades: p.especialidades,
     agendaDays: p.agendaDays,
   }));

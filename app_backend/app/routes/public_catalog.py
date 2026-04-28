@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from app.core.database import get_db
 from app.schemas.catalog_schema import PsychologistBookableSlotsResponse, PsychologistCatalogItem
@@ -54,3 +55,20 @@ async def psychologist_bookable_slots_public(
     days: int = Query(14, ge=1, le=60),
 ) -> PsychologistBookableSlotsResponse:
     return await svc.get_psychologist_bookable_slots_public(psychologist_id, days=days)
+
+
+@router.get(
+    "/psychologists/{psychologist_id}/foto",
+    summary="Foto do profissional (público)",
+    description=(
+        "Resolve `foto_url` do cadastro: data URL (bytes), redireciona http(s) ou caminho relativo à API. "
+        "Uso típico: `<img src>` no site sem transportar base64 no JSON/RSC."
+    ),
+    responses={302: {"description": "Redirecionamento"}, 404: {"description": "Não encontrado"}},
+)
+async def psychologist_foto_public(
+    psychologist_id: UUID,
+    request: Request,
+    svc: CatalogService = Depends(get_catalog_service),
+):
+    return await svc.psychologist_foto_http_response(psychologist_id, request)
