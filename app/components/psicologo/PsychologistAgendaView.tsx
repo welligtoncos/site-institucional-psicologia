@@ -65,6 +65,13 @@ function startOfToday(): Date {
   return new Date(t.getFullYear(), t.getMonth(), t.getDate());
 }
 
+function hhmmNowLocal(): string {
+  const n = new Date();
+  const hh = String(n.getHours()).padStart(2, "0");
+  const mm = String(n.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export function PsychologistAgendaView() {
   const [blocks, setBlocks] = useState<TimeBlock[]>([]);
   const [appointments, setAppointments] = useState<PsychologistAgendaAppointment[]>([]);
@@ -132,6 +139,7 @@ export function PsychologistAgendaView() {
   }, [refreshAgenda, refreshOpenAgenda]);
 
   const t = todayIso();
+  const nowHHMM = useMemo(() => hhmmNowLocal(), []);
   const blockedFuture = useMemo(() => {
     return blocks.filter((b) => b.isoDate >= t).sort((a, b) => a.isoDate.localeCompare(b.isoDate));
   }, [blocks, t]);
@@ -191,6 +199,22 @@ export function PsychologistAgendaView() {
   const openRowsForSelectedDay = useMemo(
     () => (openWeeklyByDay.get(selectedWeekday) ?? []).sort((a, b) => a.start.localeCompare(b.start)),
     [openWeeklyByDay, selectedWeekday],
+  );
+  const visibleOpenRowsForSelectedDay = useMemo(() => {
+    if (selectedIso < t) return [];
+    if (selectedIso > t) return openRowsForSelectedDay;
+    return openRowsForSelectedDay.filter((row) => row.end > nowHHMM);
+  }, [nowHHMM, openRowsForSelectedDay, selectedIso, t]);
+  const isDateClosedForOpenAgenda = useCallback(
+    (date: Date) => {
+      const iso = toIso(date);
+      if (iso < t) return true;
+      const rows = (openWeeklyByDay.get(date.getDay()) ?? []).sort((a, b) => a.start.localeCompare(b.start));
+      if (rows.length === 0) return true;
+      if (iso > t) return false;
+      return rows.every((row) => row.end <= nowHHMM);
+    },
+    [nowHHMM, openWeeklyByDay, t],
   );
 
   function goToWeekContainingSelected() {
@@ -357,6 +381,7 @@ export function PsychologistAgendaView() {
                   month={calendarMonth}
                   onMonthChange={setCalendarMonth}
                   selected={selectedDay}
+                  disabled={isDateClosedForOpenAgenda}
                   onSelect={(d) => {
                     if (d) {
                       setSelectedDay(d);
@@ -393,11 +418,11 @@ export function PsychologistAgendaView() {
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900">Agenda aberta</p>
                 {openAgendaError ? (
                   <p className="mt-1 text-xs text-rose-700">Falha ao carregar disponibilidade aberta.</p>
-                ) : openRowsForSelectedDay.length === 0 ? (
-                  <p className="mt-1 text-xs text-slate-500">Sem horários abertos neste dia da semana.</p>
+                ) : visibleOpenRowsForSelectedDay.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-500">Sem horários abertos disponíveis neste momento.</p>
                 ) : (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {openRowsForSelectedDay.map((row, idx) => (
+                    {visibleOpenRowsForSelectedDay.map((row, idx) => (
                       <span
                         key={`${selectedWeekday}-${row.start}-${row.end}-${idx}`}
                         className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-900"
