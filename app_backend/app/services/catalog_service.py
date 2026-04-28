@@ -62,8 +62,8 @@ class CatalogService:
         return self._rows_to_catalog_items(rows)
 
     async def list_psychologists_catalog_public(self, *, skip: int = 0, limit: int = 100) -> list[PsychologistCatalogItem]:
-        """Lista profissionais ativos para o site institucional (sem JWT)."""
-        rows = await self._clinical.list_psicologos_ativos_catalog(skip=skip, limit=limit)
+        """Lista profissionais ativos para o site institucional (sem JWT). Mais recentes primeiro."""
+        rows = await self._clinical.list_psicologos_ativos_catalog(skip=skip, limit=limit, recent_first=True)
         return self._rows_to_catalog_items(rows)
 
     async def _build_bookable_slots_response(self, psychologist_id: UUID, *, days: int) -> PsychologistBookableSlotsResponse:

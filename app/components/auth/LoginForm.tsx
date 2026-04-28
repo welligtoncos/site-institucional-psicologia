@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useMemo, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -26,6 +26,9 @@ export function LoginForm() {
   const [errorMessage, setErrorMessage] = useState("");
   const [registeredHint, setRegisteredHint] = useState(false);
 
+  const formRef = useRef<HTMLFormElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
   const nextPath = searchParams.get("next");
 
   /** Só visual do paciente: portal, subrotas, ou URL sem `next` (padrão paciente). */
@@ -45,6 +48,23 @@ export function LoginForm() {
     if (searchParams.get("registered") === "1") {
       setRegisteredHint(true);
     }
+  }, [searchParams]);
+
+  /** Fluxo “Agendar” no site: links trazem `focus=email` para ir direto ao formulário no mobile. */
+  useEffect(() => {
+    const raw = searchParams.get("focus");
+    if (raw !== "email" && raw !== "1") return;
+    let t2: ReturnType<typeof setTimeout> | undefined;
+    const t1 = window.setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      t2 = window.setTimeout(() => {
+        emailRef.current?.focus({ preventScroll: true });
+      }, 350);
+    }, 50);
+    return () => {
+      clearTimeout(t1);
+      if (t2 !== undefined) clearTimeout(t2);
+    };
   }, [searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -132,6 +152,7 @@ export function LoginForm() {
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
       className={`mx-auto w-full max-w-md space-y-5 rounded-3xl border-2 ${theme.shell} p-6 shadow-xl sm:p-8`}
       aria-labelledby="login-heading"
@@ -168,6 +189,7 @@ export function LoginForm() {
             E-mail
           </label>
           <input
+            ref={emailRef}
             id="login-email"
             type="email"
             required

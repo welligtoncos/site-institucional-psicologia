@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
+import { SiteBottomNav } from "./SiteBottomNav";
 
 const ToasterProvider = dynamic(
   () => import("./ToasterProvider").then((module) => module.ToasterProvider),
@@ -36,8 +37,9 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 pb-[calc(5.75rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
       <Footer />
+      <SiteBottomNav />
       <WhatsAppButton />
     </div>
   );

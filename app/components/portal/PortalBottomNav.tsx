@@ -18,6 +18,7 @@ function isActivePath(pathname: string, href: string, exact?: boolean): boolean 
   return normalizedPathname === normalizedHref || normalizedPathname.startsWith(`${normalizedHref}/`);
 }
 
+/** Mesma ordem lógica do menu lateral (`PortalNav`), otimizada para dedo / polegar. */
 const items: NavItem[] = [
   {
     href: "/portal",
@@ -41,6 +42,17 @@ const items: NavItem[] = [
     ),
   },
   {
+    href: "/portal/faturamento",
+    label: "Pagamentos",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-[1.8]">
+        <rect x="2.5" y="5.5" width="19" height="14" rx="2.5" />
+        <path d="M2.5 10.5h19" />
+        <path d="M7 15.5h4" />
+      </svg>
+    ),
+  },
+  {
     href: "/portal/agendar",
     label: "Agendar",
     icon: (
@@ -52,7 +64,7 @@ const items: NavItem[] = [
   },
   {
     href: "/portal/perfil",
-    label: "Perfil",
+    label: "Cadastro",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-[1.8]">
         <circle cx="12" cy="8" r="3.5" />
@@ -66,20 +78,24 @@ export function PortalBottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85 md:hidden">
-      <ul className="mx-auto grid max-w-2xl grid-cols-4">
+    <nav
+      aria-label="Menu principal do portal"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85 lg:hidden"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      <ul className="mx-auto grid max-w-3xl grid-cols-5 gap-0">
         {items.map((item) => {
           const active = isActivePath(pathname, item.href, item.exact);
           return (
             <li key={item.href}>
               <Link
                 href={item.href}
-                className={`flex flex-col items-center justify-center gap-1 px-2 pb-2 pt-2 text-[11px] font-medium transition ${
+                className={`flex flex-col items-center justify-center gap-0.5 px-1 pb-2.5 pt-2 text-[10px] font-semibold leading-tight tracking-tight transition active:opacity-75 min-[380px]:text-[11px] ${
                   active ? "text-sky-700" : "text-slate-500"
                 }`}
               >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
+                <span className={active ? "text-sky-600" : undefined}>{item.icon}</span>
+                <span className="line-clamp-2 text-center">{item.label}</span>
               </Link>
             </li>
           );

@@ -17,11 +17,14 @@ export const siteConfig = {
     "https://wa.me/5511999999999?text=Ola%2C%20gostaria%20de%20agendar%20uma%20consulta.",
 };
 
+/** Âncora no primeiro card da página Equipe (profissional mais recente no catálogo público). */
+export const equipeRecentPsychologistAnchor = "equipe-psicologo-recente";
+
 export const navItems = [
   { href: "/", label: "Home" },
   { href: "/sobre", label: "Sobre" },
   { href: "/especialidades", label: "Especialidades" },
-  { href: "/equipe", label: "Equipe" },
+  { href: `/equipe#${equipeRecentPsychologistAnchor}`, label: "Equipe" },
   { href: "/register", label: "Cadastro" },
   { href: "/login?next=/portal", label: "Portal" },
 ];

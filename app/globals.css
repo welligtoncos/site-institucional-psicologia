@@ -76,3 +76,12 @@ textarea {
     inset 0 -3px 0 0 rgb(16 185 129),
     inset 0 -6px 0 0 rgb(251 191 36);
 }
+
+/* Barra de navegação mobile horizontal (área psicólogo) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

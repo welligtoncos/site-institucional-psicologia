@@ -68,18 +68,27 @@ class ClinicalRepository:
         result = await self._db.execute(stmt)
         return list(result.scalars().unique().all())
 
-    async def list_psicologos_ativos_catalog(self, *, skip: int = 0, limit: int = 100) -> list[Psicologo]:
-        """Psicólogos com usuário ativo (para catálogo do portal do paciente)."""
+    async def list_psicologos_ativos_catalog(
+        self, *, skip: int = 0, limit: int = 100, recent_first: bool = False
+    ) -> list[Psicologo]:
+        """Psicólogos com usuário ativo (para catálogo do portal do paciente ou site público).
+
+        `recent_first=True`: mais recentemente cadastrado primeiro (uso no site institucional /equipe).
+        Caso contrário ordena pelo nome para o catálogo do paciente autenticado.
+        """
         stmt = (
             select(Psicologo)
             .join(User, Psicologo.usuario_id == User.id)
             .where(User.role == UserRole.psychologist)
             .where(User.is_active.is_(True))
             .options(selectinload(Psicologo.usuario))
-            .order_by(User.name.asc())
             .offset(skip)
             .limit(limit)
         )
+        if recent_first:
+            stmt = stmt.order_by(Psicologo.criado_em.desc())
+        else:
+            stmt = stmt.order_by(User.name.asc())
         result = await self._db.execute(stmt)
         return list(result.scalars().unique().all())
 

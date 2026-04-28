@@ -71,7 +71,7 @@ export default async function EquipePage() {
           <TeamQuickDirectory
             psychologists={cards}
             registerUrl="/register"
-            bookUrl="/login?next=/portal/agendar"
+            bookUrl="/login?next=/portal/agendar&focus=email"
           />
         </Container>
       </Section>

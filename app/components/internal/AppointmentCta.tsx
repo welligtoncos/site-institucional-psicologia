@@ -16,7 +16,7 @@ export function AppointmentCta({ title, description }: AppointmentCtaProps) {
           <p className="mt-4 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg">{description}</p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <ActionLink href="/login?next=/portal">
+            <ActionLink href="/login?next=/portal&focus=email">
               Agendar atendimento
             </ActionLink>
             <ActionLink href="/sobre" variant="secondary">

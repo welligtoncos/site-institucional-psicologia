@@ -31,14 +31,14 @@ export default function PsicologoLayout({ children }: LayoutProps) {
       </header>
 
       <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
-        <aside className="hidden h-fit rounded-2xl border border-emerald-100/80 bg-white p-3 shadow-sm sm:p-4 md:block">
+        <aside className="hidden h-fit rounded-2xl border border-emerald-100/80 bg-white p-3 shadow-sm sm:p-4 lg:block">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 sm:mb-3 sm:text-xs sm:tracking-[0.18em]">
             Menu
           </p>
           <PsicologoNav />
         </aside>
 
-        <main className="min-w-0 pb-20 md:pb-0">{children}</main>
+        <main className="min-w-0 pb-[calc(5.75rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
       </div>
       <PsicologoBottomNav />
     </div>

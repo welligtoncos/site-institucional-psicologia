@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import type { EquipeCardModel } from "@/app/lib/equipe-types";
+import { equipeRecentPsychologistAnchor } from "@/app/lib/site";
 import { ActionLink } from "@/app/components/ui/SitePrimitives";
 import { CompactBio } from "./CompactBio";
 import { EquipeAvailabilityCalendar } from "./EquipeAvailabilityCalendar";
@@ -64,6 +65,9 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
       psychologists.reduce((acc, p) => acc + p.agendaDays.reduce((a, d) => a + d.slots.length, 0), 0),
     [psychologists],
   );
+
+  /** Mesmo índice que no catálogo público da API (mais recente primeiro). */
+  const recentPsychologistId = psychologists[0]?.id ?? null;
 
   return (
     <div className="space-y-10">
@@ -133,7 +137,8 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
           filtered.map((member) => (
             <article
               key={member.id}
-              className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+              id={member.id === recentPsychologistId ? equipeRecentPsychologistAnchor : undefined}
+              className={`overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${member.id === recentPsychologistId ? "scroll-mt-28" : ""}`}
             >
               <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,200px)_1fr] md:p-8">
                 <div className="mx-auto w-full max-w-[200px] md:mx-0">
