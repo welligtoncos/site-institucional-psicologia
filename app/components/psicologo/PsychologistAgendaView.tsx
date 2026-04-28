@@ -390,7 +390,7 @@ export function PsychologistAgendaView() {
               <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900">Dia selecionado</h2>
               <p className="mt-1 text-lg font-semibold capitalize text-slate-900">{formatIsoDateLong(selectedIso)}</p>
               <div className="mt-3 rounded-xl border border-sky-100 bg-white/80 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900">Agenda aberta (tag)</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900">Agenda aberta</p>
                 {openAgendaError ? (
                   <p className="mt-1 text-xs text-rose-700">Falha ao carregar disponibilidade aberta.</p>
                 ) : openRowsForSelectedDay.length === 0 ? (
