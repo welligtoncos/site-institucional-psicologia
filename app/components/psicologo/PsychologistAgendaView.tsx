@@ -10,6 +10,9 @@ import {
   formatIsoDateLong,
   formatIsoDatePt,
   todayIso,
+  WEEKDAY_LONG,
+  WEEKDAY_ORDER,
+  type DaySlot,
   type PsychologistAgendaAppointment,
   type TimeBlock,
 } from "@/app/lib/psicologo-mocks";
@@ -17,6 +20,7 @@ import {
   apiAgendaToMock,
   fetchPsychologistAgenda,
 } from "@/app/lib/psychologist-agenda-api";
+import { apiToMock, fetchPsychologistAvailability } from "@/app/lib/psychologist-availability-api";
 
 import "react-day-picker/style.css";
 
@@ -64,6 +68,8 @@ function startOfToday(): Date {
 export function PsychologistAgendaView() {
   const [blocks, setBlocks] = useState<TimeBlock[]>([]);
   const [appointments, setAppointments] = useState<PsychologistAgendaAppointment[]>([]);
+  const [openWeekly, setOpenWeekly] = useState<DaySlot[]>([]);
+  const [openAgendaError, setOpenAgendaError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [hydrated, setHydrated] = useState(false);
 
@@ -92,11 +98,28 @@ export function PsychologistAgendaView() {
     );
   }, []);
 
+  const refreshOpenAgenda = useCallback(async () => {
+    const result = await fetchPsychologistAvailability();
+    if (result.ok && "weekly" in result.data && Array.isArray(result.data.weekly)) {
+      const mapped = apiToMock(result.data);
+      const weeklyOpen = mapped.weekly
+        .filter((row) => row.enabled)
+        .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
+      setOpenWeekly(weeklyOpen);
+      setOpenAgendaError("");
+      return;
+    }
+    setOpenWeekly([]);
+    setOpenAgendaError("Não foi possível carregar a disponibilidade aberta pela API.");
+  }, []);
+
   useEffect(() => {
     const onAvailabilityChanged = () => {
       void refreshAgenda();
+      void refreshOpenAgenda();
     };
     void refreshAgenda();
+    void refreshOpenAgenda();
     setHydrated(true);
     window.addEventListener("psychologist-availability-changed", onAvailabilityChanged);
     window.addEventListener("storage", onAvailabilityChanged);
@@ -106,7 +129,7 @@ export function PsychologistAgendaView() {
       window.removeEventListener("storage", onAvailabilityChanged);
       window.removeEventListener("psychologist-agenda-changed", onAvailabilityChanged);
     };
-  }, [refreshAgenda]);
+  }, [refreshAgenda, refreshOpenAgenda]);
 
   const t = todayIso();
   const blockedFuture = useMemo(() => {
@@ -148,6 +171,22 @@ export function PsychologistAgendaView() {
     }
     return map;
   }, [appointments, weekDays]);
+
+  const openWeeklyByDay = useMemo(() => {
+    const map = new Map<number, DaySlot[]>();
+    for (const d of WEEKDAY_ORDER) {
+      map.set(d, []);
+    }
+    for (const row of openWeekly) {
+      map.get(row.weekday)?.push(row);
+    }
+    for (const d of WEEKDAY_ORDER) {
+      const rows = map.get(d) ?? [];
+      rows.sort((a, b) => a.start.localeCompare(b.start));
+      map.set(d, rows);
+    }
+    return map;
+  }, [openWeekly]);
 
   function goToWeekContainingSelected() {
     setWeekStart(toIso(startOfWeekMonday(selectedDay)));
@@ -251,6 +290,45 @@ export function PsychologistAgendaView() {
             Bloquear horários / configurar agenda
           </Link>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-sky-100 bg-sky-50/40 p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-sky-900">Agenda aberta da semana</h2>
+          <Link href="/psicologo/disponibilidade" className="text-xs font-semibold text-sky-700 hover:underline">
+            Editar disponibilidade
+          </Link>
+        </div>
+        <p className="mt-2 text-sm text-slate-600">
+          Esta é a visão da sua agenda aberta (horários que o paciente pode ver e solicitar).
+        </p>
+        {openAgendaError ? (
+          <p className="mt-3 text-sm text-rose-700">{openAgendaError}</p>
+        ) : openWeekly.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-600">Nenhum horário aberto na semana. Configure em Disponibilidade.</p>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {WEEKDAY_ORDER.map((weekday) => {
+              const rows = openWeeklyByDay.get(weekday) ?? [];
+              return (
+                <article key={weekday} className="rounded-xl border border-sky-100 bg-white px-3 py-2">
+                  <p className="text-xs font-semibold text-sky-900">{WEEKDAY_LONG[weekday]}</p>
+                  {rows.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">Fechado</p>
+                  ) : (
+                    <ul className="mt-2 space-y-1">
+                      {rows.map((row, idx) => (
+                        <li key={`${weekday}-${row.start}-${row.end}-${idx}`} className="text-sm font-medium text-slate-800">
+                          {row.start} até {row.end}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
       {loadError ? (
         <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{loadError}</section>
