@@ -54,16 +54,17 @@ export function LoginForm() {
   useEffect(() => {
     const raw = searchParams.get("focus");
     if (raw !== "email" && raw !== "1") return;
-    let t2: ReturnType<typeof window.setTimeout> | undefined;
-    const t1 = window.setTimeout(() => {
+    /** DOM devolve `number`; com @types/node o mesmo call pode tipar como `NodeJS.Timeout` no build. */
+    let innerTimer: number | NodeJS.Timeout | undefined;
+    const outerTimer = window.setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      t2 = window.setTimeout(() => {
+      innerTimer = window.setTimeout(() => {
         emailRef.current?.focus({ preventScroll: true });
       }, 350);
     }, 50);
     return () => {
-      clearTimeout(t1);
-      if (t2 !== undefined) clearTimeout(t2);
+      clearTimeout(outerTimer);
+      if (innerTimer !== undefined) clearTimeout(innerTimer);
     };
   }, [searchParams]);
 
