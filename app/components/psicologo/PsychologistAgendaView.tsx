@@ -137,6 +137,7 @@ export function PsychologistAgendaView() {
   }, [blocks, t]);
 
   const selectedIso = useMemo(() => toIso(selectedDay), [selectedDay]);
+  const selectedWeekday = useMemo(() => selectedDay.getDay() as keyof typeof WEEKDAY_LONG, [selectedDay]);
 
   const listForSelectedDay = useMemo(() => {
     return sortAppointments(appointments.filter((a) => a.isoDate === selectedIso));
@@ -187,6 +188,10 @@ export function PsychologistAgendaView() {
     }
     return map;
   }, [openWeekly]);
+  const openRowsForSelectedDay = useMemo(
+    () => (openWeeklyByDay.get(selectedWeekday) ?? []).sort((a, b) => a.start.localeCompare(b.start)),
+    [openWeeklyByDay, selectedWeekday],
+  );
 
   function goToWeekContainingSelected() {
     setWeekStart(toIso(startOfWeekMonday(selectedDay)));
@@ -292,44 +297,6 @@ export function PsychologistAgendaView() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-sky-100 bg-sky-50/40 p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-sky-900">Agenda aberta da semana</h2>
-          <Link href="/psicologo/disponibilidade" className="text-xs font-semibold text-sky-700 hover:underline">
-            Editar disponibilidade
-          </Link>
-        </div>
-        <p className="mt-2 text-sm text-slate-600">
-          Esta é a visão da sua agenda aberta (horários que o paciente pode ver e solicitar).
-        </p>
-        {openAgendaError ? (
-          <p className="mt-3 text-sm text-rose-700">{openAgendaError}</p>
-        ) : openWeekly.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-600">Nenhum horário aberto na semana. Configure em Disponibilidade.</p>
-        ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {WEEKDAY_ORDER.map((weekday) => {
-              const rows = openWeeklyByDay.get(weekday) ?? [];
-              return (
-                <article key={weekday} className="rounded-xl border border-sky-100 bg-white px-3 py-2">
-                  <p className="text-xs font-semibold text-sky-900">{WEEKDAY_LONG[weekday]}</p>
-                  {rows.length === 0 ? (
-                    <p className="mt-2 text-xs text-slate-500">Fechado</p>
-                  ) : (
-                    <ul className="mt-2 space-y-1">
-                      {rows.map((row, idx) => (
-                        <li key={`${weekday}-${row.start}-${row.end}-${idx}`} className="text-sm font-medium text-slate-800">
-                          {row.start} até {row.end}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
       {loadError ? (
         <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{loadError}</section>
       ) : null}
@@ -422,6 +389,25 @@ export function PsychologistAgendaView() {
             <div className="min-h-[200px] flex-1 rounded-2xl border border-slate-100 bg-slate-50/40 p-4">
               <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900">Dia selecionado</h2>
               <p className="mt-1 text-lg font-semibold capitalize text-slate-900">{formatIsoDateLong(selectedIso)}</p>
+              <div className="mt-3 rounded-xl border border-sky-100 bg-white/80 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-900">Agenda aberta (tag)</p>
+                {openAgendaError ? (
+                  <p className="mt-1 text-xs text-rose-700">Falha ao carregar disponibilidade aberta.</p>
+                ) : openRowsForSelectedDay.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-500">Sem horários abertos neste dia da semana.</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {openRowsForSelectedDay.map((row, idx) => (
+                      <span
+                        key={`${selectedWeekday}-${row.start}-${row.end}-${idx}`}
+                        className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-900"
+                      >
+                        {row.start} até {row.end}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <ul className="mt-4 space-y-2">{listForSelectedDay.map((a) => renderSessionCard(a))}</ul>
               {listForSelectedDay.length === 0 && (
                 <p className="mt-4 text-sm text-slate-500">Nenhuma sessão agendada neste dia.</p>
