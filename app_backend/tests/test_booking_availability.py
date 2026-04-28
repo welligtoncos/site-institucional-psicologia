@@ -42,7 +42,23 @@ def test_slots_respect_weekly_window_and_duration() -> None:
         consultas=[],
         duracao_minutos=30,
     )
-    assert slots2 == ["09:00"]
+    assert slots2 == ["09:00", "09:30", "10:00"]
+
+
+def test_slots_window_shorter_than_session_keeps_start_slot() -> None:
+    """Mesmo com janela curta, publica o início cadastrado pelo psicólogo."""
+    weekly = [SimpleNamespace(dia_semana=3, ativo=True, hora_inicio=time(9, 0), hora_fim=time(9, 15))]
+    day = date(2026, 4, 22)  # Wednesday
+    slots = slots_for_calendar_day(
+        day,
+        today_br=date(2026, 4, 19),
+        now_minutes_br=0,
+        weekly=weekly,
+        blocks=[],
+        consultas=[],
+        duracao_minutos=30,
+    )
+    assert slots == ["09:00"]
 
 
 def test_full_day_block_empties_slots() -> None:

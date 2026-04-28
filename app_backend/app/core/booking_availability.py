@@ -114,7 +114,13 @@ def slots_for_calendar_day(
     consultas: list[_ConsultaLike],
     duracao_minutos: int,
 ) -> list[str]:
-    """Um início HH:MM por linha em `disponibilidade_semanal` (hora_inicio), se a sessão couber em [hora_inicio, hora_fim)."""
+    """Inícios HH:MM espaçados por `duracao_minutos` dentro de cada janela [hora_inicio, hora_fim).
+
+    Cada linha em `disponibilidade_semanal` é um intervalo; geramos horários não sobrepostos
+    (passo = duração da sessão) enquanto [t, t+duração) ⊆ [hora_inicio, hora_fim).
+    Quando a janela é menor que a duração da sessão, ainda ofertamos o início da linha (hora_inicio),
+    pois o psicólogo pode definir horários com minutagem livre e espera vê-los publicados.
+    """
     wd = int(weekday_js(day))
     busy_blocks = _busy_intervals_from_blocks(day, blocks)
     if busy_blocks == [(0, 24 * 60)]:
@@ -126,24 +132,41 @@ def slots_for_calendar_day(
     seen: set[str] = set()
     out: list[str] = []
 
+    step = duracao_minutos
+
     for row in weekly:
         if int(row.dia_semana) != wd or not bool(row.ativo):
             continue
         ws = _time_to_minutes(row.hora_inicio)
         we = _time_to_minutes(row.hora_fim)
-        if we <= ws or duracao_minutos <= 0:
+        if we <= ws or duracao_minutos <= 0 or step <= 0:
             continue
+
         if ws + duracao_minutos > we:
+            # Compatibilidade com agenda livre: mesmo com janela curta, publica o início cadastrado.
+            if day == today_br and ws < now_minutes_br:
+                continue
+            if _conflicts_busy(ws, ws + duracao_minutos, all_busy):
+                continue
+            label = _hhmm(_minutes_to_time(ws))
+            if label not in seen:
+                seen.add(label)
+                out.append(label)
             continue
+
         t = ws
-        if day == today_br and t < now_minutes_br:
-            continue
-        if _conflicts_busy(t, t + duracao_minutos, all_busy):
-            continue
-        label = _hhmm(_minutes_to_time(t))
-        if label not in seen:
-            seen.add(label)
-            out.append(label)
+        while t + duracao_minutos <= we:
+            if day == today_br and t < now_minutes_br:
+                t += step
+                continue
+            if _conflicts_busy(t, t + duracao_minutos, all_busy):
+                t += step
+                continue
+            label = _hhmm(_minutes_to_time(t))
+            if label not in seen:
+                seen.add(label)
+                out.append(label)
+            t += step
 
     return sorted(out)
 

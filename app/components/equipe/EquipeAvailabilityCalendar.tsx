@@ -26,11 +26,17 @@ export function EquipeAvailabilityCalendar({ agendaDays }: EquipeAvailabilityCal
     return parseLocalDate(agendaDays[0].date);
   }, [agendaDays]);
 
-  const selectedDay = useMemo(() => {
-    if (!selected) return undefined;
-    const key = calendarDateKey(selected);
-    return agendaDays.find((d) => d.date === key);
+  const selectedOrFirstDate = useMemo(() => {
+    if (selected) return selected;
+    if (agendaDays.length === 0) return undefined;
+    return parseLocalDate(agendaDays[0].date);
   }, [agendaDays, selected]);
+
+  const selectedDay = useMemo(() => {
+    if (!selectedOrFirstDate) return undefined;
+    const key = calendarDateKey(selectedOrFirstDate);
+    return agendaDays.find((d) => d.date === key);
+  }, [agendaDays, selectedOrFirstDate]);
 
   if (agendaDays.length === 0) {
     return (
@@ -56,7 +62,7 @@ export function EquipeAvailabilityCalendar({ agendaDays }: EquipeAvailabilityCal
           mode="single"
           locale={ptBR}
           weekStartsOn={1}
-          selected={selected}
+          selected={selectedOrFirstDate}
           onSelect={setSelected}
           defaultMonth={defaultMonth}
           disabled={(date) => !bookableKeys.has(calendarDateKey(date))}
@@ -69,7 +75,7 @@ export function EquipeAvailabilityCalendar({ agendaDays }: EquipeAvailabilityCal
           footer={
             selectedDay
               ? `${agendaDayTitle(selectedDay)} — ${selectedDay.slots.length} horario(s) disponivel(is).`
-              : "Selecione um dia em destaque para ver os horarios."
+              : "Sem data selecionada."
           }
         />
       </div>

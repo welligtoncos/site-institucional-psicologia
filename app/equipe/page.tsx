@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 export default async function EquipePage() {
-  const result = await loadEquipePsychologists(14);
+  const result = await loadEquipePsychologists(7);
 
   if (!result.ok) {
     return (

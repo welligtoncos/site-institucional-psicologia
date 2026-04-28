@@ -94,14 +94,14 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Resumo da agenda</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-              Horarios livres nos proximos dias (por profissional abaixo). Para reservar com pagamento e confirmacao,
-              use o portal do paciente.
+              Horarios livres da semana (proximos 7 dias), por profissional abaixo. Para reservar com pagamento e
+              confirmacao, use o portal do paciente.
             </p>
           </div>
           <div className="rounded-2xl border border-emerald-100 bg-white/80 px-4 py-2 text-center">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Vagas somadas</p>
             <p className="text-2xl font-semibold tabular-nums text-emerald-900">{totalSlots}</p>
-            <p className="text-xs text-emerald-700">proximos dias</p>
+            <p className="text-xs text-emerald-700">proximos 7 dias</p>
           </div>
         </div>
 
@@ -109,7 +109,8 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-5 text-sm text-slate-700">
             <p className="font-medium text-slate-900">Nenhum horario livre no periodo consultado.</p>
             <p className="mt-2 text-slate-600">
-              A agenda e atualizada em tempo real no sistema. Cadastre-se no portal ou volte mais tarde.
+              A agenda e atualizada em tempo real no sistema para os proximos 7 dias. Cadastre-se no portal ou volte
+              mais tarde.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <ActionLink href={registerUrl}>Criar conta no portal</ActionLink>
