@@ -1,7 +1,10 @@
 "use client";
 
+import { ptBR } from "date-fns/locale/pt-BR";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DayPicker } from "react-day-picker";
 
 import {
   formatIsoDateLong,
@@ -15,7 +18,9 @@ import {
   fetchPsychologistAgenda,
 } from "@/app/lib/psychologist-agenda-api";
 
-type ViewMode = "dia" | "semana" | "mes";
+import "react-day-picker/style.css";
+
+type MainView = "calendario" | "semana";
 
 function sortAppointments(list: PsychologistAgendaAppointment[]): PsychologistAgendaAppointment[] {
   return [...list].sort((a, b) => {
@@ -51,8 +56,9 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 
-function monthLabel(d: Date): string {
-  return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+function startOfToday(): Date {
+  const t = new Date();
+  return new Date(t.getFullYear(), t.getMonth(), t.getDate());
 }
 
 export function PsychologistAgendaView() {
@@ -60,13 +66,14 @@ export function PsychologistAgendaView() {
   const [appointments, setAppointments] = useState<PsychologistAgendaAppointment[]>([]);
   const [loadError, setLoadError] = useState("");
   const [hydrated, setHydrated] = useState(false);
-  const [view, setView] = useState<ViewMode>("dia");
-  const [dayCursor, setDayCursor] = useState(() => todayIso());
-  const [weekStart, setWeekStart] = useState(() => toIso(startOfWeekMonday(new Date())));
-  const [monthCursor, setMonthCursor] = useState(() => {
+
+  const [mainView, setMainView] = useState<MainView>("calendario");
+  const [selectedDay, setSelectedDay] = useState<Date>(() => startOfToday());
+  const [calendarMonth, setCalendarMonth] = useState(() => {
     const t = new Date();
     return new Date(t.getFullYear(), t.getMonth(), 1);
   });
+  const [weekStart, setWeekStart] = useState(() => toIso(startOfWeekMonday(new Date())));
 
   const refreshAgenda = useCallback(async () => {
     const fromDateIso = todayIso();
@@ -106,9 +113,21 @@ export function PsychologistAgendaView() {
     return blocks.filter((b) => b.isoDate >= t).sort((a, b) => a.isoDate.localeCompare(b.isoDate));
   }, [blocks, t]);
 
-  const listForDay = useMemo(() => {
-    return sortAppointments(appointments.filter((a) => a.isoDate === dayCursor));
-  }, [appointments, dayCursor]);
+  const selectedIso = useMemo(() => toIso(selectedDay), [selectedDay]);
+
+  const listForSelectedDay = useMemo(() => {
+    return sortAppointments(appointments.filter((a) => a.isoDate === selectedIso));
+  }, [appointments, selectedIso]);
+
+  const appointmentDayDates = useMemo(
+    () => [...new Set(appointments.map((a) => a.isoDate))].map((iso) => parseIsoToLocal(iso)),
+    [appointments],
+  );
+
+  const blockDayDates = useMemo(
+    () => [...new Set(blockedFuture.map((b) => b.isoDate))].map((iso) => parseIsoToLocal(iso)),
+    [blockedFuture],
+  );
 
   const weekDays = useMemo(() => {
     const start = parseIsoToLocal(weekStart);
@@ -130,29 +149,12 @@ export function PsychologistAgendaView() {
     return map;
   }, [appointments, weekDays]);
 
-  const monthYear = monthCursor.getFullYear();
-  const monthIndex = monthCursor.getMonth();
+  function goToWeekContainingSelected() {
+    setWeekStart(toIso(startOfWeekMonday(selectedDay)));
+    setMainView("semana");
+  }
 
-  const monthAppointments = useMemo(() => {
-    return sortAppointments(
-      appointments.filter((a) => {
-        const [y, m] = a.isoDate.split("-").map(Number);
-        return y === monthYear && m - 1 === monthIndex;
-      }),
-    );
-  }, [appointments, monthYear, monthIndex]);
-
-  const monthGrouped = useMemo(() => {
-    const groups = new Map<string, PsychologistAgendaAppointment[]>();
-    for (const a of monthAppointments) {
-      const prev = groups.get(a.isoDate) ?? [];
-      prev.push(a);
-      groups.set(a.isoDate, prev);
-    }
-    return groups;
-  }, [monthAppointments]);
-
-  function renderSessionCard(a: PsychologistAgendaAppointment, compact?: boolean) {
+  function renderSessionCard(a: PsychologistAgendaAppointment) {
     const cancelled = a.status === "cancelada";
     const pending = a.status === "pendente";
     const done = a.status === "realizada";
@@ -214,6 +216,11 @@ export function PsychologistAgendaView() {
     );
   }
 
+  const calendarFooter =
+    listForSelectedDay.length === 0
+      ? `${formatIsoDateLong(selectedIso)} — nenhuma sessão neste dia.`
+      : `${formatIsoDateLong(selectedIso)} — ${listForSelectedDay.length} sessão(ões) neste dia.`;
+
   if (!hydrated) {
     return (
       <div className="rounded-2xl border border-emerald-100 bg-white p-8 text-center text-sm text-slate-600">
@@ -228,11 +235,11 @@ export function PsychologistAgendaView() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Agenda</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-900">Consultas e bloqueios</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Visualize sua agenda por dia, semana ou mês. Para{" "}
-          <strong className="font-semibold text-slate-800">bloquear horários</strong> e{" "}
-          <strong className="font-semibold text-slate-800">configurar sua agenda</strong>, use{" "}
+          Use o <strong className="font-semibold text-slate-800">calendário</strong> para saltar entre dias: dias com
+          consulta ou bloqueio aparecem marcados. Abaixo, veja o detalhe do dia selecionado. Para{" "}
+          <strong className="font-semibold text-slate-800">bloquear horários</strong>, use{" "}
           <Link href="/psicologo/disponibilidade" className="font-semibold text-emerald-800 underline">
-            Abrir agenda
+            Disponibilidade
           </Link>
           .
         </p>
@@ -241,7 +248,7 @@ export function PsychologistAgendaView() {
             href="/psicologo/disponibilidade"
             className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-100"
           >
-            Bloquear horários / abrir agenda
+            Bloquear horários / configurar agenda
           </Link>
         </div>
       </section>
@@ -250,38 +257,110 @@ export function PsychologistAgendaView() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        {(["dia", "semana", "mes"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setView(m)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-              view === m ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            {m === "dia" ? "Dia" : m === "semana" ? "Semana" : "Mês"}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={() => setMainView("calendario")}
+          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            mainView === "calendario" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          Calendário
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            goToWeekContainingSelected();
+          }}
+          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            mainView === "semana" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          Semana
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const n = startOfToday();
+            setSelectedDay(n);
+            setCalendarMonth(new Date(n.getFullYear(), n.getMonth(), 1));
+            setMainView("calendario");
+          }}
+          className="ml-auto rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Hoje
+        </button>
       </div>
 
-      {view === "dia" && (
+      {mainView === "calendario" && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900">Dia</h2>
-            <input
-              type="date"
-              value={dayCursor}
-              onChange={(e) => setDayCursor(e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            />
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
+            <div className="mx-auto w-fit lg:mx-0">
+              <div
+                className="psicologo-agenda-rdp rounded-2xl border border-emerald-100 bg-slate-50/50 p-2 sm:p-3"
+                style={
+                  {
+                    "--rdp-accent-color": "rgb(5 150 105)",
+                    "--rdp-accent-background-color": "rgb(209 250 229)",
+                    "--rdp-day_button-border-radius": "0.75rem",
+                  } as CSSProperties
+                }
+              >
+                <DayPicker
+                  mode="single"
+                  locale={ptBR}
+                  weekStartsOn={1}
+                  month={calendarMonth}
+                  onMonthChange={setCalendarMonth}
+                  selected={selectedDay}
+                  onSelect={(d) => {
+                    if (d) {
+                      setSelectedDay(d);
+                      setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                    }
+                  }}
+                  modifiers={{
+                    temConsulta: appointmentDayDates,
+                    temBloqueio: blockDayDates,
+                  }}
+                  modifiersClassNames={{
+                    temConsulta: "rdp-day--ps-agenda-appt",
+                    temBloqueio: "rdp-day--ps-agenda-block",
+                  }}
+                  footer={calendarFooter}
+                />
+              </div>
+              <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-600">
+                <li className="flex items-center gap-2">
+                  <span className="h-2 w-6 rounded-sm bg-emerald-500" aria-hidden />
+                  Dia com consulta
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-2 w-6 rounded-sm bg-amber-400" aria-hidden />
+                  Dia com bloqueio
+                </li>
+              </ul>
+            </div>
+
+            <div className="min-h-[200px] flex-1 rounded-2xl border border-slate-100 bg-slate-50/40 p-4">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900">Dia selecionado</h2>
+              <p className="mt-1 text-lg font-semibold capitalize text-slate-900">{formatIsoDateLong(selectedIso)}</p>
+              <ul className="mt-4 space-y-2">{listForSelectedDay.map((a) => renderSessionCard(a))}</ul>
+              {listForSelectedDay.length === 0 && (
+                <p className="mt-4 text-sm text-slate-500">Nenhuma sessão agendada neste dia.</p>
+              )}
+              <button
+                type="button"
+                onClick={goToWeekContainingSelected}
+                className="mt-6 text-xs font-semibold text-emerald-800 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-950"
+              >
+                Ver esta data na visão semanal →
+              </button>
+            </div>
           </div>
-          <p className="mt-2 text-xs text-slate-500">{formatIsoDateLong(dayCursor)}</p>
-          <ul className="mt-4 space-y-2">{listForDay.map((a) => renderSessionCard(a))}</ul>
-          {listForDay.length === 0 && <p className="mt-4 text-sm text-slate-500">Nenhuma sessão neste dia.</p>}
         </section>
       )}
 
-      {view === "semana" && (
+      {mainView === "semana" && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900">Semana</h2>
@@ -312,12 +391,27 @@ export function PsychologistAgendaView() {
             {weekDays.map((d) => {
               const iso = toIso(d);
               const list = weekAppointmentsByDay.get(iso) ?? [];
+              const isSel = iso === selectedIso;
               return (
-                <div key={iso} className="min-h-[120px] rounded-xl border border-slate-100 bg-slate-50/50 p-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {d.toLocaleDateString("pt-BR", { weekday: "short" })}
-                  </p>
-                  <p className="text-sm font-medium text-slate-900">{d.getDate()}</p>
+                <div
+                  key={iso}
+                  className={`min-h-[120px] rounded-xl border p-2 transition ${
+                    isSel ? "border-emerald-400 bg-emerald-50/40 ring-1 ring-emerald-200" : "border-slate-100 bg-slate-50/50"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDay(d);
+                      setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                    }}
+                    className="w-full text-left"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {d.toLocaleDateString("pt-BR", { weekday: "short" })}
+                    </p>
+                    <p className="text-sm font-medium text-slate-900">{d.getDate()}</p>
+                  </button>
                   <ul className="mt-2 space-y-1">
                     {list.map((a) => (
                       <li key={a.id} className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px]">
@@ -336,47 +430,9 @@ export function PsychologistAgendaView() {
             })}
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            Semana de {formatIsoDatePt(weekStart)}. Use a visualização <strong>Dia</strong> para ações em cada sessão.
+            Semana de {formatIsoDatePt(weekStart)}. Clique em um dia para selecioná-lo; use a aba{" "}
+            <strong className="font-semibold text-slate-700">Calendário</strong> para ver o detalhe das sessões.
           </p>
-        </section>
-      )}
-
-      {view === "mes" && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900">Mês</h2>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
-                onClick={() => setMonthCursor(new Date(monthYear, monthIndex - 1, 1))}
-              >
-                ← Mês anterior
-              </button>
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold hover:bg-slate-50"
-                onClick={() => setMonthCursor(new Date(monthYear, monthIndex + 1, 1))}
-              >
-                Próximo mês →
-              </button>
-            </div>
-          </div>
-          <p className="mt-2 capitalize text-sm font-medium text-slate-800">{monthLabel(monthCursor)}</p>
-          {monthAppointments.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">Nenhuma sessão neste mês nos dados de demonstração.</p>
-          ) : (
-            <ul className="mt-4 space-y-4">
-              {[...monthGrouped.keys()]
-                .sort()
-                .map((iso) => (
-                  <li key={iso}>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{formatIsoDateLong(iso)}</p>
-                    <ul className="mt-2 space-y-2">{monthGrouped.get(iso)!.map((a) => renderSessionCard(a, true))}</ul>
-                  </li>
-                ))}
-            </ul>
-          )}
         </section>
       )}
 

@@ -64,6 +64,40 @@ async def test_catalog_patient_ok() -> None:
 
 
 @pytest.mark.asyncio
+async def test_catalog_public_list_ok() -> None:
+    psych_user = SimpleNamespace(
+        id=uuid4(),
+        name="Dra. Ana",
+        email="ana@example.com",
+        phone="11888887777",
+        role=UserRole.psychologist,
+        is_active=True,
+        terms_accepted_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    ps = SimpleNamespace(
+        id=uuid4(),
+        usuario_id=psych_user.id,
+        crp="06/1-SP",
+        bio="Atendo adultos.",
+        foto_url=None,
+        especialidades="TCC, Ansiedade",
+        valor_sessao_padrao=Decimal("200.00"),
+        duracao_minutos_padrao=50,
+        usuario=psych_user,
+    )
+    repo = AsyncMock()
+    repo.list_psicologos_ativos_catalog = AsyncMock(return_value=[ps])
+
+    with patch("app.services.catalog_service.ClinicalRepository", return_value=repo):
+        svc = CatalogService(AsyncMock())
+        out = await svc.list_psychologists_catalog_public()
+
+    assert len(out) == 1
+    assert out[0].nome == "Dra. Ana"
+
+
+@pytest.mark.asyncio
 async def test_catalog_rejects_non_patient() -> None:
     admin = SimpleNamespace(
         id=uuid4(),

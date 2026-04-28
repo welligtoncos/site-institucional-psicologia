@@ -1,0 +1,195 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { useMemo, useState } from "react";
+
+import type { EquipeCardModel } from "@/app/lib/equipe-types";
+import { ActionLink } from "@/app/components/ui/SitePrimitives";
+import { CompactBio } from "./CompactBio";
+import { EquipeAvailabilityCalendar } from "./EquipeAvailabilityCalendar";
+
+type TeamQuickDirectoryProps = {
+  psychologists: EquipeCardModel[];
+  registerUrl: string;
+  bookUrl: string;
+};
+
+function norm(s: string) {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: TeamQuickDirectoryProps) {
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = norm(query.trim());
+    if (!q) return psychologists;
+    return psychologists.filter((p) => {
+      const hay = [p.nome, p.crp, p.bio, ...p.especialidades].map(norm).join(" ");
+      return hay.includes(q);
+    });
+  }, [psychologists, query]);
+
+  const totalSlots = useMemo(
+    () =>
+      psychologists.reduce((acc, p) => acc + p.agendaDays.reduce((a, d) => a + d.slots.length, 0), 0),
+    [psychologists],
+  );
+
+  const placeholderSrc = "/barbara.jpg";
+
+  return (
+    <div className="space-y-10">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <label htmlFor="equipe-busca" className="block text-sm font-semibold text-slate-900">
+          Busca rapida
+        </label>
+        <p className="mt-1 text-sm text-slate-600">
+          Nome, CRP, especialidade ou palavra na bio — dados atualizados a partir do sistema da clinica.
+        </p>
+        <input
+          id="equipe-busca"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Ex.: TCC, ansiedade, CRP..."
+          className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none ring-sky-200 placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2"
+          autoComplete="off"
+        />
+      </div>
+
+      <section className="rounded-3xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 via-white to-sky-50/60 p-6 shadow-sm sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Resumo da agenda</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+              Horarios livres nos proximos dias (por profissional abaixo). Para reservar com pagamento e confirmacao,
+              use o portal do paciente.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-white/80 px-4 py-2 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Vagas somadas</p>
+            <p className="text-2xl font-semibold tabular-nums text-emerald-900">{totalSlots}</p>
+            <p className="text-xs text-emerald-700">proximos dias</p>
+          </div>
+        </div>
+
+        {totalSlots === 0 ? (
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-5 text-sm text-slate-700">
+            <p className="font-medium text-slate-900">Nenhum horario livre no periodo consultado.</p>
+            <p className="mt-2 text-slate-600">
+              A agenda e atualizada em tempo real no sistema. Cadastre-se no portal ou volte mais tarde.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <ActionLink href={registerUrl}>Criar conta no portal</ActionLink>
+              <ActionLink href={bookUrl} variant="secondary">
+                Ja tenho cadastro
+              </ActionLink>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap gap-3 border-t border-emerald-100/80 pt-6">
+          <ActionLink href={registerUrl}>Agendar pelo portal</ActionLink>
+          <ActionLink href={bookUrl} variant="secondary">
+            Entrar e escolher horario
+          </ActionLink>
+        </div>
+      </section>
+
+      <div className="grid gap-6 lg:gap-8">
+        {filtered.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
+            Nenhum resultado para &ldquo;{query}&rdquo;. Tente outro termo ou limpe a busca.
+          </p>
+        ) : (
+          filtered.map((member) => (
+            <article
+              key={member.id}
+              className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+            >
+              <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,200px)_1fr] md:p-8">
+                <div className="mx-auto w-full max-w-[200px] md:mx-0">
+                  <div className="group relative aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                    {member.fotoSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL dinâmica do backend (domínio variável).
+                      <img
+                        src={member.fotoSrc}
+                        alt={member.nome}
+                        className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Image
+                        src={placeholderSrc}
+                        alt={member.nome}
+                        width={440}
+                        height={440}
+                        sizes="(max-width: 768px) 200px, 200px"
+                        className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <h2 className="text-xl font-semibold text-slate-900">{member.nome}</h2>
+                  <p className="mt-1 text-sm font-medium text-sky-700">{member.crp}</p>
+
+                  <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-800">Sessao</p>
+                      <p className="text-lg font-semibold tabular-nums text-slate-900 sm:text-xl">{member.valorConsultaLabel}</p>
+                    </div>
+                    <p className="text-xs text-sky-900/85">
+                      <span className="font-semibold">{member.duracaoMinutos} min</span> · valor conforme cadastro no portal
+                    </p>
+                  </div>
+
+                  {member.especialidades.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {member.especialidades.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {member.bio ? <CompactBio text={member.bio} /> : null}
+
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <ActionLink href={registerUrl}>Quero agendar</ActionLink>
+                    <Link
+                      href={bookUrl}
+                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Ja sou paciente
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 bg-emerald-50/20 px-6 py-6 md:px-8">
+                <h3 className="text-sm font-semibold text-slate-900">Agenda — escolha o dia no calendario</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Dias com linha verde tem vaga; depois selecione o horario ao lado.
+                </p>
+                <div className="mt-4">
+                  <EquipeAvailabilityCalendar agendaDays={member.agendaDays} />
+                </div>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}

@@ -33,10 +33,7 @@ class CatalogService:
     def __init__(self, db: AsyncSession) -> None:
         self._clinical = ClinicalRepository(db)
 
-    async def list_psychologists_catalog(self, user: User, *, skip: int = 0, limit: int = 100) -> list[PsychologistCatalogItem]:
-        if user.role != UserRole.patient:
-            raise ForbiddenError("Apenas pacientes podem consultar o catálogo de profissionais.")
-        rows = await self._clinical.list_psicologos_ativos_catalog(skip=skip, limit=limit)
+    def _rows_to_catalog_items(self, rows: list) -> list[PsychologistCatalogItem]:
         out: list[PsychologistCatalogItem] = []
         for ps in rows:
             u = ps.usuario
@@ -55,15 +52,18 @@ class CatalogService:
             )
         return out
 
-    async def get_psychologist_bookable_slots(
-        self,
-        user: User,
-        psychologist_id: UUID,
-        *,
-        days: int = 7,
-    ) -> PsychologistBookableSlotsResponse:
+    async def list_psychologists_catalog(self, user: User, *, skip: int = 0, limit: int = 100) -> list[PsychologistCatalogItem]:
         if user.role != UserRole.patient:
-            raise ForbiddenError("Apenas pacientes podem consultar horários para agendamento.")
+            raise ForbiddenError("Apenas pacientes podem consultar o catálogo de profissionais.")
+        rows = await self._clinical.list_psicologos_ativos_catalog(skip=skip, limit=limit)
+        return self._rows_to_catalog_items(rows)
+
+    async def list_psychologists_catalog_public(self, *, skip: int = 0, limit: int = 100) -> list[PsychologistCatalogItem]:
+        """Lista profissionais ativos para o site institucional (sem JWT)."""
+        rows = await self._clinical.list_psicologos_ativos_catalog(skip=skip, limit=limit)
+        return self._rows_to_catalog_items(rows)
+
+    async def _build_bookable_slots_response(self, psychologist_id: UUID, *, days: int) -> PsychologistBookableSlotsResponse:
         ps = await self._clinical.get_psicologo_ativo_by_id(psychologist_id)
         if ps is None:
             raise NotFoundError("Profissional não encontrado ou indisponível para agendamento.")
@@ -122,3 +122,23 @@ class CatalogService:
             weekly_template=weekly_template,
             days=day_items,
         )
+
+    async def get_psychologist_bookable_slots(
+        self,
+        user: User,
+        psychologist_id: UUID,
+        *,
+        days: int = 7,
+    ) -> PsychologistBookableSlotsResponse:
+        if user.role != UserRole.patient:
+            raise ForbiddenError("Apenas pacientes podem consultar horários para agendamento.")
+        return await self._build_bookable_slots_response(psychologist_id, days=days)
+
+    async def get_psychologist_bookable_slots_public(
+        self,
+        psychologist_id: UUID,
+        *,
+        days: int = 7,
+    ) -> PsychologistBookableSlotsResponse:
+        """Grade de horários para exibição no site institucional (sem JWT)."""
+        return await self._build_bookable_slots_response(psychologist_id, days=days)
