@@ -28,10 +28,6 @@ export type EquipePsychologist = PsychologistCatalogApi & {
   agendaDays: BookableDayApi[];
 };
 
-function stripTrailingSlash(url: string) {
-  return url.replace(/\/+$/, "");
-}
-
 export function formatBrlFromApi(value: string): string {
   const n = Number.parseFloat(value);
   if (!Number.isFinite(n)) return "—";
@@ -49,7 +45,7 @@ const DEFAULT_DAYS = 14;
  * Sem cache HTTP do Next — valores e agenda devem espelhar o backend após cada alteração.
  */
 export async function loadEquipePsychologists(days: number = DEFAULT_DAYS): Promise<LoadEquipeResult> {
-  const base = stripTrailingSlash(getBackendApiUrl());
+  const base = getBackendApiUrl();
 
   try {
     const listRes = await fetch(`${base}/public/catalog/psychologists?skip=0&limit=50`, {
@@ -68,29 +64,38 @@ export async function loadEquipePsychologists(days: number = DEFAULT_DAYS): Prom
     }
 
     const list = (await listRes.json()) as PsychologistCatalogApi[];
-    const psychologists: EquipePsychologist[] = [];
 
-    for (const p of list) {
-      let agendaDays: BookableDayApi[] = [];
-      try {
-        const slotsRes = await fetch(
-          `${base}/public/catalog/psychologists/${encodeURIComponent(p.id)}/bookable-slots?days=${encodeURIComponent(String(days))}`,
-          { cache: "no-store", headers: { Accept: "application/json" } },
-        );
-        if (slotsRes.ok) {
-          const payload = (await slotsRes.json()) as { days?: BookableDayApi[] };
-          const raw = payload.days ?? [];
-          agendaDays = raw.filter((day) => day.slots.length > 0);
+    /** Horários em paralelo — evita timeout em cadeia e falha silenciosa na agenda. */
+    const psychologists: EquipePsychologist[] = await Promise.all(
+      list.map(async (p) => {
+        let agendaDays: BookableDayApi[] = [];
+        try {
+          const slotsUrl = `${base}/public/catalog/psychologists/${encodeURIComponent(String(p.id))}/bookable-slots?days=${encodeURIComponent(String(days))}`;
+          const slotsRes = await fetch(slotsUrl, {
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          });
+          if (!slotsRes.ok) {
+            const errBody = await slotsRes.text().catch(() => "");
+            console.error(
+              `[equipe] bookable-slots falhou HTTP ${slotsRes.status} para psicologo=${p.id}`,
+              errBody.slice(0, 200),
+            );
+          } else {
+            const payload = (await slotsRes.json()) as { days?: BookableDayApi[] };
+            const rawDays = payload.days ?? [];
+            agendaDays = rawDays.filter((day) => day.slots.length > 0);
+          }
+        } catch (e) {
+          console.error(`[equipe] bookable-slots fetch erro psicologo=${p.id}`, e);
+          agendaDays = [];
         }
-      } catch {
-        agendaDays = [];
-      }
-
-      psychologists.push({
-        ...p,
-        agendaDays,
-      });
-    }
+        return {
+          ...p,
+          agendaDays,
+        };
+      }),
+    );
 
     return { ok: true, psychologists };
   } catch (e) {
