@@ -19,7 +19,18 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function EquipePage() {
+type EquipePageProps = {
+  searchParams: Promise<{ psych?: string | string[] }>;
+};
+
+function normalizePsychParam(v: string | string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function EquipePage({ searchParams }: EquipePageProps) {
+  const sp = await searchParams;
+  const initialPsychologistId = normalizePsychParam(sp.psych);
   const result = await loadEquipePsychologists(7);
 
   if (!result.ok) {
@@ -72,6 +83,7 @@ export default async function EquipePage() {
             psychologists={cards}
             registerUrl="/register"
             bookUrl="/login?next=/portal/agendar&focus=email"
+            initialPsychologistId={initialPsychologistId}
           />
         </Container>
       </Section>

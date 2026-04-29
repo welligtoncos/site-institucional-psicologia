@@ -1,6 +1,15 @@
 import { ActionLink, Container } from "../ui/SitePrimitives";
+import { loadEquipePsychologists } from "@/app/lib/server/equipe-backend";
 
-export function HeroSection() {
+export async function HeroSection() {
+  const equipeResult = await loadEquipePsychologists(7);
+  const vagasSomadas =
+    equipeResult.ok
+      ? equipeResult.psychologists.reduce((total, psychologist) => {
+          return total + psychologist.agendaDays.reduce((subTotal, day) => subTotal + day.slots.length, 0);
+        }, 0)
+      : 0;
+
   return (
     <section className="relative overflow-hidden border-b border-slate-200/70">
       <div className="absolute inset-0 -z-10 bg-gradient-to-b from-sky-100/70 via-white to-slate-50" />
@@ -27,6 +36,21 @@ export function HeroSection() {
           <ActionLink href="/login?next=/portal" variant="secondary" className="text-base">
             Ja tenho conta
           </ActionLink>
+        </div>
+
+        <div className="w-full max-w-3xl rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm sm:p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-800">
+            Disponibilidades livres para atendimento psicologico
+          </p>
+          <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-4xl font-bold leading-none text-emerald-700 sm:text-5xl">{vagasSomadas}</p>
+              <p className="mt-1 text-sm text-slate-700">nos proximos 7 dias</p>
+            </div>
+            <ActionLink href="/register" className="text-sm">
+              Garantir minha vaga
+            </ActionLink>
+          </div>
         </div>
 
         <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-3">

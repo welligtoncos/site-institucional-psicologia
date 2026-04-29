@@ -108,14 +108,6 @@ export function PsychologistDashboard() {
         sub: "Organize seus horários e atendimentos na semana.",
       };
     }
-    if (next.pagamentoPendente) {
-      return {
-        label: "Ver pendências de pagamento",
-        href: "/psicologo/faturas",
-        tone: "amber" as const,
-        sub: "Consulte cobranças e regularize antes do atendimento, se necessário.",
-      };
-    }
     if (next.format === "Online" && (next.status === "confirmada" || next.status === "em_andamento")) {
       return {
         label: "Entrar na sessão de atendimento",
@@ -202,14 +194,6 @@ export function PsychologistDashboard() {
               >
                 Ver agenda completa
               </Link>
-              {next?.pagamentoPendente ? (
-                <Link
-                  href="/psicologo/faturas"
-                  className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                >
-                  Ver cobranças
-                </Link>
-              ) : null}
             </div>
           </div>
         </div>

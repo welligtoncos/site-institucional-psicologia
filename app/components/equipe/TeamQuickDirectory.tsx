@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { EquipeCardModel } from "@/app/lib/equipe-types";
 import { equipeRecentPsychologistAnchor } from "@/app/lib/site";
@@ -13,6 +13,7 @@ type TeamQuickDirectoryProps = {
   psychologists: EquipeCardModel[];
   registerUrl: string;
   bookUrl: string;
+  initialPsychologistId?: string;
 };
 
 const AVATAR_GRADIENTS = [
@@ -48,17 +49,31 @@ function norm(s: string) {
     .toLowerCase();
 }
 
-export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: TeamQuickDirectoryProps) {
+export function TeamQuickDirectory({
+  psychologists,
+  registerUrl,
+  bookUrl,
+  initialPsychologistId,
+}: TeamQuickDirectoryProps) {
   const [query, setQuery] = useState("");
+  const selectedCardId = initialPsychologistId ? `psych-card-${initialPsychologistId}` : null;
+
+  const sortedPsychologists = useMemo(() => {
+    if (!initialPsychologistId) return psychologists;
+    const idx = psychologists.findIndex((p) => p.id === initialPsychologistId);
+    if (idx <= 0) return psychologists;
+    const chosen = psychologists[idx];
+    return [chosen, ...psychologists.slice(0, idx), ...psychologists.slice(idx + 1)];
+  }, [psychologists, initialPsychologistId]);
 
   const filtered = useMemo(() => {
     const q = norm(query.trim());
-    if (!q) return psychologists;
-    return psychologists.filter((p) => {
+    if (!q) return sortedPsychologists;
+    return sortedPsychologists.filter((p) => {
       const hay = [p.nome, p.crp, p.bio, ...p.especialidades].map(norm).join(" ");
       return hay.includes(q);
     });
-  }, [psychologists, query]);
+  }, [sortedPsychologists, query]);
 
   const totalSlots = useMemo(
     () =>
@@ -68,6 +83,16 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
 
   /** Mesmo índice que no catálogo público da API (mais recente primeiro). */
   const recentPsychologistId = psychologists[0]?.id ?? null;
+
+  useEffect(() => {
+    if (!selectedCardId) return;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(selectedCardId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [selectedCardId]);
 
   return (
     <div className="space-y-10">
@@ -135,12 +160,15 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
             Nenhum resultado para &ldquo;{query}&rdquo;. Tente outro termo ou limpe a busca.
           </p>
         ) : (
-          filtered.map((member) => (
-            <article
-              key={member.id}
-              id={member.id === recentPsychologistId ? equipeRecentPsychologistAnchor : undefined}
-              className={`overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${member.id === recentPsychologistId ? "scroll-mt-28" : ""}`}
-            >
+          filtered.map((member) => {
+            const cardId = member.id === initialPsychologistId ? `psych-card-${member.id}` : undefined;
+            const anchorId = member.id === recentPsychologistId ? equipeRecentPsychologistAnchor : undefined;
+            return (
+              <article
+                key={member.id}
+                id={cardId ?? anchorId}
+                className={`overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${member.id === recentPsychologistId ? "scroll-mt-28" : ""}`}
+              >
               <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,200px)_1fr] md:p-8">
                 <div className="mx-auto w-full max-w-[200px] md:mx-0">
                   <div className="group relative aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
@@ -213,8 +241,9 @@ export function TeamQuickDirectory({ psychologists, registerUrl, bookUrl }: Team
                   <EquipeAvailabilityCalendar agendaDays={member.agendaDays} />
                 </div>
               </div>
-            </article>
-          ))
+              </article>
+            );
+          })
         )}
       </div>
     </div>
