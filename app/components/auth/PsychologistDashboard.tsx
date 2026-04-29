@@ -127,11 +127,9 @@ export function PsychologistDashboard() {
   const primaryToneClass =
     primaryAction.tone === "emerald"
       ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/20"
-      : primaryAction.tone === "amber"
-        ? "bg-amber-600 hover:bg-amber-700 shadow-amber-900/15"
-        : primaryAction.tone === "sky"
-          ? "bg-sky-600 hover:bg-sky-700 shadow-sky-900/15"
-          : "bg-slate-700 hover:bg-slate-800 shadow-slate-900/20";
+    : primaryAction.tone === "sky"
+      ? "bg-sky-600 hover:bg-sky-700 shadow-sky-900/15"
+      : "bg-slate-700 hover:bg-slate-800 shadow-slate-900/20";
 
   const firstName = userName.trim().split(/\s+/)[0] || "você";
 
