@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AdminLogoutButton } from "@/app/components/admin/AdminLogoutButton";
 import { AdminPortalNav } from "@/app/components/admin/AdminPortalNav";
 import { siteConfig } from "@/app/lib/site";
 
@@ -16,6 +17,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-800">{siteConfig.name}</p>
             <p className="text-sm font-semibold text-slate-900">Portal administrativo</p>
           </div>
+          <AdminLogoutButton />
         </div>
       </header>
 
