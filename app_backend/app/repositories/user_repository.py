@@ -67,3 +67,41 @@ class UserRepository:
         """Remove usuário (uso interno, ex.: compensação após falha no perfil clínico)."""
         await self._db.execute(delete(User).where(User.id == user_id))
         await self._db.commit()
+
+    async def set_is_active(self, user_id: UUID, *, is_active: bool) -> User:
+        user = await self.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("Usuário não encontrado.")
+        user.is_active = is_active
+        await self._db.commit()
+        await self._db.refresh(user)
+        return user
+
+    async def update_admin_contact(
+        self,
+        user_id: UUID,
+        *,
+        name: str | None = None,
+        phone: str | None = None,
+        email: str | None = None,
+    ) -> User:
+        user = await self.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("Usuário não encontrado.")
+        if name is not None:
+            user.name = name.strip()
+        if phone is not None:
+            user.phone = phone.strip()
+        if email is not None:
+            norm = str(email).strip().lower()
+            other = await self.get_by_email(norm)
+            if other is not None and other.id != user_id:
+                raise ConflictError("E-mail já cadastrado para outro usuário.")
+            user.email = norm
+        try:
+            await self._db.commit()
+        except IntegrityError as exc:
+            await self._db.rollback()
+            raise ConflictError("Não foi possível atualizar o e-mail (duplicado?).") from exc
+        await self._db.refresh(user)
+        return user

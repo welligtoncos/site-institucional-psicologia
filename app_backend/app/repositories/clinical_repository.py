@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -647,3 +647,298 @@ class ClinicalRepository:
                 )
             )
         await self._db.commit()
+
+    # --- Administrativo (portal) ---
+
+    async def count_pacientes_total(self) -> int:
+        r = await self._db.execute(select(func.count()).select_from(Paciente))
+        return int(r.scalar_one() or 0)
+
+    async def count_psicologos_total(self) -> int:
+        r = await self._db.execute(select(func.count()).select_from(Psicologo))
+        return int(r.scalar_one() or 0)
+
+    async def count_consultas_total(self) -> int:
+        r = await self._db.execute(select(func.count()).select_from(Consulta))
+        return int(r.scalar_one() or 0)
+
+    async def count_cobrancas_total(self) -> int:
+        r = await self._db.execute(select(func.count()).select_from(Cobranca))
+        return int(r.scalar_one() or 0)
+
+    async def count_consultas_por_status(self, status: ConsultaStatus) -> int:
+        r = await self._db.execute(select(func.count(Consulta.id)).where(Consulta.status == status))
+        return int(r.scalar_one() or 0)
+
+    async def count_cobrancas_por_gateway(self, st: CobrancaStatusGateway) -> int:
+        r = await self._db.execute(select(func.count(Cobranca.id)).where(Cobranca.status_gateway == st))
+        return int(r.scalar_one() or 0)
+
+    async def sum_cobrancas_confirmadas_centavos(self) -> int:
+        stmt = select(func.coalesce(func.sum(Cobranca.valor_centavos), 0)).where(
+            Cobranca.status_gateway == CobrancaStatusGateway.succeeded
+        )
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def ganhos_confirmados_ultimos_dias(self, *, days: int = 7) -> list[tuple[date, int]]:
+        if days < 1:
+            days = 1
+        hoje = datetime.now().date()
+        data_inicio = hoje - timedelta(days=days - 1)
+        stmt = (
+            select(func.date(Cobranca.pago_em), func.coalesce(func.sum(Cobranca.valor_centavos), 0))
+            .where(Cobranca.status_gateway == CobrancaStatusGateway.succeeded)
+            .where(Cobranca.pago_em.isnot(None))
+            .where(Cobranca.pago_em >= datetime.combine(data_inicio, time.min))
+            .group_by(func.date(Cobranca.pago_em))
+            .order_by(func.date(Cobranca.pago_em).asc())
+        )
+        r = await self._db.execute(stmt)
+        out: list[tuple[date, int]] = []
+        for d, total in r.all():
+            if isinstance(d, date):
+                out.append((d, int(total or 0)))
+        return out
+
+    async def sum_cobrancas_confirmadas_periodo_centavos(self, *, data_inicio: date, data_fim: date) -> int:
+        stmt = (
+            select(func.coalesce(func.sum(Cobranca.valor_centavos), 0))
+            .where(Cobranca.status_gateway == CobrancaStatusGateway.succeeded)
+            .where(Cobranca.pago_em.isnot(None))
+            .where(Cobranca.pago_em >= datetime.combine(data_inicio, time.min))
+            .where(Cobranca.pago_em <= datetime.combine(data_fim, time(23, 59, 59)))
+        )
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def avg_cobrancas_confirmadas_centavos(self) -> int:
+        stmt = select(func.coalesce(func.avg(Cobranca.valor_centavos), 0)).where(
+            Cobranca.status_gateway == CobrancaStatusGateway.succeeded
+        )
+        r = await self._db.execute(stmt)
+        return int(round(float(r.scalar_one() or 0)))
+
+    async def count_pacientes_desde(self, *, data_inicio: date) -> int:
+        stmt = select(func.count(Paciente.id)).where(Paciente.criado_em >= datetime.combine(data_inicio, time.min))
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def count_psicologos_ativos(self) -> int:
+        stmt = (
+            select(func.count(Psicologo.id))
+            .join(User, Psicologo.usuario_id == User.id)
+            .where(User.role == UserRole.psychologist)
+            .where(User.is_active.is_(True))
+        )
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def count_pacientes_recorrentes(self) -> int:
+        sub = (
+            select(Consulta.paciente_id)
+            .where(Consulta.status == ConsultaStatus.realizada)
+            .group_by(Consulta.paciente_id)
+            .having(func.count(Consulta.id) >= 2)
+            .subquery()
+        )
+        stmt = select(func.count()).select_from(sub)
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def get_paciente_por_id(self, paciente_id: UUID) -> Paciente | None:
+        stmt = select(Paciente).where(Paciente.id == paciente_id).options(selectinload(Paciente.usuario))
+        r = await self._db.execute(stmt)
+        return r.scalar_one_or_none()
+
+    async def get_psicologo_por_id(self, psicologo_id: UUID) -> Psicologo | None:
+        stmt = select(Psicologo).where(Psicologo.id == psicologo_id).options(selectinload(Psicologo.usuario))
+        r = await self._db.execute(stmt)
+        return r.scalar_one_or_none()
+
+    async def get_consulta_admin_por_id(self, consulta_id: UUID) -> Consulta | None:
+        stmt = (
+            select(Consulta)
+            .where(Consulta.id == consulta_id)
+            .options(
+                selectinload(Consulta.paciente).selectinload(Paciente.usuario),
+                selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+                selectinload(Consulta.cobranca),
+                selectinload(Consulta.sessao_ao_vivo),
+            )
+        )
+        r = await self._db.execute(stmt)
+        return r.scalar_one_or_none()
+
+    async def list_consultas_paciente_todas(self, paciente_id: UUID) -> list[Consulta]:
+        stmt = (
+            select(Consulta)
+            .where(Consulta.paciente_id == paciente_id)
+            .options(
+                selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+                selectinload(Consulta.cobranca),
+            )
+            .order_by(Consulta.data_agendada.desc(), Consulta.hora_inicio.desc())
+        )
+        r = await self._db.execute(stmt)
+        return list(r.scalars().unique().all())
+
+    async def list_consultas_admin(
+        self,
+        *,
+        skip: int,
+        limit: int,
+        data_inicio: date | None,
+        data_fim: date | None,
+        paciente_id: UUID | None,
+        psicologo_id: UUID | None,
+        status: ConsultaStatus | None,
+    ) -> list[Consulta]:
+        stmt = (
+            select(Consulta)
+            .options(
+                selectinload(Consulta.paciente).selectinload(Paciente.usuario),
+                selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+                selectinload(Consulta.cobranca),
+            )
+            .order_by(Consulta.data_agendada.desc(), Consulta.hora_inicio.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        if data_inicio is not None:
+            stmt = stmt.where(Consulta.data_agendada >= data_inicio)
+        if data_fim is not None:
+            stmt = stmt.where(Consulta.data_agendada <= data_fim)
+        if paciente_id is not None:
+            stmt = stmt.where(Consulta.paciente_id == paciente_id)
+        if psicologo_id is not None:
+            stmt = stmt.where(Consulta.psicologo_id == psicologo_id)
+        if status is not None:
+            stmt = stmt.where(Consulta.status == status)
+        r = await self._db.execute(stmt)
+        return list(r.scalars().unique().all())
+
+    async def count_consultas_admin_filtrado(
+        self,
+        *,
+        data_inicio: date | None,
+        data_fim: date | None,
+        paciente_id: UUID | None,
+        psicologo_id: UUID | None,
+        status: ConsultaStatus | None,
+    ) -> int:
+        stmt = select(func.count(Consulta.id))
+        if data_inicio is not None:
+            stmt = stmt.where(Consulta.data_agendada >= data_inicio)
+        if data_fim is not None:
+            stmt = stmt.where(Consulta.data_agendada <= data_fim)
+        if paciente_id is not None:
+            stmt = stmt.where(Consulta.paciente_id == paciente_id)
+        if psicologo_id is not None:
+            stmt = stmt.where(Consulta.psicologo_id == psicologo_id)
+        if status is not None:
+            stmt = stmt.where(Consulta.status == status)
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def existe_consulta_conflitante_no_horario(
+        self,
+        *,
+        psicologo_id: UUID,
+        data_agendada: date,
+        hora_inicio: time,
+        excluir_consulta_id: UUID | None,
+    ) -> bool:
+        stmt = (
+            select(func.count(Consulta.id))
+            .where(Consulta.psicologo_id == psicologo_id)
+            .where(Consulta.data_agendada == data_agendada)
+            .where(Consulta.hora_inicio == hora_inicio)
+            .where(Consulta.status.notin_([ConsultaStatus.cancelada, ConsultaStatus.nao_compareceu]))
+        )
+        if excluir_consulta_id is not None:
+            stmt = stmt.where(Consulta.id != excluir_consulta_id)
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0) > 0
+
+    async def list_cobrancas_admin(
+        self,
+        *,
+        skip: int,
+        limit: int,
+        status_gateway: CobrancaStatusGateway | None,
+        data_pagamento_inicio: date | None,
+        data_pagamento_fim: date | None,
+        paciente_id: UUID | None,
+        provedor: str | None,
+    ) -> list[Cobranca]:
+        stmt = (
+            select(Cobranca)
+            .join(Consulta, Cobranca.consulta_id == Consulta.id)
+            .join(Paciente, Consulta.paciente_id == Paciente.id)
+            .options(
+                selectinload(Cobranca.consulta)
+                .selectinload(Consulta.paciente)
+                .selectinload(Paciente.usuario),
+                selectinload(Cobranca.consulta).selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+            )
+            .order_by(Cobranca.criado_em.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        if status_gateway is not None:
+            stmt = stmt.where(Cobranca.status_gateway == status_gateway)
+        if paciente_id is not None:
+            stmt = stmt.where(Paciente.id == paciente_id)
+        if provedor is not None and provedor.strip():
+            stmt = stmt.where(Cobranca.provedor_gateway == provedor.strip())
+        # Intervalo por data de criação da cobrança (útil para pendências e histórico no mesmo filtro).
+        if data_pagamento_inicio is not None:
+            d0 = datetime.combine(data_pagamento_inicio, time.min)
+            stmt = stmt.where(Cobranca.criado_em >= d0)
+        if data_pagamento_fim is not None:
+            d1 = datetime.combine(data_pagamento_fim, time(23, 59, 59))
+            stmt = stmt.where(Cobranca.criado_em <= d1)
+        r = await self._db.execute(stmt)
+        return list(r.scalars().unique().all())
+
+    async def count_cobrancas_admin_filtrado(
+        self,
+        *,
+        status_gateway: CobrancaStatusGateway | None,
+        data_pagamento_inicio: date | None,
+        data_pagamento_fim: date | None,
+        paciente_id: UUID | None,
+        provedor: str | None,
+    ) -> int:
+        stmt = select(func.count(Cobranca.id)).join(Consulta, Cobranca.consulta_id == Consulta.id).join(
+            Paciente, Consulta.paciente_id == Paciente.id
+        )
+        if status_gateway is not None:
+            stmt = stmt.where(Cobranca.status_gateway == status_gateway)
+        if paciente_id is not None:
+            stmt = stmt.where(Paciente.id == paciente_id)
+        if provedor is not None and provedor.strip():
+            stmt = stmt.where(Cobranca.provedor_gateway == provedor.strip())
+        if data_pagamento_inicio is not None:
+            d0 = datetime.combine(data_pagamento_inicio, time.min)
+            stmt = stmt.where(Cobranca.criado_em >= d0)
+        if data_pagamento_fim is not None:
+            d1 = datetime.combine(data_pagamento_fim, time(23, 59, 59))
+            stmt = stmt.where(Cobranca.criado_em <= d1)
+        r = await self._db.execute(stmt)
+        return int(r.scalar_one() or 0)
+
+    async def get_cobranca_admin_por_id(self, cobranca_id: UUID) -> Cobranca | None:
+        stmt = (
+            select(Cobranca)
+            .where(Cobranca.id == cobranca_id)
+            .options(
+                selectinload(Cobranca.consulta)
+                .selectinload(Consulta.paciente)
+                .selectinload(Paciente.usuario),
+                selectinload(Cobranca.consulta).selectinload(Consulta.psicologo).selectinload(Psicologo.usuario),
+            )
+        )
+        r = await self._db.execute(stmt)
+        return r.scalar_one_or_none()

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getProgressiveAvailability, setSlotStatus } from "@/app/lib/server/availability-store";
+import { requirePortalRole } from "@/app/api/portal/_utils/backend-proxy";
 
 const updateSlotSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -8,25 +9,13 @@ const updateSlotSchema = z.object({
   status: z.enum(["available", "unavailable"]),
 });
 
-function getRequestToken(request: Request) {
-  const headerToken = request.headers.get("x-admin-token");
-  const authHeader = request.headers.get("authorization");
-  if (headerToken) return headerToken;
-  if (authHeader?.toLowerCase().startsWith("bearer ")) {
-    return authHeader.slice(7).trim();
-  }
-  return "";
-}
-
-function isAuthorized(request: Request) {
-  const configured = process.env.ADMIN_API_TOKEN;
-  if (!configured) return false;
-  const token = getRequestToken(request);
-  return token === configured;
+async function isAuthorizedAdmin(request: Request) {
+  const auth = await requirePortalRole(request, ["admin"]);
+  return auth.ok;
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorizedAdmin(request))) {
     return NextResponse.json({ message: "Nao autorizado." }, { status: 401 });
   }
 
@@ -38,11 +27,19 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!isAuthorized(request)) {
+  if (!(await isAuthorizedAdmin(request))) {
     return NextResponse.json({ message: "Nao autorizado." }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
+  const rawBody = await request.text().catch(() => "");
+  let body: unknown = null;
+  if (rawBody.trim()) {
+    try {
+      body = JSON.parse(rawBody) as unknown;
+    } catch {
+      return NextResponse.json({ message: "Payload invalido." }, { status: 400 });
+    }
+  }
   const parsed = updateSlotSchema.safeParse(body);
 
   if (!parsed.success) {

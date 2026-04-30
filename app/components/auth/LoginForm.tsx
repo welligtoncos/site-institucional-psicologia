@@ -100,7 +100,13 @@ export function LoginForm() {
       });
       const meData = (await meRes.json()) as { role?: string; name?: string; email?: string };
 
-      if (meRes.ok && (meData.role === "psychologist" || meData.role === "admin")) {
+      if (meRes.ok && meData.role === "admin") {
+        const dest = next && next.startsWith("/admin") ? next : "/admin/dashboard";
+        router.push(dest);
+        return;
+      }
+
+      if (meRes.ok && meData.role === "psychologist") {
         const dest = next && next.startsWith("/psicologo") ? next : "/psicologo";
         router.push(dest);
         return;
