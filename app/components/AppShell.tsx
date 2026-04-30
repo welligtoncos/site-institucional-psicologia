@@ -17,7 +17,10 @@ type AppShellProps = {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const isSystemArea = pathname.startsWith("/portal") || pathname.startsWith("/psicologo");
+  const isSystemArea =
+    pathname.startsWith("/portal") ||
+    pathname.startsWith("/psicologo") ||
+    pathname.startsWith("/admin");
 
   if (isSystemArea) {
     /* Layouts de portal/psicólogo já definem fundo claro; não herdar texto claro (inputs ficavam ilegíveis). */
